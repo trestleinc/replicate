@@ -17,7 +17,8 @@ export {
   ReconciliationError,
 } from '$/client/errors.js';
 
-export * as Y from 'yjs';
+// NOTE: Do NOT re-export Yjs here to avoid duplicate module issues with bundlers.
+// Apps should import 'yjs' directly and use Vite's resolve.dedupe to ensure a single instance.
 export { IndexeddbPersistence } from 'y-indexeddb';
 
 export { OperationType } from '$/component/shared.js';
