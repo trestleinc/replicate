@@ -301,18 +301,21 @@ export function convexCollectionOptions<T extends object>({
       () => {
         mutations.forEach((mut) => {
           const itemYMap = new Y.Map();
+          // First, set the itemYMap in ymap so fragments are bound to the document
+          ymap.set(String(mut.key), itemYMap);
           Object.entries(mut.modified as Record<string, unknown>).forEach(([k, v]) => {
             if (isFragment(v)) {
               const fragment = new Y.XmlFragment();
+              // Add fragment to map FIRST (binds it to the Y.Doc)
+              itemYMap.set(k, fragment);
+              // THEN populate content (now it's part of the document)
               if (v.content) {
                 fragmentFromJSON(fragment, v.content);
               }
-              itemYMap.set(k, fragment);
             } else {
               itemYMap.set(k, v);
             }
           });
-          ymap.set(String(mut.key), itemYMap);
         });
       },
       YjsOrigin.Insert
@@ -347,10 +350,12 @@ export function convexCollectionOptions<T extends object>({
                 } else {
                   // Create new XmlFragment
                   const fragment = new Y.XmlFragment();
+                  // Add fragment to map FIRST (binds it to the Y.Doc)
+                  itemYMap.set(k, fragment);
+                  // THEN populate content (now it's part of the document)
                   if (v.content) {
                     fragmentFromJSON(fragment, v.content);
                   }
-                  itemYMap.set(k, fragment);
                 }
               } else {
                 itemYMap.set(k, v);
