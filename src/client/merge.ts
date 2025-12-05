@@ -91,30 +91,7 @@ export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
   return value instanceof Y.Map ? (value.toJSON() as T) : null;
 }
 
-/**
- * Marker type for fragment field values.
- * When inserting/updating, use this to indicate a field should be a Y.XmlFragment.
- */
-export interface FragmentValue {
-  __xmlFragment: true;
-  content?: XmlFragmentJSON;
-}
-
-/**
- * ProseMirror-compatible JSON structure for XmlFragment serialization.
- */
-export interface XmlFragmentJSON {
-  type: 'doc';
-  content?: XmlNodeJSON[];
-}
-
-export interface XmlNodeJSON {
-  type: string;
-  attrs?: Record<string, unknown>;
-  content?: XmlNodeJSON[];
-  text?: string;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
-}
+import type { FragmentValue, XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
 
 /**
  * Check if a value is a FragmentValue marker.

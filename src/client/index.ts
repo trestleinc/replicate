@@ -21,15 +21,13 @@ export {
 // Apps should import 'yjs' directly and use Vite's resolve.dedupe to ensure a single instance.
 export { IndexeddbPersistence } from 'y-indexeddb';
 
-export { OperationType } from '$/component/shared.js';
+// NOTE: OperationType is now exported from top-level @trestleinc/replicate
+// Consumers should import it from there, not from /client
 
 export {
   fragment,
   extractItemWithFragments,
   extractItemsWithFragments,
-  type FragmentValue,
-  type XmlFragmentJSON,
-  type XmlNodeJSON,
 } from '$/client/merge.js';
 
 export { NonRetriableError } from '@tanstack/offline-transactions';

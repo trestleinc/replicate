@@ -307,7 +307,7 @@ export class Replicate<T extends object> {
         protocolVersion: v.number(),
       }),
       handler: async (ctx) => {
-        return await ctx.runQuery(component.public.getProtocolVersion);
+        return await ctx.runQuery(component.public.getProtocolVersion, {});
       },
     });
   }

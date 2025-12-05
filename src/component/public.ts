@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { v } from 'convex/values';
 import { mutation, query } from '$/component/_generated/server';
 import { getLogger } from '$/component/logger';
-import { OperationType } from '$/component/shared.js';
+import { OperationType } from '$/shared/types.js';
 
 export const PROTOCOL_VERSION = 1;
 

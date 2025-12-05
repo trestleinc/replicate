@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { convexTest } from 'convex-test';
 import * as Y from 'yjs';
 import schema from '$/component/schema.js';
-import { OperationType } from '$/component/shared.js';
+import { OperationType } from '$/shared/types.js';
 
 // Import component functions directly for testing via t.run()
 import * as publicModule from '$/component/public.js';
