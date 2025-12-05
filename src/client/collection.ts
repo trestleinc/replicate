@@ -80,7 +80,7 @@ const servicesLayer = Layer.mergeAll(
   Layer.provide(SnapshotLive, CheckpointLive)
 );
 
-export { OperationType } from '$/component/shared.js';
+import { OperationType } from '$/shared/types.js';
 
 const cleanupFunctions = new Map<string, () => void>();
 
@@ -399,10 +399,15 @@ export function convexCollectionOptions<T extends object>({
         const delta = applyYjsInsert(transaction.mutations);
         if (delta.length > 0) {
           const documentKey = String(transaction.mutations[0].key);
+          const itemYMap = ymap.get(documentKey) as Y.Map<unknown>;
+          // Use serializeYMapValue to convert Y.XmlFragment → XmlFragmentJSON (same as onUpdate)
+          const materializedDoc = itemYMap
+            ? serializeYMapValue(itemYMap)
+            : transaction.mutations[0].modified;
           await convexClient.mutation(api.insert, {
             documentId: documentKey,
             crdtBytes: delta.slice().buffer,
-            materializedDoc: transaction.mutations[0].modified,
+            materializedDoc,
             version: Date.now(),
           });
         }
