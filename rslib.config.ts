@@ -5,6 +5,25 @@ export default defineConfig({
   plugins: [pluginTypeCheck()],
   lib: [
     {
+      // Shared types - types-only module safe for any environment
+      id: 'shared',
+      format: 'esm',
+      syntax: 'es2022',
+      dts: {
+        bundle: false,
+      },
+      output: {
+        distPath: {
+          root: './dist',
+        },
+      },
+      source: {
+        entry: {
+          shared: './src/shared/index.ts',
+        },
+      },
+    },
+    {
       // Client code - BUNDLED (default mode)
       // Single file entry bundles all imports into dist/index.js
       id: 'client',
@@ -83,7 +102,7 @@ export default defineConfig({
       },
       source: {
         entry: {
-          'component/index': './src/component/**', // ← Glob pattern (bundleless)
+          'component/index': ['./src/component/**', './src/shared/**'], // Include shared for component imports
         },
       },
     },
