@@ -19,10 +19,10 @@
   "type": "module",
   "private": false,
   "resolutions": {
-    "convex": "1.28.2"
+    "convex": "1.30.0"
   },
   "overrides": {
-    "convex": "1.28.2"
+    "convex": "1.30.0"
   },
   "scripts": {
     "build": "rslib build",
@@ -36,6 +36,12 @@
     "prepublish": "bun run build && bun run check:fix"
   },
   "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/shared/index.d.ts",
+        "default": "./dist/shared.js"
+      }
+    },
     "./package.json": "./package.json",
     "./client": {
       "import": {
@@ -65,17 +71,17 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@effect/platform": "^0.93.3",
+    "@effect/platform": "0.93.6",
     "@logtape/logtape": "1.1.2",
     "@tanstack/offline-transactions": "0.1.3",
-    "effect": "^3.19.6",
-    "idb-keyval": "^6.2.2",
-    "y-indexeddb": "^9.0.12",
+    "effect": "3.19.8",
+    "idb-keyval": "6.2.2",
+    "y-indexeddb": "9.0.12",
     "yjs": "13.6.27"
   },
   "peerDependencies": {
     "@tanstack/db": "0.4.20",
-    "convex": "1.28.2"
+    "convex": "1.30.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.4",
@@ -84,17 +90,17 @@
     "@rslib/core": "0.17.1",
     "@tanstack/db": "0.4.20",
     "@types/node": "24.10.0",
-    "convex": "1.28.2",
+    "convex": "1.30.0",
     "convex-test": "0.0.41",
-    "dotenv": "^17.2.3",
+    "dotenv": "17.2.3",
     "fake-indexeddb": "6.2.5",
     "typescript": "5.9.3",
     "vitest": "4.0.15",
     "zod": "4.1.12"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/client/index.d.ts",
-  "module": "./dist/index.js",
+  "main": "./dist/shared.js",
+  "types": "./dist/shared/index.d.ts",
+  "module": "./dist/shared.js",
   "publishConfig": {
     "access": "public"
   }
