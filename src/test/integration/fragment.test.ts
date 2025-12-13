@@ -2,11 +2,11 @@
  * Integration tests for rich text fields with Y.XmlFragment
  *
  * Tests the full CRUD + sync cycle for documents with rich text fields.
- * Uses isProseMirrorDoc for auto-detection of prose fields.
+ * Uses isDoc for auto-detection of prose fields.
  */
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { fragmentFromJSON, isProseMirrorDoc, serializeYMapValue } from '$/client/merge.js';
+import { fragmentFromJSON, isDoc, serializeYMapValue } from '$/client/merge.js';
 import type { XmlFragmentJSON } from '$/shared/types.js';
 import { createTestDoc, createTestMap, applyUpdate } from '../utils/yjs.js';
 
@@ -43,7 +43,7 @@ function createRichTextCollection<T extends { id: string }>(
       doc.transact(() => {
         const itemMap = new Y.Map();
         for (const [key, value] of Object.entries(item)) {
-          if (isProseMirrorDoc(value)) {
+          if (isDoc(value)) {
             const fragment = new Y.XmlFragment();
             if (value.content) {
               fragmentFromJSON(fragment, value);
@@ -64,7 +64,7 @@ function createRichTextCollection<T extends { id: string }>(
         const itemMap = ymap.get(id);
         if (itemMap instanceof Y.Map) {
           for (const [key, value] of Object.entries(changes)) {
-            if (isProseMirrorDoc(value)) {
+            if (isDoc(value)) {
               const existingFragment = itemMap.get(key);
               if (existingFragment instanceof Y.XmlFragment) {
                 while (existingFragment.length > 0) {

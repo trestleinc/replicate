@@ -9,7 +9,7 @@ import { Replicate } from '$/server/storage.js';
  * ```typescript
  * // convex/tasks.ts
  * export const { stream, material, insert, update, remove, protocol, snapshot } =
- *   defineReplicate<Task>({
+ *   define<Task>({
  *     component: components.replicate,
  *     collection: 'tasks',
  *   });
@@ -18,7 +18,7 @@ import { Replicate } from '$/server/storage.js';
  * // snapshot.create, snapshot.list, snapshot.get, snapshot.restore, snapshot.remove, snapshot.prune
  * ```
  */
-export function defineReplicate<T extends object>(config: {
+export function define<T extends object>(config: {
   component: any;
   collection: string;
   compaction?: { retention: number };

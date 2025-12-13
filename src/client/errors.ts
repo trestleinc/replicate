@@ -25,7 +25,7 @@ export class ReconciliationError extends Data.TaggedError('ReconciliationError')
   readonly cause?: unknown;
 }> {}
 
-export class ProseFieldNotFoundError extends Data.TaggedError('ProseFieldNotFoundError')<{
+export class ProseError extends Data.TaggedError('ProseError')<{
   readonly documentId: string;
   readonly field: string;
   readonly collection: string;

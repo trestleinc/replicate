@@ -12,11 +12,12 @@ import type { FunctionReference } from 'convex/server';
 import type { CollectionConfig, Collection } from '@tanstack/db';
 import { Effect, Layer } from 'effect';
 import { getLogger } from '$/client/logger.js';
-import { ProseFieldNotFoundError } from '$/client/errors.js';
+import { ProseError } from '$/client/errors.js';
 import { ensureSet } from '$/client/set.js';
 import { Checkpoint, CheckpointLive } from '$/client/services/checkpoint.js';
 import { Reconciliation, ReconciliationLive } from '$/client/services/reconciliation.js';
 import { SnapshotLive } from '$/client/services/snapshot.js';
+import { Protocol, ProtocolLive } from '$/client/services/protocol.js';
 import {
   initializeReplicateParams,
   replicateDelete,
@@ -30,7 +31,7 @@ import {
   applyUpdate,
   extractItems,
   extractItem,
-  isProseMirrorDoc,
+  isDoc,
   fragmentFromJSON,
   serializeYMapValue,
   getFragmentFromYMap,
@@ -168,8 +169,15 @@ export interface EditorBinding {
   canRedo(): boolean;
 }
 
-/** Utilities exposed on collection.utils for prose field operations */
-export interface ConvexCollectionUtils<T extends object> {
+/** Protocol version info returned by utils.protocol() */
+interface ProtocolInfo {
+  serverVersion: number;
+  localVersion: number;
+  needsMigration: boolean;
+}
+
+/** Utilities exposed on collection.utils */
+interface ConvexCollectionUtils<T extends object> {
   /**
    * Get an editor binding for a prose field.
    * Waits for Y.Doc to be ready (IndexedDB loaded) before returning.
@@ -178,6 +186,12 @@ export interface ConvexCollectionUtils<T extends object> {
    * @returns Promise resolving to EditorBinding
    */
   prose(documentId: string, field: ProseFields<T>): Promise<EditorBinding>;
+
+  /**
+   * Get protocol version info for debugging and diagnostics.
+   * @returns Promise resolving to version info
+   */
+  protocol(): Promise<ProtocolInfo>;
 }
 
 /** Extended collection with prose field utilities */
@@ -387,6 +401,7 @@ export function convexCollectionOptions<T extends object>({
   _convexClient: ConvexClient;
   _collection: string;
   _proseFields: Array<ProseFields<T>>;
+  _api: ConvexCollectionOptionsConfig<T>['api'];
 } {
   // Create a Set for O(1) lookup of prose fields
   const proseFieldSet = new Set<string>(proseFields as string[]);
@@ -454,7 +469,7 @@ export function convexCollectionOptions<T extends object>({
           ymap.set(String(mut.key), itemYMap);
           Object.entries(mut.modified as Record<string, unknown>).forEach(([k, v]) => {
             // Check if this is a prose field (auto-detect from config)
-            if (proseFieldSet.has(k) && isProseMirrorDoc(v)) {
+            if (proseFieldSet.has(k) && isDoc(v)) {
               const fragment = new Y.XmlFragment();
               // Add fragment to map FIRST (binds it to the Y.Doc)
               itemYMap.set(k, fragment);
@@ -487,7 +502,7 @@ export function convexCollectionOptions<T extends object>({
               const existingValue = itemYMap.get(k);
 
               // Check if this is a prose field
-              if (proseFieldSet.has(k) && isProseMirrorDoc(v)) {
+              if (proseFieldSet.has(k) && isDoc(v)) {
                 if (existingValue instanceof Y.XmlFragment) {
                   // Clear existing content and apply new content
                   while (existingValue.length > 0) {
@@ -545,6 +560,7 @@ export function convexCollectionOptions<T extends object>({
     _convexClient: convexClient,
     _collection: collection,
     _proseFields: proseFields,
+    _api: api,
 
     onInsert: async ({ transaction }: CollectionTransaction<T>) => {
       try {
@@ -960,15 +976,15 @@ export function convexCollectionOptions<T extends object>({
  * @internal
  */
 function initializeCollectionWithOffline<T extends object>(
-  rawCollection: Collection<T>,
+  collection: Collection<T>,
   collectionName: string,
-  _convexClient: ConvexClient,
+  convexClient: ConvexClient,
   proseFields: Array<ProseFields<T>>
 ): ConvexCollection<T> {
   const proseFieldSet = new Set<string>(proseFields as string[]);
 
   const _offline: OfflineExecutor = startOfflineExecutor({
-    collections: { [collectionName]: rawCollection as any },
+    collections: { [collectionName]: collection as any },
     mutationFns: {},
 
     beforeRetry: (transactions) => {
@@ -1026,7 +1042,7 @@ function initializeCollectionWithOffline<T extends object>(
     const materializedDoc = serializeYMapValue(itemYMap);
 
     // Use TanStack DB's metadata to pass sync info through the transaction system
-    return (rawCollection as any).update(
+    return (collection as any).update(
       documentId,
       { metadata: { contentSync: { crdtBytes, materializedDoc } } },
       (draft: any) => {
@@ -1043,7 +1059,7 @@ function initializeCollectionWithOffline<T extends object>(
 
       // Validate field is in prose config
       if (!proseFieldSet.has(fieldStr)) {
-        throw new ProseFieldNotFoundError({
+        throw new ProseError({
           documentId,
           field: fieldStr,
           collection: collectionName,
@@ -1065,7 +1081,7 @@ function initializeCollectionWithOffline<T extends object>(
             } else if (Date.now() - startTime > maxWait) {
               clearInterval(check);
               reject(
-                new ProseFieldNotFoundError({
+                new ProseError({
                   documentId,
                   field: fieldStr,
                   collection: collectionName,
@@ -1078,7 +1094,7 @@ function initializeCollectionWithOffline<T extends object>(
       }
 
       if (!docs) {
-        throw new ProseFieldNotFoundError({
+        throw new ProseError({
           documentId,
           field: fieldStr,
           collection: collectionName,
@@ -1087,7 +1103,7 @@ function initializeCollectionWithOffline<T extends object>(
 
       const fragment = getFragmentFromYMap(docs.ymap, documentId, fieldStr);
       if (!fragment) {
-        throw new ProseFieldNotFoundError({
+        throw new ProseError({
           documentId,
           field: fieldStr,
           collection: collectionName,
@@ -1210,10 +1226,34 @@ function initializeCollectionWithOffline<T extends object>(
         },
       } satisfies EditorBinding;
     },
+
+    async protocol(): Promise<ProtocolInfo> {
+      const protocolApi = (collection as any).config?._api?.protocol;
+      if (!protocolApi) {
+        throw new Error('Protocol API endpoint required. Add protocol to your api config.');
+      }
+
+      const protocolLayer = ProtocolLive(convexClient, { protocol: protocolApi });
+
+      const { serverVersion, localVersion } = await Effect.runPromise(
+        Effect.gen(function* () {
+          const protocol = yield* Protocol;
+          const server = yield* protocol.getServerVersion();
+          const local = yield* protocol.getStoredVersion();
+          return { serverVersion: server, localVersion: local };
+        }).pipe(Effect.provide(protocolLayer))
+      );
+
+      return {
+        serverVersion,
+        localVersion,
+        needsMigration: serverVersion > localVersion,
+      };
+    },
   };
 
   // Extend collection with utils
-  const collectionWithUtils = rawCollection as ConvexCollection<T>;
+  const collectionWithUtils = collection as ConvexCollection<T>;
   (collectionWithUtils as any).utils = utils;
 
   return collectionWithUtils;
@@ -1229,9 +1269,9 @@ const initializedCollections = new Map<string, ConvexCollection<any>>();
  * @internal
  */
 export function getOrInitializeCollection<T extends object>(
-  rawCollection: Collection<T>
+  collection: Collection<T>
 ): ConvexCollection<T> {
-  const config = (rawCollection as any).config;
+  const config = (collection as any).config;
   const collectionName = config._collection as string;
   const convexClient = config._convexClient as ConvexClient;
   const proseFields = config._proseFields as Array<ProseFields<T>>;
@@ -1251,7 +1291,7 @@ export function getOrInitializeCollection<T extends object>(
 
   // Initialize and cache
   const initialized = initializeCollectionWithOffline(
-    rawCollection,
+    collection,
     collectionName,
     convexClient,
     proseFields

@@ -12,7 +12,7 @@ import {
   fragmentToJSON,
   fragmentFromJSON,
   extractItem,
-  isProseMirrorDoc,
+  isDoc,
 } from '$/client/merge.js';
 import type { XmlFragmentJSON } from '$/shared/types.js';
 import { createTestDoc, syncDocs } from '../utils/yjs.js';
@@ -77,23 +77,23 @@ describe('Y.XmlFragment support', () => {
     });
   });
 
-  describe('isProseMirrorDoc detection', () => {
+  describe('isDoc detection', () => {
     it('detects ProseMirror doc structure correctly', () => {
       const validDoc: XmlFragmentJSON = {
         type: 'doc',
         content: [{ type: 'paragraph' }],
       };
-      expect(isProseMirrorDoc(validDoc)).toBe(true);
+      expect(isDoc(validDoc)).toBe(true);
 
       const emptyDoc: XmlFragmentJSON = { type: 'doc' };
-      expect(isProseMirrorDoc(emptyDoc)).toBe(true);
+      expect(isDoc(emptyDoc)).toBe(true);
 
       // Non-docs
-      expect(isProseMirrorDoc(null)).toBe(false);
-      expect(isProseMirrorDoc({})).toBe(false);
-      expect(isProseMirrorDoc({ type: 'paragraph' })).toBe(false);
-      expect(isProseMirrorDoc('string')).toBe(false);
-      expect(isProseMirrorDoc(123)).toBe(false);
+      expect(isDoc(null)).toBe(false);
+      expect(isDoc({})).toBe(false);
+      expect(isDoc({ type: 'paragraph' })).toBe(false);
+      expect(isDoc('string')).toBe(false);
+      expect(isDoc(123)).toBe(false);
     });
   });
 

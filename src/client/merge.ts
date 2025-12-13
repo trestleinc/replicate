@@ -111,7 +111,7 @@ import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
  * Check if a value looks like ProseMirror/BlockNote JSON document.
  * Used internally to auto-detect prose fields during insert/update.
  */
-export function isProseMirrorDoc(value: unknown): value is XmlFragmentJSON {
+export function isDoc(value: unknown): value is XmlFragmentJSON {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -212,7 +212,7 @@ export function fragmentFromJSON(fragment: Y.XmlFragment, json: XmlFragmentJSON)
  * Extract plain text from ProseMirror/BlockNote JSON content.
  * Handles various content structures defensively for search and display.
  */
-export function fragmentToText(content: unknown): string {
+export function extract(content: unknown): string {
   if (!content || typeof content !== 'object') return '';
 
   const doc = content as { content?: unknown; type?: string };

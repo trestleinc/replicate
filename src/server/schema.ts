@@ -13,10 +13,10 @@ export type ReplicationFields = {
  *
  * @example
  * ```typescript
- * import { prose, replicatedTable } from '@trestleinc/replicate/server';
+ * import { prose, table } from '@trestleinc/replicate/server';
  *
  * export default defineSchema({
- *   notebooks: replicatedTable({
+ *   notebooks: table({
  *     id: v.string(),
  *     title: v.string(),
  *     content: prose(),
@@ -37,17 +37,14 @@ export const prose = () =>
  * ```typescript
  * // convex/schema.ts
  * export default defineSchema({
- *   tasks: replicatedTable(
+ *   tasks: table(
  *     { id: v.string(), text: v.string(), isCompleted: v.boolean() },
  *     (t) => t.index('by_id', ['id'])
  *   ),
  * });
  * ```
  */
-export function replicatedTable(
-  userFields: Record<string, any>,
-  applyIndexes?: (table: any) => any
-): any {
+export function table(userFields: Record<string, any>, applyIndexes?: (table: any) => any): any {
   const table = defineTable({
     ...userFields,
     version: v.number(),
