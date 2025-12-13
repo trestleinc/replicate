@@ -15,27 +15,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Replicate** (`@trestleinc/replicate`) - Offline-first data replication using Yjs CRDTs and Convex for automatic conflict resolution and real-time synchronization.
 
 Single package with exports:
-- `@trestleinc/replicate/client` → Client utilities (browser/React/Svelte)
-- `@trestleinc/replicate/server` → Server helpers (Convex functions)
-- `@trestleinc/replicate/convex.config` → Component configuration
+- `@trestleinc/replicate/client` - Client utilities (browser/React/Svelte)
+- `@trestleinc/replicate/server` - Server helpers (Convex functions)
+- `@trestleinc/replicate/shared` - Shared types (ProseFields, XmlFragmentJSON, OperationType)
+- `@trestleinc/replicate/convex.config` - Component configuration
 
 ## Development Commands
 
-### Build & Type Check
 ```bash
-bun run build       # Build with Rslib (outputs to dist/)
-bun run clean       # Remove dist/
-```
+# Build
+bun run build        # Build with Rslib (outputs to dist/)
+bun run clean        # Remove dist/
 
-### Code Quality (Biome v2)
-```bash
-bun run check       # Lint + format check (dry run)
-bun run check:fix   # Auto-fix all issues (ALWAYS run before committing)
-```
+# Code Quality (Biome v2)
+bun run check        # Lint + format check (dry run)
+bun run check:fix    # Auto-fix all issues (ALWAYS run before committing)
 
-### Publishing
-```bash
-bun run prepublish  # Build + check:fix (runs before npm publish)
+# Testing
+bun test             # Run all tests with Vitest
+bun test <path>      # Run specific test file
+
+# Publishing
+bun run prepublish   # Build + check:fix (runs before npm publish)
 ```
 
 ## Architecture
@@ -43,29 +44,35 @@ bun run prepublish  # Build + check:fix (runs before npm publish)
 ### Package Structure
 ```
 src/
-├── client/              # Client-side (browser)
-│   ├── index.ts         # Public exports (slim API surface)
-│   ├── collection.ts    # TanStack DB + Yjs integration, utils.prose
-│   ├── replicate.ts     # Replicate helpers for TanStack DB
-│   ├── merge.ts         # Yjs CRDT merge operations, extract(), isDoc()
-│   ├── history.ts       # Undo/redo history management
-│   ├── logger.ts        # LogTape logger
-│   ├── errors.ts        # Effect TaggedErrors (NetworkError, ProseError, etc.)
-│   └── services/        # Core services (Effect-based)
-│       ├── checkpoint.ts     # Sync checkpoints
-│       ├── snapshot.ts       # Snapshot recovery
+├── client/                  # Client-side (browser)
+│   ├── index.ts             # Public exports
+│   ├── collection.ts        # TanStack DB + Yjs integration, utils.prose()
+│   ├── replicate.ts         # Replicate helpers for TanStack DB
+│   ├── merge.ts             # Yjs CRDT merge operations, extract()
+│   ├── errors.ts            # Effect TaggedErrors
+│   ├── logger.ts            # LogTape logger
+│   └── services/            # Core services (Effect-based)
+│       ├── checkpoint.ts    # Sync checkpoints in IndexedDB
+│       ├── snapshot.ts      # Snapshot recovery
 │       └── reconciliation.ts # Phantom document cleanup
-├── server/              # Server-side (Convex functions)
-│   ├── index.ts         # Public exports
-│   ├── builder.ts       # define() builder
-│   ├── schema.ts        # table(), prose() helpers
-│   └── storage.ts       # ReplicateStorage class
-├── component/           # Internal Convex component
-│   ├── convex.config.ts # Component config
-│   ├── schema.ts        # Event log schema
-│   ├── public.ts        # Component API
-│   └── logger.ts        # Component logging
-└── env.d.ts             # Environment type declarations
+├── server/                  # Server-side (Convex functions)
+│   ├── index.ts             # Public exports
+│   ├── builder.ts           # define() builder
+│   ├── schema.ts            # table(), prose() helpers
+│   └── storage.ts           # Replicate class (storage operations)
+├── component/               # Internal Convex component
+│   ├── convex.config.ts     # Component config
+│   ├── schema.ts            # Event log schema (documents, snapshots, versions)
+│   ├── public.ts            # Component API (stream, insertDocument, etc.)
+│   └── logger.ts            # Component logging
+├── shared/                  # Shared types (all environments)
+│   ├── index.ts             # Re-exports types.ts
+│   └── types.ts             # ProseFields, XmlFragmentJSON, OperationType
+├── test/                    # Test files
+│   ├── e2e/                 # End-to-end tests
+│   ├── integration/         # Integration tests
+│   └── unit/                # Unit tests
+└── env.d.ts                 # Environment type declarations
 ```
 
 ### Core Concepts
@@ -77,15 +84,78 @@ src/
 
 **Client Services (Effect-based):**
 - Services in `src/client/services/` use Effect for dependency injection
-- `Checkpoint` manages sync checkpoints in IndexedDB
-- `Snapshot` recovers from server snapshots
-- `Reconciliation` removes phantom documents
+- `Checkpoint` - manages sync checkpoints in IndexedDB
+- `Snapshot` - recovers from server snapshots
+- `Reconciliation` - removes phantom documents
 
 **Data Flow:**
 ```
-Client edit → merge.ts (encode delta) → collection.ts → Offline queue
-    → Convex mutation → Component (append delta) + Main table (upsert)
-    → Subscription → Other clients
+Client edit -> merge.ts (encode delta) -> collection.ts -> Offline queue
+    -> Convex mutation -> Component (append delta) + Main table (upsert)
+    -> Subscription -> Other clients
+```
+
+## Public API Surface
+
+### Client (`@trestleinc/replicate/client`)
+```typescript
+// Main entry point
+convexCollectionOptions()    // Create collection options for TanStack DB
+
+// Text extraction
+extract()                    // Extract plain text from ProseMirror JSON
+
+// Effect TaggedErrors
+NetworkError
+IDBError
+IDBWriteError
+ReconciliationError
+ProseError
+CollectionNotReadyError
+
+// Collection utils (accessed via collection.utils.*)
+collection.utils.prose(id, field)   // Returns EditorBinding for rich text
+```
+
+### Server (`@trestleinc/replicate/server`)
+```typescript
+define()    // Define replicate handlers (stream, insert, update, remove, compact, prune, snapshot.*)
+table()     // Define replicated table schema (injects version/timestamp fields)
+prose()     // Validator for ProseMirror-compatible JSON
+
+// Type export
+ReplicationFields   // Type for version + timestamp fields
+```
+
+### Shared (`@trestleinc/replicate/shared`)
+```typescript
+// Types (safe for any environment)
+ProseFields<T>      // Extract prose field names from document type
+XmlFragmentJSON     // ProseMirror-compatible JSON structure
+XmlNodeJSON         // ProseMirror node structure
+FragmentValue       // Marker for fragment fields
+OperationType       // Enum: Delta | Snapshot
+```
+
+### define() Return Value
+```typescript
+const {
+  stream,      // Real-time CRDT stream query
+  material,    // SSR-friendly query for hydration
+  insert,      // Dual-storage insert mutation
+  update,      // Dual-storage update mutation
+  remove,      // Dual-storage delete mutation
+  compact,     // Compaction mutation (internal, for cron jobs)
+  prune,       // Snapshot cleanup mutation (internal, for cron jobs)
+  snapshot: {
+    create,    // Create a version snapshot
+    list,      // List versions for a document
+    get,       // Get a specific version
+    restore,   // Restore a document to a version
+    remove,    // Delete a version
+    prune,     // Prune old versions
+  }
+} = define<T>({ component, collection, ... });
 ```
 
 ## Key Patterns
@@ -95,7 +165,7 @@ Client edit → merge.ts (encode delta) → collection.ts → Offline queue
 // convex/tasks.ts
 import { define } from '@trestleinc/replicate/server';
 
-export const { stream, material, insert, update, remove, compact, prune } =
+export const { stream, material, insert, update, remove, compact, prune, snapshot } =
   define<Task>({
     component: components.replicate,
     collection: 'tasks',
@@ -140,37 +210,6 @@ import { extract } from '@trestleinc/replicate/client';
 const plainText = extract(task.content);
 ```
 
-## Public API Surface
-
-The API follows TanStack DB patterns with single-word naming conventions.
-
-### Client (`@trestleinc/replicate/client`)
-```typescript
-// Main entry point
-convexCollectionOptions()
-
-// Text extraction
-extract()                    // Extract plain text from ProseMirror JSON
-
-// Effect TaggedErrors
-NetworkError
-IDBError
-IDBWriteError
-ReconciliationError
-ProseError                   // Thrown when prose field not found
-CollectionNotReadyError
-
-// Collection utils (accessed via collection.utils.*)
-collection.utils.prose(id, field)   // Returns EditorBinding
-```
-
-### Server (`@trestleinc/replicate/server`)
-```typescript
-define()    // Define replicate handlers (stream, insert, update, remove, etc.)
-table()     // Define replicated table schema (adds version/timestamp fields)
-prose()     // Validator for ProseMirror-compatible JSON
-```
-
 ## Technology Stack
 
 - **TypeScript** (strict mode)
@@ -185,12 +224,11 @@ prose()     // Validator for ProseMirror-compatible JSON
 
 ## Naming Conventions
 
-- **Public API**: Single-word function names (e.g., `define()`, `table()`, `extract()`)
-- **Service files**: lowercase, no suffix (e.g., `checkpoint.ts`, not `CheckpointService.ts`)
-- **Service exports**: PascalCase, no "Service" suffix (e.g., `Checkpoint`, `CheckpointLive`)
-- **Error classes**: Short names with "Error" suffix (e.g., `ProseError`, not `ProseFieldNotFoundError`)
+- **Public API**: Single-word function names (`define()`, `table()`, `extract()`)
+- **Service files**: lowercase, no suffix (`checkpoint.ts`, not `CheckpointService.ts`)
+- **Service exports**: PascalCase, no "Service" suffix (`Checkpoint`, `CheckpointLive`)
+- **Error classes**: Short names with "Error" suffix (`ProseError`, not `ProseFieldNotFoundError`)
 - **Use "replicate"**: not "sync" throughout the codebase
-- **Internal functions**: Keep verbose names internally (e.g., `isDoc()` used internally)
 
 ## Important Notes
 
@@ -199,3 +237,4 @@ prose()     // Validator for ProseMirror-compatible JSON
 - **Biome config** - `noExplicitAny` OFF, `noConsole` warns (except in test files and component logger)
 - **LogTape logging** - Use LogTape, not console.* (Biome warns on console)
 - **Import types** - Use `import type` for type-only imports (Biome enforces this)
+- **bun for commands** - Use `bun run` not `pnpm run` for all commands

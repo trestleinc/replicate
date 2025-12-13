@@ -1,10 +1,10 @@
 # AGENTS.md - Development Guide
 
 ## Commands
-- **Build:** `pnpm run build` (uses Rslib, outputs to `dist/`)
-- **Test:** `pnpm test` (Vitest). Run single: `pnpm test src/path/to/test.ts`
-- **Lint & Format:** `pnpm run check:fix` (Biome) - **ALWAYS RUN BEFORE COMMITTING**
-- **Typecheck:** `pnpm run typecheck`
+- **Build:** `bun run build` (uses Rslib, outputs to `dist/`)
+- **Test:** `bun test` (Vitest). Run single: `bun test src/path/to/test.ts`
+- **Lint & Format:** `bun run check:fix` (Biome) - **ALWAYS RUN BEFORE COMMITTING**
+- **Typecheck:** `bun run typecheck`
 
 ## Code Style & Conventions
 - **Formatting:** 2 spaces, single quotes, semicolons (enforced by Biome).
@@ -14,7 +14,22 @@
 - **Documentation:** ALWAYS use `Context7` tool for library docs (Convex, Yjs, TanStack).
 - **Deletion:** Hard deletes in main table; soft deletes (append-only) in component.
 
+## Public API
+
+### Server (`@trestleinc/replicate/server`)
+```typescript
+define()    // Define replicate handlers
+table()     // Define replicated table schema
+prose()     // Validator for prose fields
+```
+
+### Client (`@trestleinc/replicate/client`)
+```typescript
+convexCollectionOptions()   // Main entry point
+extract()                   // Extract text from prose JSON
+```
+
 ## Critical Rules (from CLAUDE.md)
 - NEVER use WebSearch for library documentation; use Context7.
-- Examples use `pnpm` and link to root via `file:../..`.
-- Use `replicatedTable` helper for schemas to inject version/timestamp.
+- Examples use `bun` and link to root via `file:../..`.
+- Use `table()` helper for schemas to inject version/timestamp.
