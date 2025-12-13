@@ -12,11 +12,26 @@ import schema from '$/component/schema.js';
 import { OperationType } from '$/shared/types.js';
 
 // Import modules for convex-test (component lives at src/component/)
-// Must include _generated directory for convex-test to work
-const modules = import.meta.glob('../../component/**/*.ts', { eager: true }) as Record<
-  string,
-  object
->;
+// Explicit imports instead of import.meta.glob (not available in Bun)
+import * as convexConfig from '$/component/convex.config.js';
+import * as componentSchema from '$/component/schema.js';
+import * as publicModule from '$/component/public.js';
+import * as logger from '$/component/logger.js';
+import * as dataModel from '$/component/_generated/dataModel.js';
+import * as server from '$/component/_generated/server.js';
+import * as component from '$/component/_generated/component.js';
+import * as api from '$/component/_generated/api.js';
+
+const modules: Record<string, object> = {
+  '../../component/convex.config.ts': convexConfig,
+  '../../component/schema.ts': componentSchema,
+  '../../component/public.ts': publicModule,
+  '../../component/logger.ts': logger,
+  '../../component/_generated/dataModel.ts': dataModel,
+  '../../component/_generated/server.ts': server,
+  '../../component/_generated/component.ts': component,
+  '../../component/_generated/api.ts': api,
+};
 
 // Helper to create a valid CRDT delta
 function createTestDelta(data: Record<string, unknown>): Uint8Array {

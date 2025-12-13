@@ -3,6 +3,7 @@
  *
  * Tests crash recovery, checkpoint gaps, and phantom document cleanup.
  */
+import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
