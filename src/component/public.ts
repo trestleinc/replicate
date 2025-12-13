@@ -350,7 +350,7 @@ async function _compactCollectionInternal(ctx: any, collection: string, retentio
   });
 
   for (const delta of sorted) {
-    await ctx.db.delete(delta._id);
+    await ctx.db.delete('documents', delta._id);
   }
 
   const result = {
@@ -410,7 +410,7 @@ export const pruneCollectionByName = mutation({
       const snapshot = snapshots[i];
 
       if (snapshot.createdAt < cutoffTime) {
-        await ctx.db.delete(snapshot._id);
+        await ctx.db.delete('snapshots', snapshot._id);
         deletedCount++;
         logger.debug('Deleted old snapshot', {
           collection: args.collection,
@@ -715,7 +715,7 @@ export const deleteVersion = mutation({
       throw new Error(`Version not found: ${args.versionId}`);
     }
 
-    await ctx.db.delete(version._id);
+    await ctx.db.delete('versions', version._id);
 
     logger.info('Version deleted', {
       versionId: args.versionId,
@@ -758,7 +758,7 @@ export const pruneVersions = mutation({
     for (let i = keepCount; i < versions.length; i++) {
       const version = versions[i];
       if (version.createdAt < cutoffTime) {
-        await ctx.db.delete(version._id);
+        await ctx.db.delete('versions', version._id);
         deletedCount++;
       }
     }

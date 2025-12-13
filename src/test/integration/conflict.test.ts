@@ -240,14 +240,14 @@ function getState(collection: { doc: Y.Doc }): Uint8Array {
 }
 
 // Rich text conflict resolution tests
-import {
-  fragmentFromJSON,
-  isFragment,
-  fragment,
-  serializeYMapValue,
-  type XmlFragmentJSON,
-} from '$/client/merge.js';
+import { fragmentFromJSON, isProseMirrorDoc, serializeYMapValue } from '$/client/merge.js';
+import type { XmlFragmentJSON } from '$/shared/types.js';
 import { createTestDoc, createTestMap } from '../utils/yjs.js';
+
+/** Helper to create a ProseMirror doc JSON structure */
+function proseMirrorDoc(content?: XmlFragmentJSON['content']): XmlFragmentJSON {
+  return { type: 'doc', content };
+}
 
 interface Note {
   id: string;
@@ -281,10 +281,10 @@ function createRichTextCollection<T extends { id: string }>(
       doc.transact(() => {
         const itemMap = new Y.Map();
         for (const [key, value] of Object.entries(item)) {
-          if (isFragment(value)) {
+          if (isProseMirrorDoc(value)) {
             const fragment = new Y.XmlFragment();
             if (value.content) {
-              fragmentFromJSON(fragment, value.content);
+              fragmentFromJSON(fragment, value);
             }
             itemMap.set(key, fragment);
           } else {
@@ -300,19 +300,19 @@ function createRichTextCollection<T extends { id: string }>(
         const itemMap = ymap.get(id);
         if (itemMap instanceof Y.Map) {
           for (const [key, value] of Object.entries(changes)) {
-            if (isFragment(value)) {
+            if (isProseMirrorDoc(value)) {
               const existingFragment = itemMap.get(key);
               if (existingFragment instanceof Y.XmlFragment) {
                 while (existingFragment.length > 0) {
                   existingFragment.delete(0);
                 }
                 if (value.content) {
-                  fragmentFromJSON(existingFragment, value.content);
+                  fragmentFromJSON(existingFragment, value);
                 }
               } else {
                 const fragment = new Y.XmlFragment();
                 if (value.content) {
-                  fragmentFromJSON(fragment, value.content);
+                  fragmentFromJSON(fragment, value);
                 }
                 itemMap.set(key, fragment);
               }
@@ -373,10 +373,9 @@ describe('rich text conflict resolution', () => {
     client1.insert({
       id: 'note-1',
       title: 'Test',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Hello world' }] },
+      ]),
     });
     syncRichTextCollections(client1, client2);
 
@@ -420,10 +419,9 @@ describe('rich text conflict resolution', () => {
     client1.insert({
       id: 'note-1',
       title: 'Original Title',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Content' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Content' }] },
+      ]),
     });
     syncRichTextCollections(client1, client2);
 
@@ -465,14 +463,10 @@ describe('rich text conflict resolution', () => {
 
     client1.insert({
       id: 'note-1',
-      body: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Body' }] }],
-      }) as unknown as XmlFragmentJSON,
-      summary: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Summary' }] }],
-      }) as unknown as XmlFragmentJSON,
+      body: proseMirrorDoc([{ type: 'paragraph', content: [{ type: 'text', text: 'Body' }] }]),
+      summary: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Summary' }] },
+      ]),
     });
     syncRichTextCollections(client1, client2);
 
@@ -516,10 +510,9 @@ describe('rich text conflict resolution', () => {
     client1.insert({
       id: 'note-1',
       title: 'To Delete',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Content' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Content' }] },
+      ]),
     });
     syncRichTextCollections(client1, client2);
 

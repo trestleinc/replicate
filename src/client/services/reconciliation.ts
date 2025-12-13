@@ -1,6 +1,6 @@
 import { Effect, Context, Layer } from 'effect';
 import * as Y from 'yjs';
-import { yjsTransact } from '$/client/merge.js';
+import { yjsTransact, serializeYMap } from '$/client/merge.js';
 import { ReconciliationError as ReconciliationErrorImport } from '$/client/errors.js';
 
 /**
@@ -64,11 +64,12 @@ export const ReconciliationLive = Layer.succeed(
         );
 
         // Extract items before deletion for TanStack DB sync
+        // Use serializeYMap for consistent ProseMirror JSON (not XML string from toJSON)
         const removedItems: T[] = [];
         for (const key of toDelete) {
           const itemYMap = ymap.get(key);
           if (itemYMap instanceof Y.Map) {
-            removedItems.push(itemYMap.toJSON() as T);
+            removedItems.push(serializeYMap(itemYMap) as T);
           }
         }
 

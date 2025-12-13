@@ -218,7 +218,7 @@ export class Replicate<T extends object> {
             };
           }
 
-          await ctx.db.patch(existing._id, {
+          await ctx.db.patch(collection, existing._id, {
             ...(args.materializedDoc as object),
             version: args.version,
             timestamp: Date.now(),
@@ -278,7 +278,7 @@ export class Replicate<T extends object> {
           .first();
 
         if (existing) {
-          await ctx.db.delete(existing._id);
+          await ctx.db.delete(collection, existing._id);
         }
 
         if (opts?.onRemove) {

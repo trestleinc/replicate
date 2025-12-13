@@ -71,13 +71,26 @@ export function transactWithDelta<A>(
 }
 
 /**
+ * Serialize a Y.Map to a plain object, handling Y.XmlFragment as ProseMirror JSON.
+ * This ensures consistent serialization across all code paths.
+ */
+export function serializeYMap(ymap: Y.Map<unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  ymap.forEach((value, key) => {
+    result[key] = serializeYMapValue(value);
+  });
+  return result;
+}
+
+/**
  * Extract all items from a Y.Map as plain objects.
+ * Uses serializeYMap to ensure Y.XmlFragment is converted to ProseMirror JSON (not XML string).
  */
 export function extractItems<T>(ymap: Y.Map<unknown>): T[] {
   const items: T[] = [];
   ymap.forEach((value) => {
     if (value instanceof Y.Map) {
-      items.push(value.toJSON() as T);
+      items.push(serializeYMap(value) as T);
     }
   });
   return items;
@@ -85,31 +98,26 @@ export function extractItems<T>(ymap: Y.Map<unknown>): T[] {
 
 /**
  * Extract a single item from a Y.Map by key.
+ * Uses serializeYMap to ensure Y.XmlFragment is converted to ProseMirror JSON (not XML string).
  */
 export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
   const value = ymap.get(key);
-  return value instanceof Y.Map ? (value.toJSON() as T) : null;
+  return value instanceof Y.Map ? (serializeYMap(value) as T) : null;
 }
 
-import type { FragmentValue, XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
+import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
 
 /**
- * Check if a value is a FragmentValue marker.
+ * Check if a value looks like ProseMirror/BlockNote JSON document.
+ * Used internally to auto-detect prose fields during insert/update.
  */
-export function isFragment(value: unknown): value is FragmentValue {
+export function isProseMirrorDoc(value: unknown): value is XmlFragmentJSON {
   return (
     typeof value === 'object' &&
     value !== null &&
-    '__xmlFragment' in value &&
-    (value as FragmentValue).__xmlFragment === true
+    'type' in value &&
+    (value as { type: unknown }).type === 'doc'
   );
-}
-
-/**
- * Create a FragmentValue marker for use in insert/update operations.
- */
-export function fragment(content?: XmlFragmentJSON): FragmentValue {
-  return { __xmlFragment: true, content };
 }
 
 /**
@@ -200,6 +208,26 @@ export function fragmentFromJSON(fragment: Y.XmlFragment, json: XmlFragmentJSON)
   }
 }
 
+/**
+ * Extract plain text from ProseMirror/BlockNote JSON content.
+ * Handles various content structures defensively for search and display.
+ */
+export function fragmentToText(content: unknown): string {
+  if (!content || typeof content !== 'object') return '';
+
+  const doc = content as { content?: unknown; type?: string };
+
+  // Handle XmlFragmentJSON format - content must be an array
+  if (!doc.content || !Array.isArray(doc.content)) return '';
+
+  return doc.content
+    .map((block: { content?: unknown }) => {
+      if (!block.content || !Array.isArray(block.content)) return '';
+      return block.content.map((node: { text?: string }) => node.text || '').join('');
+    })
+    .join(' ');
+}
+
 function appendNodeToFragment(parent: Y.XmlFragment | Y.XmlElement, node: XmlNodeJSON): void {
   if (node.type === 'text') {
     const text = new Y.XmlText();
@@ -246,60 +274,6 @@ export function serializeYMapValue(value: unknown): unknown {
     return value.toArray().map(serializeYMapValue);
   }
   return value;
-}
-
-function serializeYMap(ymap: Y.Map<unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  ymap.forEach((value, key) => {
-    result[key] = serializeYMapValue(value);
-  });
-  return result;
-}
-
-/**
- * Extract a single item from a Y.Map, returning both serialized data and fragment references.
- * Use this when you need access to live Y.XmlFragment instances for editor binding.
- */
-export function extractItemWithFragments<T>(
-  ymap: Y.Map<unknown>,
-  key: string
-): { data: T; fragments: Map<string, Y.XmlFragment> } | null {
-  const value = ymap.get(key);
-  if (!(value instanceof Y.Map)) {
-    return null;
-  }
-
-  const data: Record<string, unknown> = {};
-  const fragments = new Map<string, Y.XmlFragment>();
-
-  value.forEach((fieldValue, fieldKey) => {
-    if (fieldValue instanceof Y.XmlFragment) {
-      fragments.set(fieldKey, fieldValue);
-      data[fieldKey] = fragmentToJSON(fieldValue);
-    } else {
-      data[fieldKey] = serializeYMapValue(fieldValue);
-    }
-  });
-
-  return { data: data as T, fragments };
-}
-
-/**
- * Extract all items from a Y.Map, returning both serialized data and fragment references.
- */
-export function extractItemsWithFragments<T>(
-  ymap: Y.Map<unknown>
-): Array<{ data: T; fragments: Map<string, Y.XmlFragment> }> {
-  const results: Array<{ data: T; fragments: Map<string, Y.XmlFragment> }> = [];
-
-  ymap.forEach((_, key) => {
-    const result = extractItemWithFragments<T>(ymap, key);
-    if (result) {
-      results.push(result);
-    }
-  });
-
-  return results;
 }
 
 /**

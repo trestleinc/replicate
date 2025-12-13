@@ -2,12 +2,13 @@ export { setReplicate, getProtocolInfo, type SetOptions } from '$/client/set.js'
 
 export {
   convexCollectionOptions,
-  handleReconnect,
-  getYDoc,
+  getOrInitializeCollection,
   YjsOrigin,
   type ConvexCollection,
   type ConvexCollectionOptionsConfig,
+  type ConvexCollectionUtils,
   type Materialized,
+  type EditorBinding,
 } from '$/client/collection.js';
 
 export {
@@ -15,6 +16,8 @@ export {
   IDBError,
   IDBWriteError,
   ReconciliationError,
+  ProseFieldNotFoundError,
+  CollectionNotReadyError,
 } from '$/client/errors.js';
 
 // NOTE: Do NOT re-export Yjs here to avoid duplicate module issues with bundlers.
@@ -24,10 +27,6 @@ export { IndexeddbPersistence } from 'y-indexeddb';
 // NOTE: OperationType is now exported from top-level @trestleinc/replicate
 // Consumers should import it from there, not from /client
 
-export {
-  fragment,
-  extractItemWithFragments,
-  extractItemsWithFragments,
-} from '$/client/merge.js';
+export { fragmentToText } from '$/client/merge.js';
 
 export { NonRetriableError } from '@tanstack/offline-transactions';

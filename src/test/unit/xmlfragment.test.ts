@@ -11,11 +11,10 @@ import {
   transactWithDelta,
   fragmentToJSON,
   fragmentFromJSON,
-  extractItemWithFragments,
-  fragment,
-  isFragment,
-  type XmlFragmentJSON,
+  extractItem,
+  isProseMirrorDoc,
 } from '$/client/merge.js';
+import type { XmlFragmentJSON } from '$/shared/types.js';
 import { createTestDoc, syncDocs } from '../utils/yjs.js';
 
 describe('Y.XmlFragment support', () => {
@@ -78,28 +77,28 @@ describe('Y.XmlFragment support', () => {
     });
   });
 
-  describe('fragment marker', () => {
-    it('creates and detects markers correctly', () => {
-      const empty = fragment();
-      expect(isFragment(empty)).toBe(true);
-      expect(empty.content).toBeUndefined();
-
-      const withContent = fragment({
+  describe('isProseMirrorDoc detection', () => {
+    it('detects ProseMirror doc structure correctly', () => {
+      const validDoc: XmlFragmentJSON = {
         type: 'doc',
         content: [{ type: 'paragraph' }],
-      });
-      expect(isFragment(withContent)).toBe(true);
-      expect(withContent.content?.type).toBe('doc');
+      };
+      expect(isProseMirrorDoc(validDoc)).toBe(true);
 
-      // Non-markers
-      expect(isFragment(null)).toBe(false);
-      expect(isFragment({})).toBe(false);
-      expect(isFragment({ __xmlFragment: false })).toBe(false);
+      const emptyDoc: XmlFragmentJSON = { type: 'doc' };
+      expect(isProseMirrorDoc(emptyDoc)).toBe(true);
+
+      // Non-docs
+      expect(isProseMirrorDoc(null)).toBe(false);
+      expect(isProseMirrorDoc({})).toBe(false);
+      expect(isProseMirrorDoc({ type: 'paragraph' })).toBe(false);
+      expect(isProseMirrorDoc('string')).toBe(false);
+      expect(isProseMirrorDoc(123)).toBe(false);
     });
   });
 
-  describe('extractItemWithFragments', () => {
-    it('extracts mixed field types with fragment references', () => {
+  describe('extractItem with fragments', () => {
+    it('extracts mixed field types with serialized fragments', () => {
       const doc = createTestDoc(1);
       const ymap = doc.getMap<unknown>('test');
 
@@ -122,7 +121,7 @@ describe('Y.XmlFragment support', () => {
         ymap.set('doc-1', itemMap);
       });
 
-      const result = extractItemWithFragments<{
+      const result = extractItem<{
         id: string;
         title: string;
         count: number;
@@ -131,25 +130,40 @@ describe('Y.XmlFragment support', () => {
       }>(ymap, 'doc-1');
 
       // Primitives extracted correctly
-      expect(result?.data.id).toBe('doc-1');
-      expect(result?.data.title).toBe('Test Doc');
-      expect(result?.data.count).toBe(42);
-      expect(result?.data.tags).toEqual(['a', 'b']);
+      expect(result?.id).toBe('doc-1');
+      expect(result?.title).toBe('Test Doc');
+      expect(result?.count).toBe(42);
+      expect(result?.tags).toEqual(['a', 'b']);
 
       // XmlFragment serialized to JSON
-      expect(result?.data.content.type).toBe('doc');
-      expect(result?.data.content.content?.[0].content?.[0].text).toBe('Rich content');
-
-      // Fragment reference available for binding
-      expect(result?.fragments.size).toBe(1);
-      expect(result?.fragments.get('content')).toBeInstanceOf(Y.XmlFragment);
+      expect(result?.content.type).toBe('doc');
+      expect(result?.content.content?.[0].content?.[0].text).toBe('Rich content');
     });
 
     it('returns null for non-existent document', () => {
       const doc = createTestDoc(1);
       const ymap = doc.getMap<unknown>('test');
 
-      expect(extractItemWithFragments(ymap, 'non-existent')).toBeNull();
+      expect(extractItem(ymap, 'non-existent')).toBeNull();
+    });
+  });
+
+  describe('getFragmentFromYMap', () => {
+    it('gets live fragment reference for editor binding', () => {
+      const doc = createTestDoc(1);
+      const ymap = doc.getMap<unknown>('test');
+
+      doc.transact(() => {
+        const itemMap = new Y.Map();
+        itemMap.set('id', 'doc-1');
+        const fragment = new Y.XmlFragment();
+        itemMap.set('content', fragment);
+        ymap.set('doc-1', itemMap);
+      });
+
+      const itemMap = ymap.get('doc-1') as Y.Map<unknown>;
+      const fragment = itemMap.get('content');
+      expect(fragment).toBeInstanceOf(Y.XmlFragment);
     });
   });
 
@@ -189,11 +203,11 @@ describe('Y.XmlFragment support', () => {
 
       // Verify both docs have the same content
       const ymap2 = doc2.getMap<unknown>('test');
-      const result1 = extractItemWithFragments<{ content: XmlFragmentJSON }>(ymap1, 'doc-1');
-      const result2 = extractItemWithFragments<{ content: XmlFragmentJSON }>(ymap2, 'doc-1');
+      const result1 = extractItem<{ content: XmlFragmentJSON }>(ymap1, 'doc-1');
+      const result2 = extractItem<{ content: XmlFragmentJSON }>(ymap2, 'doc-1');
 
-      expect(result1?.data.content).toEqual(result2?.data.content);
-      expect(result2?.data.content.content?.[0].content?.[0].text).toBe('New content');
+      expect(result1?.content).toEqual(result2?.content);
+      expect(result2?.content.content?.[0].content?.[0].text).toBe('New content');
     });
 
     it('merges concurrent XmlFragment edits from multiple clients', () => {
@@ -240,14 +254,14 @@ describe('Y.XmlFragment support', () => {
       syncDocs(doc1, doc2);
 
       // Both edits should be preserved
-      const result1 = extractItemWithFragments<{ content: XmlFragmentJSON }>(ymap1, 'doc-1');
-      const result2 = extractItemWithFragments<{ content: XmlFragmentJSON }>(ymap2, 'doc-1');
+      const result1 = extractItem<{ content: XmlFragmentJSON }>(ymap1, 'doc-1');
+      const result2 = extractItem<{ content: XmlFragmentJSON }>(ymap2, 'doc-1');
 
       // Convergence: both docs have identical content
-      expect(result1?.data.content).toEqual(result2?.data.content);
+      expect(result1?.content).toEqual(result2?.content);
 
       // Both edits merged
-      const mergedText = result1?.data.content.content?.[0].content?.[0].text;
+      const mergedText = result1?.content.content?.[0].content?.[0].text;
       expect(mergedText).toBe('Start: Hello :End');
     });
   });

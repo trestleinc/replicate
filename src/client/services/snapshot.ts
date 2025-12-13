@@ -1,6 +1,6 @@
 import { Effect, Context, Layer, Data } from 'effect';
 import * as Y from 'yjs';
-import { yjsTransact, applyUpdate } from '$/client/merge.js';
+import { yjsTransact, applyUpdate, serializeYMap } from '$/client/merge.js';
 import { Checkpoint, type CheckpointData } from '$/client/services/checkpoint.js';
 import type { NetworkError } from '$/client/errors.js';
 
@@ -87,10 +87,11 @@ export const SnapshotLive = Layer.effect(
           yield* checkpointSvc.saveCheckpoint(collection, snapshot.checkpoint);
 
           // Extract all items from Yjs for TanStack DB sync
+          // Use serializeYMap for consistent ProseMirror JSON (not XML string from toJSON)
           const items: any[] = [];
           ymap.forEach((itemYMap) => {
             if (itemYMap instanceof Y.Map) {
-              items.push(itemYMap.toJSON());
+              items.push(serializeYMap(itemYMap));
             }
           });
 

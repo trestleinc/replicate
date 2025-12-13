@@ -9,9 +9,7 @@ export default defineConfig({
       id: 'shared',
       format: 'esm',
       syntax: 'es2022',
-      dts: {
-        bundle: false,
-      },
+      dts: true,
       output: {
         distPath: {
           root: './dist',
@@ -29,9 +27,7 @@ export default defineConfig({
       id: 'client',
       format: 'esm',
       syntax: 'es2022',
-      dts: {
-        bundle: false,
-      },
+      dts: true,
       shims: {
         esm: {
           __dirname: true,
@@ -63,9 +59,7 @@ export default defineConfig({
       id: 'server',
       format: 'esm',
       syntax: 'es2022',
-      dts: {
-        bundle: false,
-      },
+      dts: true,
       shims: {
         esm: {
           __dirname: true,
@@ -91,9 +85,7 @@ export default defineConfig({
       format: 'esm',
       bundle: false, // ← Only component uses bundleless mode
       outBase: './src', // ← Preserves component/ prefix in output
-      dts: {
-        bundle: false,
-      },
+      dts: true,
       output: {
         distPath: {
           root: './dist',

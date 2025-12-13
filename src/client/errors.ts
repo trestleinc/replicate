@@ -24,3 +24,14 @@ export class ReconciliationError extends Data.TaggedError('ReconciliationError')
   readonly reason: string;
   readonly cause?: unknown;
 }> {}
+
+export class ProseFieldNotFoundError extends Data.TaggedError('ProseFieldNotFoundError')<{
+  readonly documentId: string;
+  readonly field: string;
+  readonly collection: string;
+}> {}
+
+export class CollectionNotReadyError extends Data.TaggedError('CollectionNotReadyError')<{
+  readonly collection: string;
+  readonly reason: string;
+}> {}

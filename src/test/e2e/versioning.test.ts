@@ -386,7 +386,7 @@ describe('version history', () => {
         .first();
 
       if (version) {
-        await ctx.db.delete(version._id);
+        await ctx.db.delete('versions', version._id);
       }
     });
 
@@ -455,7 +455,7 @@ describe('version history', () => {
       for (let i = keepCount; i < versions.length; i++) {
         const version = versions[i];
         if (version.createdAt < cutoffTime) {
-          await ctx.db.delete(version._id);
+          await ctx.db.delete('versions', version._id);
         }
       }
     });

@@ -2,17 +2,12 @@
  * Integration tests for rich text fields with Y.XmlFragment
  *
  * Tests the full CRUD + sync cycle for documents with rich text fields.
- * Focuses on meaningful behaviors rather than redundant variations.
+ * Uses isProseMirrorDoc for auto-detection of prose fields.
  */
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import {
-  fragmentFromJSON,
-  isFragment,
-  fragment,
-  serializeYMapValue,
-  type XmlFragmentJSON,
-} from '$/client/merge.js';
+import { fragmentFromJSON, isProseMirrorDoc, serializeYMapValue } from '$/client/merge.js';
+import type { XmlFragmentJSON } from '$/shared/types.js';
 import { createTestDoc, createTestMap, applyUpdate } from '../utils/yjs.js';
 
 interface Note {
@@ -48,10 +43,10 @@ function createRichTextCollection<T extends { id: string }>(
       doc.transact(() => {
         const itemMap = new Y.Map();
         for (const [key, value] of Object.entries(item)) {
-          if (isFragment(value)) {
+          if (isProseMirrorDoc(value)) {
             const fragment = new Y.XmlFragment();
             if (value.content) {
-              fragmentFromJSON(fragment, value.content);
+              fragmentFromJSON(fragment, value);
             }
             itemMap.set(key, fragment);
           } else {
@@ -69,19 +64,19 @@ function createRichTextCollection<T extends { id: string }>(
         const itemMap = ymap.get(id);
         if (itemMap instanceof Y.Map) {
           for (const [key, value] of Object.entries(changes)) {
-            if (isFragment(value)) {
+            if (isProseMirrorDoc(value)) {
               const existingFragment = itemMap.get(key);
               if (existingFragment instanceof Y.XmlFragment) {
                 while (existingFragment.length > 0) {
                   existingFragment.delete(0);
                 }
                 if (value.content) {
-                  fragmentFromJSON(existingFragment, value.content);
+                  fragmentFromJSON(existingFragment, value);
                 }
               } else {
                 const fragment = new Y.XmlFragment();
                 if (value.content) {
-                  fragmentFromJSON(fragment, value.content);
+                  fragmentFromJSON(fragment, value);
                 }
                 itemMap.set(key, fragment);
               }
@@ -116,6 +111,11 @@ function createRichTextCollection<T extends { id: string }>(
   };
 }
 
+/** Helper to create a ProseMirror doc JSON structure */
+function proseMirrorDoc(content?: XmlFragmentJSON['content']): XmlFragmentJSON {
+  return { type: 'doc', content };
+}
+
 describe('rich text fields', () => {
   it('inserts document with rich text content and internal XmlFragment structure', () => {
     const collection = createRichTextCollection<Note>('notes');
@@ -123,18 +123,15 @@ describe('rich text fields', () => {
     collection.insert({
       id: 'note-1',
       title: 'Test Note',
-      content: fragment({
-        type: 'doc',
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              { type: 'text', text: 'Bold', marks: [{ type: 'bold' }] },
-              { type: 'text', text: ' and normal' },
-            ],
-          },
-        ],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Bold', marks: [{ type: 'bold' }] },
+            { type: 'text', text: ' and normal' },
+          ],
+        },
+      ]),
     });
 
     const note = collection.get('note-1');
@@ -154,18 +151,16 @@ describe('rich text fields', () => {
     collection.insert({
       id: 'note-1',
       title: 'Original',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original content' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Original content' }] },
+      ]),
     });
 
     collection.update('note-1', {
       title: 'Updated Title',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New content' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'New content' }] },
+      ]),
     });
 
     const note = collection.get('note-1');
@@ -179,7 +174,7 @@ describe('rich text fields', () => {
     collection.insert({
       id: 'note-1',
       title: 'Test',
-      content: fragment() as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc(),
     });
 
     const frag = collection.getFragment('note-1', 'content');
@@ -213,14 +208,12 @@ describe('rich text fields', () => {
     collection.insert({
       id: 'note-1',
       title: 'Multi-Fragment',
-      body: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Body content' }] }],
-      }) as unknown as XmlFragmentJSON,
-      summary: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Summary' }] }],
-      }) as unknown as XmlFragmentJSON,
+      body: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Body content' }] },
+      ]),
+      summary: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Summary' }] },
+      ]),
     });
 
     const note = collection.get('note-1');
@@ -229,10 +222,9 @@ describe('rich text fields', () => {
 
     // Update only body
     collection.update('note-1', {
-      body: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated body' }] }],
-      }) as unknown as XmlFragmentJSON,
+      body: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Updated body' }] },
+      ]),
     });
 
     const updated = collection.get('note-1');
@@ -246,10 +238,9 @@ describe('rich text fields', () => {
     collection.insert({
       id: 'note-1',
       title: 'To Delete',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Content' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Content' }] },
+      ]),
     });
 
     expect(collection.get('note-1')).not.toBeNull();
@@ -265,10 +256,9 @@ describe('rich text fields', () => {
     const { delta: insertDelta } = collection1.insert({
       id: 'note-1',
       title: 'Synced',
-      content: fragment({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Sync me!' }] }],
-      }) as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc([
+        { type: 'paragraph', content: [{ type: 'text', text: 'Sync me!' }] },
+      ]),
     });
 
     applyUpdate(collection2.doc, insertDelta);
@@ -287,7 +277,7 @@ describe('rich text fields', () => {
     const { delta: insertDelta } = collection1.insert({
       id: 'note-1',
       title: 'Note',
-      content: fragment() as unknown as XmlFragmentJSON,
+      content: proseMirrorDoc(),
     });
     applyUpdate(collection2.doc, insertDelta);
 

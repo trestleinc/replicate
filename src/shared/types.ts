@@ -31,3 +31,22 @@ export enum OperationType {
   Delta = 'delta',
   Snapshot = 'snapshot',
 }
+
+/**
+ * Extract field names from T where the value type is XmlFragmentJSON.
+ * Used for type-safe prose field configuration.
+ *
+ * @example
+ * ```typescript
+ * interface Notebook {
+ *   id: string;
+ *   title: string;
+ *   content: XmlFragmentJSON;
+ * }
+ *
+ * type Fields = ProseFields<Notebook>; // 'content'
+ * ```
+ */
+export type ProseFields<T> = {
+  [K in keyof T]: T[K] extends XmlFragmentJSON ? K : never;
+}[keyof T];
