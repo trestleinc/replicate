@@ -4,23 +4,26 @@
  * Provides document creation, state encoding, and merge operations.
  */
 
-import { get as idbGet, set as idbSet } from 'idb-keyval';
 import * as Y from 'yjs';
 import { getLogger } from '$/client/logger.js';
+import type { KeyValueStore } from '$/client/persistence/types.js';
 
 const logger = getLogger(['replicate', 'merge']);
 
 /**
- * Create a Yjs document with a persistent clientId stored in IndexedDB.
+ * Create a Yjs document with a persistent clientId.
  * The clientId ensures consistent identity across sessions for CRDT merging.
+ *
+ * @param collection - The collection name
+ * @param kv - Key-value store for persisting the clientId
  */
-export async function createYjsDocument(collection: string): Promise<Y.Doc> {
+export async function createYjsDocument(collection: string, kv: KeyValueStore): Promise<Y.Doc> {
   const clientIdKey = `yjsClientId:${collection}`;
-  let clientId = await idbGet<number>(clientIdKey);
+  let clientId = await kv.get<number>(clientIdKey);
 
   if (!clientId) {
     clientId = Math.floor(Math.random() * 2147483647);
-    await idbSet(clientIdKey, clientId);
+    await kv.set(clientIdKey, clientId);
     logger.info('Generated new Yjs clientID', { collection, clientId });
   }
 

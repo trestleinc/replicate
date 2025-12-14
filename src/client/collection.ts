@@ -1,7 +1,6 @@
 import * as Y from 'yjs';
-import { IndexeddbPersistence } from 'y-indexeddb';
-import { set as idbSet } from 'idb-keyval';
 import { createMutex } from 'lib0/mutex';
+import type { Persistence, PersistenceProvider } from '$/client/persistence/types.js';
 import {
   startOfflineExecutor,
   NonRetriableError,
@@ -13,7 +12,7 @@ import type { CollectionConfig, Collection } from '@tanstack/db';
 import { Effect, Layer } from 'effect';
 import { getLogger } from '$/client/logger.js';
 import { ProseError } from '$/client/errors.js';
-import { Checkpoint, CheckpointLive } from '$/client/services/checkpoint.js';
+import { Checkpoint, createCheckpointLayer } from '$/client/services/checkpoint.js';
 import { Reconciliation, ReconciliationLive } from '$/client/services/reconciliation.js';
 import { SnapshotLive } from '$/client/services/snapshot.js';
 import {
@@ -85,12 +84,6 @@ function handleMutationError(
   throw error;
 }
 
-const servicesLayer = Layer.mergeAll(
-  CheckpointLive,
-  ReconciliationLive,
-  Layer.provide(SnapshotLive, CheckpointLive)
-);
-
 const cleanupFunctions = new Map<string, () => void>();
 
 // Track which document's fragment is currently being edited, per collection
@@ -137,6 +130,8 @@ export interface ConvexCollectionOptionsConfig<T extends object> {
   prose: Array<ProseFields<T>>;
   /** Undo capture timeout in ms. Changes within this window merge into one undo. Default: 500 */
   undoCaptureTimeout?: number;
+  /** Persistence provider for Y.Doc and key-value storage */
+  persistence: Persistence;
 }
 
 /** Editor binding for BlockNote/TipTap collaboration */
@@ -219,6 +214,9 @@ const failedSyncQueue = new Map<string, boolean>();
 
 // Debounce config per collection
 const debounceConfig = new Map<string, number>();
+
+// Sync functions per collection - set by initializeCollectionWithOffline
+const collectionSyncFns = new Map<string, (documentId: string, delta?: Uint8Array) => any>();
 
 // ============================================================================
 // Pending State Management
@@ -381,17 +379,202 @@ export function convexCollectionOptions<T extends object>({
   collection,
   prose: proseFields,
   undoCaptureTimeout = 500,
+  persistence,
 }: ConvexCollectionOptionsConfig<T>): CollectionConfig<T> & {
   _convexClient: ConvexClient;
   _collection: string;
   _proseFields: Array<ProseFields<T>>;
+  _persistence: Persistence;
+  utils: ConvexCollectionUtils<T>;
 } {
   // Create a Set for O(1) lookup of prose fields
   const proseFieldSet = new Set<string>(proseFields as string[]);
 
+  // Create utils object - prose() waits for Y.Doc to be ready via collectionDocs
+  const utils: ConvexCollectionUtils<T> = {
+    async prose(documentId: string, field: ProseFields<T>): Promise<EditorBinding> {
+      const fieldStr = field as string;
+
+      // Validate field is in prose config
+      if (!proseFieldSet.has(fieldStr)) {
+        throw new ProseError({
+          documentId,
+          field: fieldStr,
+          collection,
+        });
+      }
+
+      // Wait for collection to be ready (Y.Doc initialized from persistence)
+      let docs = collectionDocs.get(collection);
+
+      if (!docs) {
+        // Poll until ready - Y.Doc initialization is async
+        await new Promise<void>((resolve, reject) => {
+          const maxWait = 10000; // 10 second timeout
+          const startTime = Date.now();
+          const check = setInterval(() => {
+            if (collectionDocs.has(collection)) {
+              clearInterval(check);
+              resolve();
+            } else if (Date.now() - startTime > maxWait) {
+              clearInterval(check);
+              reject(
+                new ProseError({
+                  documentId,
+                  field: fieldStr,
+                  collection,
+                })
+              );
+            }
+          }, 10);
+        });
+        docs = collectionDocs.get(collection);
+      }
+
+      if (!docs) {
+        throw new ProseError({
+          documentId,
+          field: fieldStr,
+          collection,
+        });
+      }
+
+      const fragment = getFragmentFromYMap(docs.ymap, documentId, fieldStr);
+      if (!fragment) {
+        throw new ProseError({
+          documentId,
+          field: fieldStr,
+          collection,
+        });
+      }
+
+      // Setup fragment observer with debounced sync
+      const handlerKey = `${collection}:${documentId}`;
+      if (!fragmentSyncHandlers.has(handlerKey)) {
+        const mux = getOrCreateMutex(collection);
+
+        const observerHandler = (_events: Y.YEvent<any>[], transaction: Y.Transaction) => {
+          // Skip server-originated changes
+          if (
+            transaction.origin === YjsOrigin.Subscription ||
+            transaction.origin === YjsOrigin.Snapshot ||
+            transaction.origin === YjsOrigin.SSRInit
+          ) {
+            return;
+          }
+
+          // Schedule debounced sync within mutex
+          mux(() => {
+            const key = `${collection}:${documentId}`;
+
+            // Clear existing timer
+            const existing = debounceTimers.get(key);
+            if (existing) clearTimeout(existing);
+
+            // Mark as pending
+            setPending(collection, documentId, true);
+
+            // Get debounce time
+            const debounceMs = debounceConfig.get(collection) ?? DEFAULT_DEBOUNCE_MS;
+
+            // Schedule sync - uses collectionSyncFns set during initializeCollectionWithOffline
+            const timer = setTimeout(async () => {
+              debounceTimers.delete(key);
+
+              const syncFn = collectionSyncFns.get(collection);
+              if (!syncFn) {
+                logger.error('No sync function for collection', { collection });
+                return;
+              }
+
+              try {
+                const result = syncFn(documentId);
+                await result.isPersisted.promise;
+
+                // Success - clear pending and any failed queue entry
+                failedSyncQueue.delete(key);
+                setPending(collection, documentId, false);
+                logger.debug('Debounced sync completed', { collection, documentId });
+              } catch (err) {
+                logger.error('Sync failed, queued for retry', {
+                  collection,
+                  documentId,
+                  error: String(err),
+                });
+                // Queue for retry on next change - keep pending true
+                failedSyncQueue.set(key, true);
+              }
+            }, debounceMs);
+
+            debounceTimers.set(key, timer);
+
+            // Also retry any failed syncs for this document
+            if (failedSyncQueue.has(key)) {
+              failedSyncQueue.delete(key);
+              logger.debug('Retrying failed sync', { collection, documentId });
+            }
+          });
+        };
+
+        fragment.observeDeep(observerHandler);
+        fragmentSyncHandlers.set(handlerKey, () => fragment.unobserveDeep(observerHandler));
+        logger.debug('Fragment observer registered', { collection, documentId, field: fieldStr });
+      }
+
+      // Track active document
+      activeFragmentDoc.set(collection, documentId);
+
+      // Create fragment-scoped undo manager
+      const undoManager = getOrCreateFragmentUndoManager(
+        collection,
+        documentId,
+        fieldStr,
+        fragment
+      );
+
+      // Return EditorBinding with reactive pending state
+      return {
+        fragment,
+        provider: { awareness: null },
+
+        get pending() {
+          return getPending(collection, documentId);
+        },
+
+        onPendingChange(callback: (pending: boolean) => void) {
+          return subscribePending(collection, documentId, callback);
+        },
+
+        undo() {
+          undoManager.undo();
+        },
+
+        redo() {
+          undoManager.redo();
+        },
+
+        canUndo() {
+          return undoManager.canUndo();
+        },
+
+        canRedo() {
+          return undoManager.canRedo();
+        },
+      } satisfies EditorBinding;
+    },
+  };
+
   let ydoc: Y.Doc = null as any;
   let ymap: Y.Map<unknown> = null as any;
-  let persistence: IndexeddbPersistence = null as any;
+  let docPersistence: PersistenceProvider = null as any;
+
+  // Create services layer with the persistence KV store
+  const checkpointLayer = createCheckpointLayer(persistence.kv);
+  const servicesLayer = Layer.mergeAll(
+    checkpointLayer,
+    ReconciliationLive,
+    Layer.provide(SnapshotLive, checkpointLayer)
+  );
 
   let resolvePersistenceReady: (() => void) | undefined;
   const persistenceReadyPromise = new Promise<void>((resolve) => {
@@ -539,6 +722,8 @@ export function convexCollectionOptions<T extends object>({
     _convexClient: convexClient,
     _collection: collection,
     _proseFields: proseFields,
+    _persistence: persistence,
+    utils,
 
     onInsert: async ({ transaction }: CollectionTransaction<T>) => {
       try {
@@ -643,7 +828,7 @@ export function convexCollectionOptions<T extends object>({
 
         (async () => {
           try {
-            ydoc = await createYjsDocument(collection);
+            ydoc = await createYjsDocument(collection, persistence.kv);
             ymap = getYMap<unknown>(ydoc, collection);
 
             collectionDocs.set(collection, { ydoc, ymap });
@@ -655,9 +840,9 @@ export function convexCollectionOptions<T extends object>({
               trackedOrigins,
             });
 
-            persistence = new IndexeddbPersistence(collection, ydoc);
-            persistence.on('synced', () => {
-              logger.debug('IndexedDB persistence synced', { collection });
+            docPersistence = persistence.createDocPersistence(collection, ydoc);
+            docPersistence.whenSynced.then(() => {
+              logger.debug('Persistence synced', { collection });
               resolvePersistenceReady?.();
             });
             await persistenceReadyPromise;
@@ -710,7 +895,7 @@ export function convexCollectionOptions<T extends object>({
                 Effect.gen(function* () {
                   const checkpointSvc = yield* Checkpoint;
                   return yield* checkpointSvc.loadCheckpoint(collection);
-                }).pipe(Effect.provide(CheckpointLive))
+                }).pipe(Effect.provide(checkpointLayer))
               ));
 
             logger.info('Checkpoint loaded', {
@@ -822,11 +1007,11 @@ export function convexCollectionOptions<T extends object>({
                   }
                 }
 
-                // Save checkpoint using direct IndexedDB call
+                // Save checkpoint using persistence KV store
                 if (newCheckpoint) {
                   try {
                     const key = `checkpoint:${collection}`;
-                    await idbSet(key, newCheckpoint);
+                    await persistence.kv.set(key, newCheckpoint);
                     logger.debug('Checkpoint saved', { collection, checkpoint: newCheckpoint });
                   } catch (checkpointError) {
                     logger.error('Failed to save checkpoint', {
@@ -932,7 +1117,7 @@ export function convexCollectionOptions<T extends object>({
             collectionUndoConfig.delete(collection);
             collectionDocs.delete(collection);
             activeFragmentDoc.delete(collection);
-            persistence?.destroy();
+            docPersistence?.destroy();
             ydoc?.destroy();
             cleanupFunctions.delete(collection);
           },
@@ -954,10 +1139,8 @@ export function convexCollectionOptions<T extends object>({
 function initializeCollectionWithOffline<T extends object>(
   collection: Collection<T>,
   collectionName: string,
-  proseFields: Array<ProseFields<T>>
+  _proseFields: Array<ProseFields<T>>
 ): ConvexCollection<T> {
-  const proseFieldSet = new Set<string>(proseFields as string[]);
-
   const _offline: OfflineExecutor = startOfflineExecutor({
     collections: { [collectionName]: collection as any },
     mutationFns: {},
@@ -1000,7 +1183,7 @@ function initializeCollectionWithOffline<T extends object>(
     });
   }
 
-  // Internal syncContent function (not exposed on interface)
+  // Internal syncContent function - registered globally for utils.prose() to access
   const syncContent = (documentId: string, delta?: Uint8Array) => {
     const docs = collectionDocs.get(collectionName);
     if (!docs) {
@@ -1027,187 +1210,11 @@ function initializeCollectionWithOffline<T extends object>(
     );
   };
 
-  // Create utils object with prose() method
-  const utils: ConvexCollectionUtils<T> = {
-    async prose(documentId: string, field: ProseFields<T>): Promise<EditorBinding> {
-      const fieldStr = field as string;
+  // Register sync function for utils.prose() to access
+  collectionSyncFns.set(collectionName, syncContent);
 
-      // Validate field is in prose config
-      if (!proseFieldSet.has(fieldStr)) {
-        throw new ProseError({
-          documentId,
-          field: fieldStr,
-          collection: collectionName,
-        });
-      }
-
-      // Wait for collection to be ready (Y.Doc initialized from IndexedDB)
-      let docs = collectionDocs.get(collectionName);
-
-      if (!docs) {
-        // Poll until ready - Y.Doc initialization is async
-        await new Promise<void>((resolve, reject) => {
-          const maxWait = 10000; // 10 second timeout
-          const startTime = Date.now();
-          const check = setInterval(() => {
-            if (collectionDocs.has(collectionName)) {
-              clearInterval(check);
-              resolve();
-            } else if (Date.now() - startTime > maxWait) {
-              clearInterval(check);
-              reject(
-                new ProseError({
-                  documentId,
-                  field: fieldStr,
-                  collection: collectionName,
-                })
-              );
-            }
-          }, 10);
-        });
-        docs = collectionDocs.get(collectionName);
-      }
-
-      if (!docs) {
-        throw new ProseError({
-          documentId,
-          field: fieldStr,
-          collection: collectionName,
-        });
-      }
-
-      const fragment = getFragmentFromYMap(docs.ymap, documentId, fieldStr);
-      if (!fragment) {
-        throw new ProseError({
-          documentId,
-          field: fieldStr,
-          collection: collectionName,
-        });
-      }
-
-      // Setup fragment observer with debounced sync
-      const handlerKey = `${collectionName}:${documentId}`;
-      if (!fragmentSyncHandlers.has(handlerKey)) {
-        // Create a wrapper that has access to syncContent
-        const mux = getOrCreateMutex(collectionName);
-
-        const observerHandler = (_events: Y.YEvent<any>[], transaction: Y.Transaction) => {
-          // Skip server-originated changes
-          if (
-            transaction.origin === YjsOrigin.Subscription ||
-            transaction.origin === YjsOrigin.Snapshot ||
-            transaction.origin === YjsOrigin.SSRInit
-          ) {
-            return;
-          }
-
-          // Schedule debounced sync within mutex
-          mux(() => {
-            const key = `${collectionName}:${documentId}`;
-
-            // Clear existing timer
-            const existing = debounceTimers.get(key);
-            if (existing) clearTimeout(existing);
-
-            // Mark as pending
-            setPending(collectionName, documentId, true);
-
-            // Get debounce time
-            const debounceMs = debounceConfig.get(collectionName) ?? DEFAULT_DEBOUNCE_MS;
-
-            // Schedule sync
-            const timer = setTimeout(async () => {
-              debounceTimers.delete(key);
-
-              try {
-                const result = syncContent(documentId);
-                await result.isPersisted.promise;
-
-                // Success - clear pending and any failed queue entry
-                failedSyncQueue.delete(key);
-                setPending(collectionName, documentId, false);
-                logger.debug('Debounced sync completed', {
-                  collection: collectionName,
-                  documentId,
-                });
-              } catch (err) {
-                logger.error('Sync failed, queued for retry', {
-                  collection: collectionName,
-                  documentId,
-                  error: String(err),
-                });
-                // Queue for retry on next change - keep pending true
-                failedSyncQueue.set(key, true);
-              }
-            }, debounceMs);
-
-            debounceTimers.set(key, timer);
-
-            // Also retry any failed syncs for this document
-            if (failedSyncQueue.has(key)) {
-              failedSyncQueue.delete(key);
-              logger.debug('Retrying failed sync', { collection: collectionName, documentId });
-            }
-          });
-        };
-
-        fragment.observeDeep(observerHandler);
-        fragmentSyncHandlers.set(handlerKey, () => fragment.unobserveDeep(observerHandler));
-        logger.debug('Fragment observer registered', {
-          collection: collectionName,
-          documentId,
-          field: fieldStr,
-        });
-      }
-
-      // Track active document
-      activeFragmentDoc.set(collectionName, documentId);
-
-      // Create fragment-scoped undo manager
-      const undoManager = getOrCreateFragmentUndoManager(
-        collectionName,
-        documentId,
-        fieldStr,
-        fragment
-      );
-
-      // Return EditorBinding with reactive pending state
-      return {
-        fragment,
-        provider: { awareness: null },
-
-        get pending() {
-          return getPending(collectionName, documentId);
-        },
-
-        onPendingChange(callback: (pending: boolean) => void) {
-          return subscribePending(collectionName, documentId, callback);
-        },
-
-        undo() {
-          undoManager.undo();
-        },
-
-        redo() {
-          undoManager.redo();
-        },
-
-        canUndo() {
-          return undoManager.canUndo();
-        },
-
-        canRedo() {
-          return undoManager.canRedo();
-        },
-      } satisfies EditorBinding;
-    },
-  };
-
-  // Extend collection with utils
-  const collectionWithUtils = collection as ConvexCollection<T>;
-  (collectionWithUtils as any).utils = utils;
-
-  return collectionWithUtils;
+  // Collection already has utils from convexCollectionOptions - just cast and return
+  return collection as ConvexCollection<T>;
 }
 
 // Store initialized collections to avoid double initialization
@@ -1226,11 +1233,12 @@ export function getOrInitializeCollection<T extends object>(
   const collectionName = config._collection as string;
   const convexClient = config._convexClient as ConvexClient;
   const proseFields = config._proseFields as Array<ProseFields<T>>;
+  const persistenceConfig = config._persistence as Persistence;
 
-  if (!convexClient || !collectionName) {
+  if (!convexClient || !collectionName || !persistenceConfig) {
     throw new Error(
       'Collection must be created with convexCollectionOptions. ' +
-        'Make sure you pass convexClient and collection to convexCollectionOptions.'
+        'Make sure you pass convexClient, collection, and persistence to convexCollectionOptions.'
     );
   }
 

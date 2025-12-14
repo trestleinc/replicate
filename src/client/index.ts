@@ -1,4 +1,9 @@
-export { convexCollectionOptions } from '$/client/collection.js';
+export {
+  convexCollectionOptions,
+  getOrInitializeCollection,
+  type ConvexCollection,
+  type EditorBinding,
+} from '$/client/collection.js';
 
 export {
   NetworkError,
@@ -10,3 +15,13 @@ export {
 } from '$/client/errors.js';
 
 export { extract } from '$/client/merge.js';
+
+// Persistence exports
+export {
+  indexeddbPersistence,
+  memoryPersistence,
+  sqlitePersistence,
+  type Persistence,
+  type PersistenceProvider,
+  type KeyValueStore,
+} from '$/client/persistence/index.js';
