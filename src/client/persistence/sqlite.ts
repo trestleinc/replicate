@@ -7,30 +7,32 @@
  * @requires @op-engineering/op-sqlite - SQLite for React Native
  */
 import type * as Y from 'yjs';
+import { open, type QueryResult } from '@op-engineering/op-sqlite';
+import { OPSQLitePersistence } from 'y-op-sqlite';
 import type { Persistence, PersistenceProvider, KeyValueStore } from './types.js';
 
-// Lazy imports to avoid bundling React Native deps in browser builds
-let OPSQLitePersistence: any;
-let open: any;
+// Infer database type from the library
+type OPSQLiteDB = ReturnType<typeof open>;
 
 /**
  * SQLite-backed key-value store using op-sqlite.
  */
 class SQLiteKeyValueStore implements KeyValueStore {
-  private db: any;
+  private db: OPSQLiteDB;
   private initialized: Promise<void>;
 
   constructor(dbName: string) {
-    this.initialized = this.init(dbName);
+    // Validate database name (security: prevent path traversal)
+    if (!/^[\w-]+$/.test(dbName)) {
+      throw new Error('Invalid database name: must be alphanumeric with hyphens/underscores');
+    }
+
+    this.db = open({ name: `${dbName}.db` });
+    this.initialized = this.init();
   }
 
-  private async init(dbName: string): Promise<void> {
-    if (!open) {
-      const opSqlite = await import('@op-engineering/op-sqlite');
-      open = opSqlite.open;
-    }
-    this.db = open({ name: `${dbName}.db` });
-    this.db.execute(`
+  private async init(): Promise<void> {
+    await this.db.execute(`
       CREATE TABLE IF NOT EXISTS kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -40,16 +42,23 @@ class SQLiteKeyValueStore implements KeyValueStore {
 
   async get<T>(key: string): Promise<T | undefined> {
     await this.initialized;
-    const result = this.db.execute('SELECT value FROM kv WHERE key = ?', [key]);
+    const result: QueryResult = await this.db.execute('SELECT value FROM kv WHERE key = ?', [key]);
+
     if (result.rows.length === 0) {
       return undefined;
     }
-    return JSON.parse(result.rows[0].value) as T;
+    // Access the 'value' column from the row record
+    const row = result.rows[0];
+    const value = row.value;
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    return JSON.parse(value) as T;
   }
 
   async set<T>(key: string, value: T): Promise<void> {
     await this.initialized;
-    this.db.execute('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', [
+    await this.db.execute('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', [
       key,
       JSON.stringify(value),
     ]);
@@ -57,11 +66,11 @@ class SQLiteKeyValueStore implements KeyValueStore {
 
   async del(key: string): Promise<void> {
     await this.initialized;
-    this.db.execute('DELETE FROM kv WHERE key = ?', [key]);
+    await this.db.execute('DELETE FROM kv WHERE key = ?', [key]);
   }
 
   close(): void {
-    this.db?.close();
+    this.db.close();
   }
 }
 
@@ -69,13 +78,13 @@ class SQLiteKeyValueStore implements KeyValueStore {
  * SQLite persistence provider wrapping y-op-sqlite.
  */
 class SQLitePersistenceProvider implements PersistenceProvider {
-  private persistence: any;
+  private persistence: OPSQLitePersistence;
   readonly whenSynced: Promise<void>;
 
   constructor(collection: string, ydoc: Y.Doc) {
-    // y-op-sqlite already exposes whenSynced as a Promise
     this.persistence = new OPSQLitePersistence(collection, ydoc);
-    this.whenSynced = this.persistence.whenSynced;
+    // OPSQLitePersistence.whenSynced returns Promise<this>, map to Promise<void>
+    this.whenSynced = this.persistence.whenSynced.then(() => undefined);
   }
 
   destroy(): void {
@@ -101,13 +110,7 @@ class SQLitePersistenceProvider implements PersistenceProvider {
  * });
  * ```
  */
-export async function sqlitePersistence(dbName = 'replicate-kv'): Promise<Persistence> {
-  // Lazy load y-op-sqlite to avoid bundling in browser
-  if (!OPSQLitePersistence) {
-    const yOpSqlite = await import('y-op-sqlite');
-    OPSQLitePersistence = yOpSqlite.OPSQLitePersistence;
-  }
-
+export function sqlitePersistence(dbName = 'replicate-kv'): Persistence {
   const kv = new SQLiteKeyValueStore(dbName);
   return {
     createDocPersistence: (collection: string, ydoc: Y.Doc) =>
