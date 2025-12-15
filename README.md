@@ -380,8 +380,9 @@ export const {
 } = r<Task>({
   collection: 'tasks',
 
-  // Optional: Permission checks (eval* hooks validate before execution)
+  // Optional hooks for authorization and lifecycle events
   hooks: {
+    // Permission checks (eval* hooks validate BEFORE execution, throw to deny)
     evalRead: async (ctx, collection) => {
       const userId = await ctx.auth.getUserIdentity();
       if (!userId) throw new Error('Unauthorized');
@@ -389,23 +390,28 @@ export const {
     evalWrite: async (ctx, doc) => {
       const userId = await ctx.auth.getUserIdentity();
       if (!userId) throw new Error('Unauthorized');
-      if (doc.ownerId !== userId.subject) throw new Error('Unauthorized');
     },
     evalRemove: async (ctx, documentId) => {
       const userId = await ctx.auth.getUserIdentity();
       if (!userId) throw new Error('Unauthorized');
     },
+    evalCompact: async (ctx, collection) => { /* auth for compaction */ },
+    evalPrune: async (ctx, collection) => { /* auth for snapshot pruning */ },
+    evalVersion: async (ctx, collection, documentId) => { /* auth for versioning */ },
+    evalRestore: async (ctx, collection, documentId, versionId) => { /* auth for restore */ },
 
-    // Optional: Lifecycle callbacks (on* hooks run after execution)
-    onInsert: async (ctx, doc) => {
-      console.log('Inserted:', doc);
-    },
-    onUpdate: async (ctx, doc) => {
-      console.log('Updated:', doc);
-    },
-    onRemove: async (ctx, documentId) => {
-      console.log('Removed:', documentId);
-    }
+    // Lifecycle callbacks (on* hooks run AFTER execution)
+    onStream: async (ctx, result) => { /* after stream query */ },
+    onInsert: async (ctx, doc) => { /* after insert */ },
+    onUpdate: async (ctx, doc) => { /* after update */ },
+    onRemove: async (ctx, documentId) => { /* after remove */ },
+    onCompact: async (ctx, result) => { /* after compaction */ },
+    onPrune: async (ctx, result) => { /* after pruning */ },
+    onVersion: async (ctx, result) => { /* after version created */ },
+    onRestore: async (ctx, result) => { /* after restore */ },
+
+    // Transform hook (modify documents before returning)
+    transform: async (docs) => docs.filter(d => d.isPublic),
   }
 });
 ```
@@ -553,6 +559,7 @@ interface ConvexCollectionOptionsConfig<T> {
   };
   collection: string;
   getKey: (item: T) => string | number;
+  persistence?: Persistence;      // Optional: defaults to indexeddbPersistence()
   material?: Materialized<T>;     // SSR hydration data
   prose?: Array<keyof T>;         // Optional: prose fields for rich text
   undoCaptureTimeout?: number;    // Undo stack merge window (default: 500ms)
@@ -586,6 +593,36 @@ Extract plain text from ProseMirror JSON.
 **Example:**
 ```typescript
 const plainText = extract(task.content);
+```
+
+#### Persistence Providers
+
+```typescript
+import {
+  indexeddbPersistence,  // Browser: IndexedDB (default)
+  sqlitePersistence,     // Universal: Browser + React Native SQLite
+  memoryPersistence,     // Testing: in-memory (no persistence)
+} from '@trestleinc/replicate/client';
+```
+
+**`indexeddbPersistence()`** - Browser-only, uses y-indexeddb + browser-level.
+
+**`sqlitePersistence(name)`** - Universal SQLite for browser (sql.js WASM) and React Native (op-sqlite). Auto-detects platform.
+
+**`memoryPersistence()`** - In-memory, no persistence. Useful for testing.
+
+#### Error Classes
+
+```typescript
+import {
+  NetworkError,           // Network-related failures
+  IDBError,               // IndexedDB read errors
+  IDBWriteError,          // IndexedDB write errors
+  ReconciliationError,    // Phantom document cleanup errors
+  ProseError,             // Rich text field errors
+  CollectionNotReadyError,// Collection not initialized
+  NonRetriableError,      // Errors that should not be retried (auth, validation)
+} from '@trestleinc/replicate/client';
 ```
 
 ### Server-Side (`@trestleinc/replicate/server`)

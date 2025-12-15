@@ -66,7 +66,7 @@ src/
 │       └── reconciliation.ts # Phantom document cleanup
 ├── server/                  # Server-side (Convex functions)
 │   ├── index.ts             # Public exports
-│   ├── builder.ts           # createReplicate() factory
+│   ├── builder.ts           # replicate() factory
 │   ├── schema.ts            # table(), prose() helpers
 │   └── storage.ts           # Replicate class (storage operations)
 ├── component/               # Internal Convex component
@@ -240,7 +240,7 @@ const plainText = extract(task.content);
 
 ## Naming Conventions
 
-- **Public API**: Single-word function names (`createReplicate()`, `table()`, `extract()`)
+- **Public API**: Single-word function names (`replicate()`, `table()`, `extract()`)
 - **Service files**: lowercase, no suffix (`checkpoint.ts`, not `CheckpointService.ts`)
 - **Service exports**: PascalCase, no "Service" suffix (`Checkpoint`, `CheckpointLive`)
 - **Error classes**: Short names with "Error" suffix (`ProseError`, not `ProseFieldNotFoundError`)

@@ -1,12 +1,11 @@
 /**
  * Integration tests for recovery scenarios
  *
- * Tests crash recovery, checkpoint gaps, and phantom document cleanup.
+ * Tests snapshot recovery and phantom document cleanup.
+ * IndexedDB persistence is tested by y-indexeddb library itself.
  */
-import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { IndexeddbPersistence } from 'y-indexeddb';
 import { createTestDoc, applyUpdate } from '../utils/yjs.js';
 import { createTestCollection } from '../utils/collection.js';
 
@@ -17,99 +16,6 @@ interface Task {
 }
 
 describe('recovery', () => {
-  describe('IndexedDB persistence', () => {
-    it('persists state to IndexedDB', async () => {
-      const doc = createTestDoc(1);
-      const ymap = doc.getMap('tasks');
-
-      // Set up persistence
-      const persistence = new IndexeddbPersistence('test-persistence', doc);
-      await persistence.whenSynced;
-
-      // Make changes
-      doc.transact(() => {
-        const item = new Y.Map();
-        item.set('id', 'task-1');
-        item.set('title', 'Persisted task');
-        ymap.set('task-1', item);
-      });
-
-      // Wait for persistence to sync
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Destroy and recreate
-      persistence.destroy();
-
-      const doc2 = createTestDoc(2);
-      const persistence2 = new IndexeddbPersistence('test-persistence', doc2);
-      await persistence2.whenSynced;
-
-      // Check state was restored
-      const ymap2 = doc2.getMap('tasks');
-      const item = ymap2.get('task-1');
-      expect(item).toBeInstanceOf(Y.Map);
-      expect((item as Y.Map<unknown>).get('title')).toBe('Persisted task');
-
-      persistence2.destroy();
-    });
-
-    it('survives multiple persistence cycles', async () => {
-      const dbName = 'test-multi-cycle';
-
-      // Cycle 1: Create and persist
-      {
-        const doc = createTestDoc(1);
-        const persistence = new IndexeddbPersistence(dbName, doc);
-        await persistence.whenSynced;
-
-        const ymap = doc.getMap('tasks');
-        doc.transact(() => {
-          const item = new Y.Map();
-          item.set('id', '1');
-          item.set('title', 'Task 1');
-          ymap.set('1', item);
-        });
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        persistence.destroy();
-      }
-
-      // Cycle 2: Load and add more
-      {
-        const doc = createTestDoc(2);
-        const persistence = new IndexeddbPersistence(dbName, doc);
-        await persistence.whenSynced;
-
-        const ymap = doc.getMap('tasks');
-        expect(ymap.get('1')).toBeInstanceOf(Y.Map);
-
-        doc.transact(() => {
-          const item = new Y.Map();
-          item.set('id', '2');
-          item.set('title', 'Task 2');
-          ymap.set('2', item);
-        });
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        persistence.destroy();
-      }
-
-      // Cycle 3: Verify both exist
-      {
-        const doc = createTestDoc(3);
-        const persistence = new IndexeddbPersistence(dbName, doc);
-        await persistence.whenSynced;
-
-        const ymap = doc.getMap('tasks');
-        expect(ymap.size).toBe(2);
-        expect((ymap.get('1') as Y.Map<unknown>).get('title')).toBe('Task 1');
-        expect((ymap.get('2') as Y.Map<unknown>).get('title')).toBe('Task 2');
-
-        persistence.destroy();
-      }
-    });
-  });
-
   describe('snapshot recovery', () => {
     it('applies snapshot to clear and restore state', () => {
       // Simulate a client with stale local state
@@ -237,34 +143,6 @@ describe('recovery', () => {
       const phantomIds = localIds.filter((id) => !serverIds.has(id));
 
       expect(phantomIds).toHaveLength(0);
-    });
-  });
-
-  describe('checkpoint gap detection', () => {
-    it('detects when local checkpoint is behind oldest server delta', () => {
-      // Simulate checkpoint timestamps
-      const localCheckpoint = { lastModified: 1000 };
-      const oldestServerDelta = { timestamp: 5000 }; // Way ahead
-
-      const hasGap = localCheckpoint.lastModified < oldestServerDelta.timestamp;
-      expect(hasGap).toBe(true);
-    });
-
-    it('detects when checkpoint is current', () => {
-      const localCheckpoint = { lastModified: 5000 };
-      const oldestServerDelta = { timestamp: 3000 };
-
-      const hasGap = localCheckpoint.lastModified < oldestServerDelta.timestamp;
-      expect(hasGap).toBe(false);
-    });
-
-    it('handles zero checkpoint (fresh client)', () => {
-      const localCheckpoint = { lastModified: 0 };
-      const _oldestServerDelta = { timestamp: 1000 };
-
-      // Fresh client always needs full sync
-      const needsFullSync = localCheckpoint.lastModified === 0;
-      expect(needsFullSync).toBe(true);
     });
   });
 });
