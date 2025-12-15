@@ -73,7 +73,6 @@
   "dependencies": {
     "@effect/platform": "0.93.8",
     "@logtape/logtape": "1.2.2",
-    "@tanstack/offline-transactions": "1.0.2",
     "browser-level": "3.0.0",
     "effect": "3.19.12",
     "lib0": "0.2.114",

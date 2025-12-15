@@ -1,6 +1,5 @@
 export {
   convexCollectionOptions,
-  getOrInitializeCollection,
   type ConvexCollection,
   type EditorBinding,
 } from '$/client/collection.js';
@@ -12,6 +11,7 @@ export {
   ReconciliationError,
   ProseError,
   CollectionNotReadyError,
+  NonRetriableError,
 } from '$/client/errors.js';
 
 export { extract } from '$/client/merge.js';

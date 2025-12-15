@@ -35,3 +35,11 @@ export class CollectionNotReadyError extends Data.TaggedError('CollectionNotRead
   readonly collection: string;
   readonly reason: string;
 }> {}
+
+/** Error that should not be retried (auth failures, validation errors) */
+export class NonRetriableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NonRetriableError';
+  }
+}

@@ -1,17 +1,12 @@
 import * as Y from 'yjs';
 import { createMutex } from 'lib0/mutex';
 import type { Persistence, PersistenceProvider } from '$/client/persistence/types.js';
-import {
-  startOfflineExecutor,
-  NonRetriableError,
-  type OfflineExecutor,
-} from '@tanstack/offline-transactions';
 import type { ConvexClient } from 'convex/browser';
 import type { FunctionReference } from 'convex/server';
 import type { CollectionConfig, Collection } from '@tanstack/db';
 import { Effect, Layer } from 'effect';
 import { getLogger } from '$/client/logger.js';
-import { ProseError } from '$/client/errors.js';
+import { ProseError, NonRetriableError } from '$/client/errors.js';
 import { Checkpoint, createCheckpointLayer } from '$/client/services/checkpoint.js';
 import { Reconciliation, ReconciliationLive } from '$/client/services/reconciliation.js';
 import { SnapshotLive } from '$/client/services/snapshot.js';
@@ -215,8 +210,8 @@ const failedSyncQueue = new Map<string, boolean>();
 // Debounce config per collection
 const debounceConfig = new Map<string, number>();
 
-// Sync functions per collection - set by initializeCollectionWithOffline
-const collectionSyncFns = new Map<string, (documentId: string, delta?: Uint8Array) => any>();
+// Collection references - set in sync.sync() callback, used by utils.prose()
+const collectionRefs = new Map<string, Collection<any>>();
 
 // ============================================================================
 // Pending State Management
@@ -477,18 +472,39 @@ export function convexCollectionOptions<T extends object>({
             // Get debounce time
             const debounceMs = debounceConfig.get(collection) ?? DEFAULT_DEBOUNCE_MS;
 
-            // Schedule sync - uses collectionSyncFns set during initializeCollectionWithOffline
+            // Schedule sync - uses collection reference set in sync.sync() callback
             const timer = setTimeout(async () => {
               debounceTimers.delete(key);
 
-              const syncFn = collectionSyncFns.get(collection);
-              if (!syncFn) {
-                logger.error('No sync function for collection', { collection });
+              const col = collectionRefs.get(collection);
+              if (!col) {
+                logger.error('No collection reference for', { collection });
+                return;
+              }
+
+              const colDocs = collectionDocs.get(collection);
+              if (!colDocs) {
+                logger.error('No docs for collection', { collection });
+                return;
+              }
+
+              const itemYMap = colDocs.ymap.get(documentId) as Y.Map<unknown> | undefined;
+              if (!itemYMap) {
+                logger.error('Document not found', { collection, documentId });
                 return;
               }
 
               try {
-                const result = syncFn(documentId);
+                const crdtBytes = Y.encodeStateAsUpdate(colDocs.ydoc).buffer;
+                const materializedDoc = serializeYMapValue(itemYMap);
+
+                const result = col.update(
+                  documentId,
+                  { metadata: { contentSync: { crdtBytes, materializedDoc } } },
+                  (draft: any) => {
+                    draft.updatedAt = Date.now();
+                  }
+                );
                 await result.isPersisted.promise;
 
                 // Success - clear pending and any failed queue entry
@@ -755,7 +771,7 @@ export function convexCollectionOptions<T extends object>({
         const mutation = transaction.mutations[0];
         const metadata = transaction.metadata;
 
-        // Check if this is a content sync from syncContent()
+        // Check if this is a content sync from utils.prose()
         if (metadata?.contentSync) {
           const { crdtBytes, materializedDoc } = metadata.contentSync;
           const documentKey = String(mutation.key);
@@ -812,7 +828,10 @@ export function convexCollectionOptions<T extends object>({
     sync: {
       rowUpdateMode: 'partial',
       sync: (params: any) => {
-        const { markReady } = params;
+        const { markReady, collection: collectionInstance } = params;
+
+        // Store collection reference for utils.prose() to access
+        collectionRefs.set(collection, collectionInstance);
 
         const existingCleanup = cleanupFunctions.get(collection);
         if (existingCleanup) {
@@ -851,8 +870,8 @@ export function convexCollectionOptions<T extends object>({
             initializeReplicateParams(params);
             resolveOptimisticReady?.();
 
-            // Note: Fragment sync is handled by ReplicateProvider calling collection.syncContent()
-            // This keeps the sync logic in the provider layer, following Yjs patterns
+            // Note: Fragment sync is handled by utils.prose() debounce handler
+            // calling collection.update() with contentSync metadata
 
             if (ssrCRDTBytes) {
               applyUpdate(ydoc, new Uint8Array(ssrCRDTBytes), YjsOrigin.SSRInit);
@@ -1125,132 +1144,4 @@ export function convexCollectionOptions<T extends object>({
       },
     },
   };
-}
-
-/**
- * Initialize a collection with offline transaction handling.
- * This is called internally by convexCollectionOptions and sets up:
- * - Offline executor for transaction retry
- * - Online event listener for reconnection
- * - utils.prose() method for editor binding
- *
- * @internal
- */
-function initializeCollectionWithOffline<T extends object>(
-  collection: Collection<T>,
-  collectionName: string,
-  _proseFields: Array<ProseFields<T>>
-): ConvexCollection<T> {
-  const _offline: OfflineExecutor = startOfflineExecutor({
-    collections: { [collectionName]: collection as any },
-    mutationFns: {},
-
-    beforeRetry: (transactions) => {
-      const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours
-      const filtered = transactions.filter((tx) => {
-        const isRecent = tx.createdAt.getTime() > cutoff;
-        const notExhausted = tx.retryCount < 10;
-        return isRecent && notExhausted;
-      });
-
-      if (filtered.length < transactions.length) {
-        logger.warn('Filtered stale transactions', {
-          collection: collectionName,
-          before: transactions.length,
-          after: filtered.length,
-        });
-      }
-
-      return filtered;
-    },
-
-    onLeadershipChange: (_) => {
-      // Leadership changed
-    },
-
-    onStorageFailure: (diagnostic) => {
-      logger.warn('Storage failed - online-only mode', {
-        collection: collectionName,
-        code: diagnostic.code,
-        message: diagnostic.message,
-      });
-    },
-  });
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => {
-      _offline.notifyOnline();
-    });
-  }
-
-  // Internal syncContent function - registered globally for utils.prose() to access
-  const syncContent = (documentId: string, delta?: Uint8Array) => {
-    const docs = collectionDocs.get(collectionName);
-    if (!docs) {
-      throw new Error(`Collection ${collectionName} not initialized`);
-    }
-
-    const itemYMap = docs.ymap.get(documentId) as Y.Map<unknown> | undefined;
-    if (!itemYMap) {
-      throw new Error(`Document ${documentId} not found in collection ${collectionName}`);
-    }
-
-    // Capture CRDT bytes and materialized doc
-    const crdtBytes = delta?.slice().buffer ?? Y.encodeStateAsUpdate(docs.ydoc).buffer;
-    const materializedDoc = serializeYMapValue(itemYMap);
-
-    // Use TanStack DB's metadata to pass sync info through the transaction system
-    return (collection as any).update(
-      documentId,
-      { metadata: { contentSync: { crdtBytes, materializedDoc } } },
-      (draft: any) => {
-        // Touch updatedAt to trigger change detection
-        draft.updatedAt = Date.now();
-      }
-    );
-  };
-
-  // Register sync function for utils.prose() to access
-  collectionSyncFns.set(collectionName, syncContent);
-
-  // Collection already has utils from convexCollectionOptions - just cast and return
-  return collection as ConvexCollection<T>;
-}
-
-// Store initialized collections to avoid double initialization
-const initializedCollections = new Map<string, ConvexCollection<any>>();
-
-/**
- * Get or create a ConvexCollection from a raw collection.
- * This ensures offline handling is initialized exactly once per collection.
- *
- * @internal
- */
-export function getOrInitializeCollection<T extends object>(
-  collection: Collection<T>
-): ConvexCollection<T> {
-  const config = (collection as any).config;
-  const collectionName = config._collection as string;
-  const convexClient = config._convexClient as ConvexClient;
-  const proseFields = config._proseFields as Array<ProseFields<T>>;
-  const persistenceConfig = config._persistence as Persistence;
-
-  if (!convexClient || !collectionName || !persistenceConfig) {
-    throw new Error(
-      'Collection must be created with convexCollectionOptions. ' +
-        'Make sure you pass convexClient, collection, and persistence to convexCollectionOptions.'
-    );
-  }
-
-  // Check if already initialized
-  const existing = initializedCollections.get(collectionName);
-  if (existing) {
-    return existing as ConvexCollection<T>;
-  }
-
-  // Initialize and cache
-  const initialized = initializeCollectionWithOffline(collection, collectionName, proseFields);
-  initializedCollections.set(collectionName, initialized);
-
-  return initialized;
 }
