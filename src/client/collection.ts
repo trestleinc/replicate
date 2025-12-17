@@ -49,6 +49,7 @@ interface CollectionMutation<T> {
   modified: T;
   original?: T | Record<string, never>;
   changes?: Partial<T>;
+  metadata?: unknown;
 }
 
 /** Metadata for content sync operations */
@@ -61,7 +62,6 @@ interface ContentSyncMetadata {
 interface CollectionTransaction<T> {
   transaction: {
     mutations: CollectionMutation<T>[];
-    metadata?: { contentSync?: ContentSyncMetadata };
   };
 }
 
@@ -622,7 +622,8 @@ export function convexCollectionOptions<T extends object>({
 
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 
-        const metadata = transaction.metadata;
+        // Metadata is on mutation, not transaction (TanStack DB API)
+        const metadata = mutation.metadata as { contentSync?: ContentSyncMetadata } | undefined;
 
         // Check if this is a content sync from utils.prose()
         if (metadata?.contentSync) {
