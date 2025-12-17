@@ -394,3 +394,72 @@ export const getInitialState = query({
     };
   },
 });
+
+/**
+ * Recovery query for state vector based sync.
+ * Client sends its state vector, server computes and returns the diff.
+ */
+export const recovery = query({
+  args: {
+    collection: v.string(),
+    clientStateVector: v.bytes(),
+  },
+  returns: v.object({
+    diff: v.optional(v.bytes()),
+    serverStateVector: v.bytes(),
+  }),
+  handler: async (ctx, args) => {
+    const logger = getLogger(['recovery']);
+
+    // Get all snapshots for this collection
+    const snapshots = await ctx.db
+      .query('snapshots')
+      .withIndex('by_document', (q) => q.eq('collection', args.collection))
+      .collect();
+
+    // Get all deltas for this collection
+    const deltas = await ctx.db
+      .query('documents')
+      .withIndex('by_collection', (q) => q.eq('collection', args.collection))
+      .collect();
+
+    if (snapshots.length === 0 && deltas.length === 0) {
+      // Empty collection - return empty state vector
+      const emptyDoc = new Y.Doc();
+      const emptyVector = Y.encodeStateVector(emptyDoc);
+      emptyDoc.destroy();
+      return { serverStateVector: emptyVector.buffer as ArrayBuffer };
+    }
+
+    // Merge all snapshots and deltas into full server state
+    const updates: Uint8Array[] = [];
+
+    for (const snapshot of snapshots) {
+      updates.push(new Uint8Array(snapshot.snapshotBytes));
+    }
+
+    for (const delta of deltas) {
+      updates.push(new Uint8Array(delta.crdtBytes));
+    }
+
+    const mergedState = Y.mergeUpdatesV2(updates);
+
+    // Compute diff relative to client's state vector
+    const clientVector = new Uint8Array(args.clientStateVector);
+    const diff = Y.diffUpdateV2(mergedState, clientVector);
+    const serverVector = Y.encodeStateVectorFromUpdateV2(mergedState);
+
+    logger.info('Recovery sync computed', {
+      collection: args.collection,
+      snapshotCount: snapshots.length,
+      deltaCount: deltas.length,
+      diffSize: diff.byteLength,
+      hasDiff: diff.byteLength > 0,
+    });
+
+    return {
+      diff: diff.byteLength > 0 ? (diff.buffer as ArrayBuffer) : undefined,
+      serverStateVector: serverVector.buffer as ArrayBuffer,
+    };
+  },
+});

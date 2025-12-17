@@ -27,6 +27,14 @@ import {
   serializeYMapValue,
   getFragmentFromYMap,
 } from '$/client/merge.js';
+import * as prose from '$/client/prose.js';
+
+/** Origin markers for Yjs transactions */
+enum YjsOrigin {
+  Local = 'local',
+  Fragment = 'fragment',
+  Server = 'server',
+}
 import type { ProseFields, XmlFragmentJSON } from '$/shared/types.js';
 
 const logger = getLogger(['replicate', 'collection']);
@@ -80,24 +88,6 @@ function handleMutationError(
 
 const cleanupFunctions = new Map<string, () => void>();
 
-// Track which document's fragment is currently being edited, per collection
-const activeFragmentDoc = new Map<string, string>(); // collection -> documentId
-
-// Track fragment sync handlers per collection:documentId
-const fragmentSyncHandlers = new Map<string, () => void>();
-
-/** Origin markers for Yjs transactions - used for undo tracking and debugging */
-export enum YjsOrigin {
-  Insert = 'insert',
-  Update = 'update',
-  Remove = 'remove',
-  FragmentEdit = 'fragment-edit',
-
-  Subscription = 'subscription',
-  Snapshot = 'snapshot',
-  SSRInit = 'ssr-init',
-}
-
 /** Server-rendered material data for SSR hydration */
 export type Materialized<T> = {
   documents: ReadonlyArray<T>;
@@ -116,6 +106,7 @@ export interface ConvexCollectionOptionsConfig<T extends object> {
     insert: FunctionReference<'mutation'>;
     update: FunctionReference<'mutation'>;
     remove: FunctionReference<'mutation'>;
+    recovery: FunctionReference<'query'>;
     material?: FunctionReference<'query'>;
     [key: string]: any;
   };
@@ -185,17 +176,8 @@ const collectionUndoConfig = new Map<
 // Default undo capture timeout
 const DEFAULT_UNDO_CAPTURE_TIMEOUT = 500;
 
-// Default debounce time for snapshot sync
+// Default debounce time for prose sync
 const DEFAULT_DEBOUNCE_MS = 1000;
-
-// Debounce timers: "collection:documentId" -> timer
-const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-// Pending state: "collection:documentId" -> boolean
-const pendingState = new Map<string, boolean>();
-
-// Pending listeners: "collection:documentId" -> Set of callbacks
-const pendingListeners = new Map<string, Set<(pending: boolean) => void>>();
 
 // Mutex per collection for thread-safe updates
 const collectionMutex = new Map<string, ReturnType<typeof createMutex>>();
@@ -203,72 +185,14 @@ const collectionMutex = new Map<string, ReturnType<typeof createMutex>>();
 // Fragment undo managers: "collection:documentId:field" -> UndoManager
 const fragmentUndoManagers = new Map<string, Y.UndoManager>();
 
-// Failed sync queue: "collection:documentId" -> true (needs retry)
-const failedSyncQueue = new Map<string, boolean>();
-
 // Debounce config per collection
 const debounceConfig = new Map<string, number>();
 
 // Collection references - set in sync.sync() callback, used by utils.prose()
 const collectionRefs = new Map<string, Collection<any>>();
 
-// ============================================================================
-// Pending State Management
-// ============================================================================
-
-/**
- * Set pending state and notify listeners.
- */
-function setPending(collection: string, documentId: string, value: boolean): void {
-  const key = `${collection}:${documentId}`;
-  const current = pendingState.get(key) ?? false;
-
-  if (current !== value) {
-    pendingState.set(key, value);
-    const listeners = pendingListeners.get(key);
-    if (listeners) {
-      for (const cb of listeners) {
-        try {
-          cb(value);
-        } catch (err) {
-          logger.error('Pending listener error', { collection, documentId, error: String(err) });
-        }
-      }
-    }
-  }
-}
-
-/**
- * Get current pending state.
- */
-function getPending(collection: string, documentId: string): boolean {
-  return pendingState.get(`${collection}:${documentId}`) ?? false;
-}
-
-/**
- * Subscribe to pending state changes.
- */
-function subscribePending(
-  collection: string,
-  documentId: string,
-  callback: (pending: boolean) => void
-): () => void {
-  const key = `${collection}:${documentId}`;
-
-  let listeners = pendingListeners.get(key);
-  if (!listeners) {
-    listeners = new Set();
-    pendingListeners.set(key, listeners);
-  }
-
-  listeners.add(callback);
-  return () => {
-    listeners?.delete(callback);
-    if (listeners?.size === 0) {
-      pendingListeners.delete(key);
-    }
-  };
-}
+// Server state vectors for recovery sync
+const serverStateVectors = new Map<string, Uint8Array>();
 
 // ============================================================================
 // Mutex Management
@@ -310,45 +234,11 @@ function getOrCreateFragmentUndoManager(
   um = new Y.UndoManager([fragment], {
     captureTimeout: config?.captureTimeout ?? DEFAULT_UNDO_CAPTURE_TIMEOUT,
     // Only track local fragment edits, not server syncs
-    trackedOrigins: new Set([YjsOrigin.FragmentEdit]),
+    trackedOrigins: new Set([YjsOrigin.Fragment]),
   });
 
   fragmentUndoManagers.set(key, um);
   return um;
-}
-
-// ============================================================================
-// Debounced Sync Helpers
-// ============================================================================
-
-/**
- * Cancel any pending debounced sync for a document.
- * Called when receiving remote updates to avoid conflicts.
- */
-function cancelPendingSync(collection: string, documentId: string): void {
-  const key = `${collection}:${documentId}`;
-  const timer = debounceTimers.get(key);
-
-  if (timer) {
-    clearTimeout(timer);
-    debounceTimers.delete(key);
-    logger.debug('Cancelled pending sync due to remote update', { collection, documentId });
-  }
-}
-
-/**
- * Cancel all pending syncs for a collection.
- * Called when receiving a snapshot that replaces all state.
- */
-function cancelAllPendingSyncs(collection: string): void {
-  const prefix = `${collection}:`;
-  for (const [key, timer] of debounceTimers) {
-    if (key.startsWith(prefix)) {
-      clearTimeout(timer);
-      debounceTimers.delete(key);
-    }
-  }
-  logger.debug('Cancelled all pending syncs', { collection });
 }
 
 /**
@@ -442,113 +332,21 @@ export function convexCollectionOptions<T extends object>({
         });
       }
 
-      // Setup fragment observer with debounced sync
-      const handlerKey = `${collection}:${documentId}`;
-      if (!fragmentSyncHandlers.has(handlerKey)) {
-        const mux = getOrCreateMutex(collection);
-
-        const observerHandler = (_events: Y.YEvent<any>[], transaction: Y.Transaction) => {
-          console.log('[REPLICATE] Fragment observer fired:', {
-            documentId,
-            collection,
-            origin: String(transaction.origin),
-          });
-
-          // Skip server-originated changes
-          if (
-            transaction.origin === YjsOrigin.Subscription ||
-            transaction.origin === YjsOrigin.Snapshot ||
-            transaction.origin === YjsOrigin.SSRInit
-          ) {
-            console.log('[REPLICATE] Skipping server-originated change');
-            return;
-          }
-
-          // Schedule debounced sync within mutex
-          mux(() => {
-            const key = `${collection}:${documentId}`;
-
-            // Clear existing timer
-            const existing = debounceTimers.get(key);
-            if (existing) clearTimeout(existing);
-
-            // Mark as pending
-            setPending(collection, documentId, true);
-
-            // Get debounce time
-            const debounceMs = debounceConfig.get(collection) ?? DEFAULT_DEBOUNCE_MS;
-
-            // Schedule sync - uses collection reference set in sync.sync() callback
-            const timer = setTimeout(async () => {
-              console.log('[REPLICATE] Debounce timer fired:', { documentId, collection, key });
-              debounceTimers.delete(key);
-
-              const col = collectionRefs.get(collection);
-              if (!col) {
-                console.log('[REPLICATE] ERROR: No collection reference for debounce sync:', { collection });
-                logger.error('No collection reference for', { collection });
-                return;
-              }
-
-              const colDocs = collectionDocs.get(collection);
-              if (!colDocs) {
-                logger.error('No docs for collection', { collection });
-                return;
-              }
-
-              const itemYMap = colDocs.ymap.get(documentId) as Y.Map<unknown> | undefined;
-              if (!itemYMap) {
-                logger.error('Document not found', { collection, documentId });
-                return;
-              }
-
-              try {
-                const crdtBytes = Y.encodeStateAsUpdateV2(colDocs.ydoc).buffer;
-                const materializedDoc = serializeYMapValue(itemYMap);
-
-                const result = col.update(
-                  documentId,
-                  { metadata: { contentSync: { crdtBytes, materializedDoc } } },
-                  (draft: any) => {
-                    draft.updatedAt = Date.now();
-                  }
-                );
-                await result.isPersisted.promise;
-
-                // Success - clear pending and any failed queue entry
-                failedSyncQueue.delete(key);
-                setPending(collection, documentId, false);
-                logger.debug('Debounced sync completed', { collection, documentId });
-              } catch (err) {
-                logger.error('Sync failed, queued for retry', {
-                  collection,
-                  documentId,
-                  error: String(err),
-                });
-                // Queue for retry on next change - keep pending true
-                failedSyncQueue.set(key, true);
-              }
-            }, debounceMs);
-
-            debounceTimers.set(key, timer);
-
-            // Also retry any failed syncs for this document
-            if (failedSyncQueue.has(key)) {
-              failedSyncQueue.delete(key);
-              logger.debug('Retrying failed sync', { collection, documentId });
-            }
-          });
-        };
-
-        fragment.observeDeep(observerHandler);
-        fragmentSyncHandlers.set(handlerKey, () => fragment.unobserveDeep(observerHandler));
-        logger.debug('Fragment observer registered', { collection, documentId, field: fieldStr });
+      // Setup fragment observer via prose module (handles debounced sync)
+      const collectionRef = collectionRefs.get(collection);
+      if (collectionRef) {
+        prose.observeFragment({
+          collection,
+          documentId,
+          field: fieldStr,
+          fragment,
+          ydoc: docs.ydoc,
+          ymap: docs.ymap,
+          collectionRef,
+          debounceMs: debounceConfig.get(collection) ?? DEFAULT_DEBOUNCE_MS,
+        });
       }
 
-      // Track active document
-      activeFragmentDoc.set(collection, documentId);
-
-      // Create fragment-scoped undo manager
       const undoManager = getOrCreateFragmentUndoManager(
         collection,
         documentId,
@@ -556,17 +354,17 @@ export function convexCollectionOptions<T extends object>({
         fragment
       );
 
-      // Return EditorBinding with reactive pending state
+      // Return EditorBinding with reactive pending state from prose module
       return {
         fragment,
         provider: { awareness: null },
 
         get pending() {
-          return getPending(collection, documentId);
+          return prose.isPending(collection, documentId);
         },
 
         onPendingChange(callback: (pending: boolean) => void) {
-          return subscribePending(collection, documentId, callback);
+          return prose.subscribePending(collection, documentId, callback);
         },
 
         undo() {
@@ -641,6 +439,58 @@ export function convexCollectionOptions<T extends object>({
       )
     );
 
+  /**
+   * Recovery sync using state vectors.
+   * Fetches missing data from server based on local state vector.
+   */
+  const recoverSync = async (): Promise<void> => {
+    if (!api.recovery) {
+      logger.debug('No recovery API configured, skipping recovery sync', { collection });
+      return;
+    }
+
+    try {
+      // Encode local state vector
+      const localStateVector = Y.encodeStateVector(ydoc);
+
+      logger.debug('Starting recovery sync', {
+        collection,
+        localVectorSize: localStateVector.byteLength,
+      });
+
+      // Query server for diff
+      const response = await convexClient.query(api.recovery, {
+        clientStateVector: localStateVector.buffer as ArrayBuffer,
+      });
+
+      // Apply diff if any
+      if (response.diff) {
+        const mux = getOrCreateMutex(collection);
+        mux(() => {
+          applyUpdate(ydoc, new Uint8Array(response.diff), YjsOrigin.Server);
+        });
+
+        logger.info('Recovery sync applied diff', {
+          collection,
+          diffSize: response.diff.byteLength,
+        });
+      } else {
+        logger.debug('Recovery sync - no diff needed', { collection });
+      }
+
+      // Store server state vector for future reference
+      if (response.serverStateVector) {
+        serverStateVectors.set(collection, new Uint8Array(response.serverStateVector));
+      }
+    } catch (error) {
+      logger.error('Recovery sync failed', {
+        collection,
+        error: String(error),
+      });
+      // Don't throw - recovery is best-effort, subscription will catch up
+    }
+  };
+
   const applyYjsInsert = (mutations: CollectionMutation<T>[]): Uint8Array => {
     const { delta } = transactWithDelta(
       ydoc,
@@ -663,7 +513,7 @@ export function convexCollectionOptions<T extends object>({
           });
         });
       },
-      YjsOrigin.Insert
+      YjsOrigin.Local
     );
     return delta;
   };
@@ -709,7 +559,7 @@ export function convexCollectionOptions<T extends object>({
           }
         });
       },
-      YjsOrigin.Update
+      YjsOrigin.Local
     );
     return delta;
   };
@@ -722,7 +572,7 @@ export function convexCollectionOptions<T extends object>({
           ymap.delete(String(mut.key));
         });
       },
-      YjsOrigin.Remove
+      YjsOrigin.Local
     );
     return delta;
   };
@@ -760,22 +610,23 @@ export function convexCollectionOptions<T extends object>({
 
     onUpdate: async ({ transaction }: CollectionTransaction<T>) => {
       try {
+        const mutation = transaction.mutations[0];
+        const documentKey = String(mutation.key);
+
+        // Skip if this update originated from server (prevents echo loops)
+        // Now checks DOCUMENT-level flag, not collection-level
+        if (prose.isApplyingFromServer(collection, documentKey)) {
+          logger.debug('Skipping onUpdate - data from server', { collection, documentKey });
+          return;
+        }
+
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 
-        const mutation = transaction.mutations[0];
         const metadata = transaction.metadata;
 
         // Check if this is a content sync from utils.prose()
         if (metadata?.contentSync) {
           const { crdtBytes, materializedDoc } = metadata.contentSync;
-          const documentKey = String(mutation.key);
-
-          console.log('[REPLICATE] onUpdate contentSync:', {
-            documentId: documentKey,
-            hasContent: 'content' in (materializedDoc as object),
-            contentType: typeof (materializedDoc as any).content,
-            materializedDocKeys: Object.keys(materializedDoc as object),
-          });
 
           await convexClient.mutation(api.update, {
             documentId: documentKey,
@@ -788,7 +639,6 @@ export function convexCollectionOptions<T extends object>({
         // Regular update - apply to Y.Doc and generate delta
         const delta = applyYjsUpdate(transaction.mutations);
         if (delta.length > 0) {
-          const documentKey = String(mutation.key);
           const itemYMap = ymap.get(documentKey) as Y.Map<unknown>;
           // Use serializeYMapValue to properly handle XmlFragment fields
           const fullDoc = itemYMap ? serializeYMapValue(itemYMap) : mutation.modified;
@@ -829,7 +679,6 @@ export function convexCollectionOptions<T extends object>({
         const { markReady, collection: collectionInstance } = params;
 
         // Store collection reference for utils.prose() to access
-        console.log('[REPLICATE] Setting collectionRefs for:', collection);
         collectionRefs.set(collection, collectionInstance);
 
         const existingCleanup = cleanupFunctions.get(collection);
@@ -844,23 +693,15 @@ export function convexCollectionOptions<T extends object>({
         const ssrCRDTBytes = material?.crdtBytes;
         const docs: T[] = ssrDocuments ? [...ssrDocuments] : [];
 
-        console.log('[REPLICATE] SSR init data:', {
-          collection,
-          ssrDocsCount: ssrDocuments?.length ?? 0,
-          hasCRDTBytes: !!ssrCRDTBytes,
-          hasCheckpoint: !!ssrCheckpoint,
-        });
-
         (async () => {
           try {
-            console.log('[REPLICATE] Starting collection setup for:', collection);
             ydoc = await createYjsDocument(collection, persistence.kv);
             ymap = getYMap<unknown>(ydoc, collection);
 
             collectionDocs.set(collection, { ydoc, ymap });
 
             // Store undo config for per-document undo managers
-            const trackedOrigins = new Set([YjsOrigin.Insert, YjsOrigin.Update, YjsOrigin.Remove]);
+            const trackedOrigins = new Set([YjsOrigin.Local]);
             collectionUndoConfig.set(collection, {
               captureTimeout: undoCaptureTimeout,
               trackedOrigins,
@@ -872,7 +713,6 @@ export function convexCollectionOptions<T extends object>({
               resolvePersistenceReady?.();
             });
             await persistenceReadyPromise;
-            console.log('[REPLICATE] Persistence ready, ymap size:', ymap.size);
             logger.info('Persistence ready', { collection, ymapSize: ymap.size });
 
             initializeReplicateParams(params);
@@ -882,45 +722,42 @@ export function convexCollectionOptions<T extends object>({
             // calling collection.update() with contentSync metadata
 
             if (ssrCRDTBytes) {
-              applyUpdate(ydoc, new Uint8Array(ssrCRDTBytes), YjsOrigin.SSRInit);
+              applyUpdate(ydoc, new Uint8Array(ssrCRDTBytes), YjsOrigin.Server);
             }
 
-            // === LOCAL-FIRST FLOW ===
+            // === LOCAL-FIRST FLOW WITH RECOVERY ===
             // 1. Local data (IndexedDB/Yjs) is the source of truth
-            // 2. Push local data to TanStack DB with replicateReplace (atomic swap)
-            // 3. Reconcile phantom documents (hidden in loading state)
-            // 4. markReady() - UI renders LOCAL DATA immediately
-            // 5. Subscription starts in background (replication, not source of truth)
+            // 2. Recovery sync - get any missing data from server using state vectors
+            // 3. Push local+recovered data to TanStack DB with replicateReplace
+            // 4. Reconcile phantom documents (hidden in loading state)
+            // 5. markReady() - UI renders DATA immediately
+            // 6. Subscription starts in background (replication)
 
-            // Step 1: Push local data to TanStack DB
+            // Step 1: Recovery sync - fetch missing server data
+            await recoverSync();
+
+            // Step 2: Push local+recovered data to TanStack DB
             if (ymap.size > 0) {
               const items = extractItems<T>(ymap);
-              console.log('[REPLICATE] Local data from persistence:', {
-                collection,
-                itemCount: items.length,
-                itemIds: items.map((i: any) => i.id),
-              });
               replicateReplace(items); // Atomic replace, not accumulative insert
-              logger.info('Local data loaded to TanStack DB', {
+              logger.info('Data loaded to TanStack DB', {
                 collection,
                 itemCount: items.length,
               });
             } else {
-              console.log('[REPLICATE] No local data from persistence for:', collection);
-              // No local data - clear TanStack DB to avoid stale state
+              // No data - clear TanStack DB to avoid stale state
               replicateReplace([]);
-              logger.info('No local data, cleared TanStack DB', { collection });
+              logger.info('No data, cleared TanStack DB', { collection });
             }
 
-            // Step 2: Reconcile phantom documents (still in loading state)
+            // Step 3: Reconcile phantom documents (still in loading state)
             logger.debug('Running reconciliation', { collection, ymapSize: ymap.size });
             await Effect.runPromise(reconcile().pipe(Effect.provide(servicesLayer)));
             logger.debug('Reconciliation complete', { collection });
 
-            // Step 3: Mark ready BEFORE subscription - UI shows local data immediately
+            // Step 4: Mark ready - UI shows data immediately
             markReady();
-            console.log('[REPLICATE] Collection marked ready, starting subscription setup');
-            logger.info('Collection ready (local-first)', { collection, ymapSize: ymap.size });
+            logger.info('Collection ready', { collection, ymapSize: ymap.size });
 
             // Step 4: Load checkpoint for subscription (background replication)
             const checkpoint =
@@ -932,7 +769,6 @@ export function convexCollectionOptions<T extends object>({
                 }).pipe(Effect.provide(checkpointLayer))
               ));
 
-            console.log('[REPLICATE] Checkpoint loaded:', checkpoint);
             logger.info('Checkpoint loaded', {
               collection,
               checkpoint,
@@ -945,7 +781,7 @@ export function convexCollectionOptions<T extends object>({
 
             const handleSnapshotChange = (crdtBytes: ArrayBuffer) => {
               // Cancel all pending syncs - snapshot replaces everything
-              cancelAllPendingSyncs(collection);
+              prose.cancelAllPending(collection);
 
               mux(() => {
                 try {
@@ -953,7 +789,7 @@ export function convexCollectionOptions<T extends object>({
                     collection,
                     bytesLength: crdtBytes.byteLength,
                   });
-                  applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Snapshot);
+                  applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Server);
                   const items = extractItems<T>(ymap);
                   logger.debug('Snapshot applied', { collection, itemCount: items.length });
                   replicateReplace(items);
@@ -967,7 +803,9 @@ export function convexCollectionOptions<T extends object>({
             const handleDeltaChange = (crdtBytes: ArrayBuffer, documentId: string | undefined) => {
               // Cancel any pending sync for this document to avoid conflicts
               if (documentId) {
-                cancelPendingSync(collection, documentId);
+                prose.cancelPending(collection, documentId);
+                // Mark that we're applying server data to prevent echo loops (DOCUMENT-level)
+                prose.setApplyingFromServer(collection, documentId, true);
               }
 
               mux(() => {
@@ -979,7 +817,7 @@ export function convexCollectionOptions<T extends object>({
                   });
 
                   const itemBefore = documentId ? extractItem<T>(ymap, documentId) : null;
-                  applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Subscription);
+                  applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Server);
 
                   if (!documentId) {
                     logger.debug('Delta applied (no documentId)', { collection });
@@ -987,20 +825,13 @@ export function convexCollectionOptions<T extends object>({
                   }
 
                   const itemAfter = extractItem<T>(ymap, documentId);
-                  console.log(
-                    '[REPLICATE] Item after delta:',
-                    itemAfter ? 'found' : 'null',
-                    documentId
-                  );
                   if (itemAfter) {
-                    console.log('[REPLICATE] Upserting item:', documentId);
                     logger.debug('Upserting item after delta', { collection, documentId });
                     replicateUpsert([itemAfter]);
                   } else if (itemBefore) {
                     logger.debug('Deleting item after delta', { collection, documentId });
                     replicateDelete([itemBefore]);
                   } else {
-                    console.log('[REPLICATE] No change detected for:', documentId);
                     logger.debug('No change detected after delta', { collection, documentId });
                   }
                 } catch (error) {
@@ -1010,6 +841,11 @@ export function convexCollectionOptions<T extends object>({
                     error: String(error),
                   });
                   throw new Error(`Delta application failed for ${documentId}: ${error}`);
+                } finally {
+                  // Clear document-level flag after delta processing
+                  if (documentId) {
+                    prose.setApplyingFromServer(collection, documentId, false);
+                  }
                 }
               });
             };
@@ -1026,14 +862,8 @@ export function convexCollectionOptions<T extends object>({
                 const { changes, checkpoint: newCheckpoint } = response;
 
                 // Process each change
-                console.log('[REPLICATE] Processing', changes.length, 'changes');
                 for (const change of changes) {
                   const { operationType, crdtBytes, documentId } = change;
-                  console.log('[REPLICATE] Processing change:', {
-                    operationType,
-                    documentId,
-                    bytesLength: crdtBytes?.byteLength,
-                  });
                   if (!crdtBytes) {
                     logger.warn('Skipping change with missing crdtBytes', { change });
                     continue;
@@ -1046,7 +876,6 @@ export function convexCollectionOptions<T extends object>({
                       handleDeltaChange(crdtBytes, documentId);
                     }
                   } catch (changeError) {
-                    console.error('[REPLICATE] Failed to apply change:', changeError);
                     logger.error('Failed to apply change', {
                       operationType,
                       documentId,
@@ -1074,7 +903,6 @@ export function convexCollectionOptions<T extends object>({
               }
             };
 
-            console.log('[REPLICATE] Setting up subscription with api.stream');
             logger.info('Establishing subscription', {
               collection,
               checkpoint,
@@ -1085,10 +913,6 @@ export function convexCollectionOptions<T extends object>({
               api.stream,
               { checkpoint, limit: 1000 },
               (response: any) => {
-                console.log('[REPLICATE] Subscription callback fired!', {
-                  changesCount: response.changes?.length,
-                  checkpoint: response.checkpoint,
-                });
                 logger.debug('Subscription received update', {
                   collection,
                   changesCount: response.changes?.length ?? 0,
@@ -1103,10 +927,8 @@ export function convexCollectionOptions<T extends object>({
 
             // Note: markReady() was already called above (local-first)
             // Subscription is background replication, not blocking
-            console.log('[REPLICATE] Subscription established');
             logger.info('Subscription established', { collection });
           } catch (error) {
-            console.error('[REPLICATE] Setup FAILED:', error);
             logger.error('Failed to set up collection', { error, collection });
             // Still mark ready on error so UI isn't stuck loading
             markReady();
@@ -1118,34 +940,10 @@ export function convexCollectionOptions<T extends object>({
           cleanup: () => {
             subscription?.();
 
+            // Clean up prose module state (debounce timers, pending state, observers)
+            prose.cleanup(collection);
+
             const prefix = `${collection}:`;
-
-            // Cancel all pending debounced syncs
-            for (const [key, timer] of debounceTimers) {
-              if (key.startsWith(prefix)) {
-                clearTimeout(timer);
-                debounceTimers.delete(key);
-              }
-            }
-
-            // Clear pending state and listeners
-            for (const key of pendingState.keys()) {
-              if (key.startsWith(prefix)) {
-                pendingState.delete(key);
-              }
-            }
-            for (const key of pendingListeners.keys()) {
-              if (key.startsWith(prefix)) {
-                pendingListeners.delete(key);
-              }
-            }
-
-            // Clear failed sync queue
-            for (const key of failedSyncQueue.keys()) {
-              if (key.startsWith(prefix)) {
-                failedSyncQueue.delete(key);
-              }
-            }
 
             // Destroy fragment undo managers
             for (const [key, um] of fragmentUndoManagers) {
@@ -1155,24 +953,17 @@ export function convexCollectionOptions<T extends object>({
               }
             }
 
-            // Clean up fragment sync handlers
-            const keysToDelete = [...fragmentSyncHandlers.keys()].filter((k) =>
-              k.startsWith(prefix)
-            );
-            for (const key of keysToDelete) {
-              fragmentSyncHandlers.get(key)?.();
-              fragmentSyncHandlers.delete(key);
-            }
-
             // Clean up mutex
             collectionMutex.delete(collection);
 
             // Clean up debounce config
             debounceConfig.delete(collection);
 
+            // Clean up collection references
+            collectionRefs.delete(collection);
+
             collectionUndoConfig.delete(collection);
             collectionDocs.delete(collection);
-            activeFragmentDoc.delete(collection);
             docPersistence?.destroy();
             ydoc?.destroy();
             cleanupFunctions.delete(collection);

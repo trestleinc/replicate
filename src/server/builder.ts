@@ -63,6 +63,10 @@ function replicateInternal<T extends object>(component: any, config: ReplicateCo
       transform: config.hooks?.transform,
     }),
 
+    recovery: storage.createRecoveryQuery({
+      evalRead: config.hooks?.evalRead,
+    }),
+
     insert: storage.createInsertMutation({
       evalWrite: config.hooks?.evalWrite,
       onInsert: config.hooks?.onInsert,

@@ -76,14 +76,14 @@
     "abstract-level": "3.1.1",
     "browser-level": "3.0.0",
     "effect": "3.19.12",
-    "lib0": "0.2.114",
     "y-indexeddb": "9.0.12",
-    "y-leveldb": "0.2.0",
-    "yjs": "13.6.27"
+    "y-leveldb": "0.2.0"
   },
   "peerDependencies": {
     "@tanstack/db": "^0.5.0",
-    "convex": "^1.31.0"
+    "convex": "^1.31.0",
+    "lib0": "^0.2.0",
+    "yjs": "^13.6.0"
   },
   "peerDependenciesMeta": {
     "sql.js": {
@@ -106,8 +106,10 @@
     "convex-test": "0.0.41",
     "dotenv": "17.2.3",
     "fake-indexeddb": "6.2.5",
+    "lib0": "0.2.114",
     "typescript": "5.9.3",
     "vitest": "4.0.15",
+    "yjs": "13.6.27",
     "zod": "4.1.13"
   },
   "main": "./dist/shared.js",

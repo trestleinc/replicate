@@ -24,25 +24,6 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     public: {
-      compactCollectionByName: FunctionReference<
-        "mutation",
-        "internal",
-        { collection: string; retentionDays?: number },
-        any,
-        Name
-      >;
-      createVersion: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          collection: string;
-          createdBy?: string;
-          documentId: string;
-          label?: string;
-        },
-        { createdAt: number; versionId: string },
-        Name
-      >;
       deleteDocument: FunctionReference<
         "mutation",
         "internal",
@@ -50,16 +31,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           collection: string;
           crdtBytes: ArrayBuffer;
           documentId: string;
+          threshold?: number;
           version: number;
         },
-        { success: boolean },
-        Name
-      >;
-      deleteVersion: FunctionReference<
-        "mutation",
-        "internal",
-        { versionId: string },
-        { success: boolean },
+        { compacted?: boolean; success: boolean },
         Name
       >;
       getInitialState: FunctionReference<
@@ -69,28 +44,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         { checkpoint: { lastModified: number }; crdtBytes: ArrayBuffer } | null,
         Name
       >;
-      getProtocolVersion: FunctionReference<
-        "query",
-        "internal",
-        {},
-        { protocolVersion: number },
-        Name
-      >;
-      getVersion: FunctionReference<
-        "query",
-        "internal",
-        { versionId: string },
-        {
-          collection: string;
-          createdAt: number;
-          createdBy: string | null;
-          documentId: string;
-          label: string | null;
-          stateBytes: ArrayBuffer;
-          versionId: string;
-        } | null,
-        Name
-      >;
       insertDocument: FunctionReference<
         "mutation",
         "internal",
@@ -98,52 +51,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           collection: string;
           crdtBytes: ArrayBuffer;
           documentId: string;
+          threshold?: number;
           version: number;
         },
-        { success: boolean },
+        { compacted?: boolean; success: boolean },
         Name
       >;
-      listVersions: FunctionReference<
+      recovery: FunctionReference<
         "query",
         "internal",
-        { collection: string; documentId: string; limit?: number },
-        Array<{
-          createdAt: number;
-          createdBy: string | null;
-          label: string | null;
-          versionId: string;
-        }>,
-        Name
-      >;
-      pruneCollectionByName: FunctionReference<
-        "mutation",
-        "internal",
-        { collection: string; retentionDays?: number },
-        any,
-        Name
-      >;
-      pruneVersions: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          collection: string;
-          documentId: string;
-          keepCount?: number;
-          retentionDays?: number;
-        },
-        { deletedCount: number; remainingCount: number },
-        Name
-      >;
-      restoreVersion: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          collection: string;
-          createBackup?: boolean;
-          documentId: string;
-          versionId: string;
-        },
-        { backupVersionId: string | null; success: boolean },
+        { clientStateVector: ArrayBuffer; collection: string },
+        { diff?: ArrayBuffer; serverStateVector: ArrayBuffer },
         Name
       >;
       stream: FunctionReference<
@@ -175,9 +93,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           collection: string;
           crdtBytes: ArrayBuffer;
           documentId: string;
+          threshold?: number;
           version: number;
         },
-        { success: boolean },
+        { compacted?: boolean; success: boolean },
         Name
       >;
     };

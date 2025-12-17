@@ -186,13 +186,6 @@ export class Replicate<T extends object> {
       handler: async (ctx, args) => {
         const doc = args.materializedDoc as T;
 
-        console.log('[REPLICATE-SERVER] Update mutation:', {
-          documentId: args.documentId,
-          collection,
-          materializedDocKeys: Object.keys(args.materializedDoc || {}),
-          hasContent: 'content' in (args.materializedDoc || {}),
-        });
-
         if (opts?.evalWrite) {
           await opts.evalWrite(ctx, doc);
         }
@@ -211,20 +204,11 @@ export class Replicate<T extends object> {
           .withIndex('by_doc_id', (q) => q.eq('id', args.documentId))
           .first();
 
-        console.log(
-          '[REPLICATE-SERVER] Existing doc:',
-          existing ? 'FOUND' : 'NOT FOUND',
-          args.documentId
-        );
-
         if (existing) {
           await ctx.db.patch(collection, existing._id, {
             ...(args.materializedDoc as object),
             timestamp: Date.now(),
           });
-          console.log('[REPLICATE-SERVER] Patched document:', args.documentId);
-        } else {
-          console.error('[REPLICATE-SERVER] Document not found for update:', args.documentId);
         }
 
         if (opts?.onUpdate) {
@@ -296,6 +280,33 @@ export class Replicate<T extends object> {
             collection,
           },
         };
+      },
+    });
+  }
+
+  createRecoveryQuery(opts?: {
+    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return queryGeneric({
+      args: {
+        clientStateVector: v.bytes(),
+      },
+      returns: v.object({
+        diff: v.optional(v.bytes()),
+        serverStateVector: v.bytes(),
+      }),
+      handler: async (ctx, args) => {
+        if (opts?.evalRead) {
+          await opts.evalRead(ctx, collection);
+        }
+
+        return await ctx.runQuery(component.public.recovery, {
+          collection,
+          clientStateVector: args.clientStateVector,
+        });
       },
     });
   }

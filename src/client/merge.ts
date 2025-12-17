@@ -73,27 +73,105 @@ export function transactWithDelta<A>(
   return { result, delta };
 }
 
+// ============================================================================
+// Yjs Serialization System
+// ============================================================================
+// Yjs uses `instanceof AbstractType` internally in toJSON() which breaks when
+// multiple Yjs module instances exist (common with bundlers). We detect Yjs
+// types by their internal structure (`doc`, `_map`, `_start` properties) which
+// is stable across instances, then manually iterate using forEach/toArray.
+// ============================================================================
+
 /**
- * Serialize a Y.Map to a plain object, handling Y.XmlFragment as ProseMirror JSON.
- * This ensures consistent serialization across all code paths.
+ * Check if a value is a Yjs AbstractType by checking internal properties.
+ * All Yjs types (Y.Map, Y.Array, Y.Text, Y.XmlFragment, etc.) extend AbstractType
+ * and have these properties regardless of which module instance created them.
+ */
+function isYjsAbstractType(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  // AbstractType has: doc (Doc|null), _map (Map), _eH (event handler)
+  return '_map' in v && '_eH' in v && 'doc' in v;
+}
+
+/**
+ * Check if a value is a Y.Map.
+ * Y.Map has keys() method which Y.XmlFragment does not.
+ */
+function isYMap(value: unknown): boolean {
+  if (!isYjsAbstractType(value)) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.keys === 'function' && typeof v.get === 'function';
+}
+
+/**
+ * Check if a value is a Y.Array (has toArray but not get - distinguishes from Y.Map).
+ */
+function isYArray(value: unknown): boolean {
+  if (!isYjsAbstractType(value)) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.toArray === 'function' && typeof v.get !== 'function';
+}
+
+/**
+ * Check if a value is a Y.XmlFragment or Y.XmlElement.
+ * XmlFragment has toArray() and get(index), but NOT keys() like Y.Map.
+ */
+function isYXmlFragment(value: unknown): value is Y.XmlFragment {
+  if (!isYjsAbstractType(value)) return false;
+  const v = value as Record<string, unknown>;
+  // XmlFragment has toArray() but NOT keys() - keys() is unique to Y.Map
+  return typeof v.toArray === 'function' && typeof v.keys !== 'function';
+}
+
+/**
+ * Recursively serialize a Yjs value to plain JavaScript.
+ * Handles Y.Map, Y.Array, Y.XmlFragment without using instanceof.
+ */
+function serialize(value: unknown): unknown {
+  // Primitives pass through
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'object') return value;
+
+  // Check for XmlFragment first (converts to ProseMirror JSON)
+  if (isYXmlFragment(value)) {
+    return fragmentToJSON(value);
+  }
+
+  // Y.Map - iterate with forEach and recursively serialize values
+  if (isYMap(value)) {
+    const result: Record<string, unknown> = {};
+    const ymap = value as Y.Map<unknown>;
+    ymap.forEach((v, k) => {
+      result[k] = serialize(v);
+    });
+    return result;
+  }
+
+  // Y.Array - convert to array and recursively serialize elements
+  if (isYArray(value)) {
+    return (value as Y.Array<unknown>).toArray().map(serialize);
+  }
+
+  // Regular object/array (not a Yjs type) - return as-is
+  return value;
+}
+
+/**
+ * Serialize a Y.Map to a plain object.
  */
 export function serializeYMap(ymap: Y.Map<unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  ymap.forEach((value, key) => {
-    result[key] = serializeYMapValue(value);
-  });
-  return result;
+  return serialize(ymap) as Record<string, unknown>;
 }
 
 /**
  * Extract all items from a Y.Map as plain objects.
- * Uses serializeYMap to ensure Y.XmlFragment is converted to ProseMirror JSON (not XML string).
  */
 export function extractItems<T>(ymap: Y.Map<unknown>): T[] {
   const items: T[] = [];
   ymap.forEach((value) => {
-    if (value instanceof Y.Map) {
-      items.push(serializeYMap(value) as T);
+    if (isYMap(value)) {
+      items.push(serialize(value) as T);
     }
   });
   return items;
@@ -101,11 +179,13 @@ export function extractItems<T>(ymap: Y.Map<unknown>): T[] {
 
 /**
  * Extract a single item from a Y.Map by key.
- * Uses serializeYMap to ensure Y.XmlFragment is converted to ProseMirror JSON (not XML string).
  */
 export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
   const value = ymap.get(key);
-  return value instanceof Y.Map ? (serializeYMap(value) as T) : null;
+  if (isYMap(value)) {
+    return serialize(value) as T;
+  }
+  return null;
 }
 
 import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
@@ -264,19 +344,11 @@ function appendNodeToFragment(parent: Y.XmlFragment | Y.XmlElement, node: XmlNod
 }
 
 /**
- * Serialize a Y.Map value, handling Y.XmlFragment specially.
+ * Serialize any value, handling Yjs types specially.
+ * Uses our custom serialization system that works across module instances.
  */
 export function serializeYMapValue(value: unknown): unknown {
-  if (value instanceof Y.Map) {
-    return serializeYMap(value);
-  }
-  if (value instanceof Y.XmlFragment) {
-    return fragmentToJSON(value);
-  }
-  if (value instanceof Y.Array) {
-    return value.toArray().map(serializeYMapValue);
-  }
-  return value;
+  return serialize(value);
 }
 
 /**
@@ -289,12 +361,12 @@ export function getFragmentFromYMap(
   field: string
 ): Y.XmlFragment | null {
   const doc = ymap.get(documentId);
-  if (!(doc instanceof Y.Map)) {
+  if (!isYMap(doc)) {
     return null;
   }
 
-  const fieldValue = doc.get(field);
-  if (fieldValue instanceof Y.XmlFragment) {
+  const fieldValue = (doc as Y.Map<unknown>).get(field);
+  if (isYXmlFragment(fieldValue)) {
     return fieldValue;
   }
 
