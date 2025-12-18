@@ -66,9 +66,17 @@ class IndexedDBPersistenceProvider implements PersistenceProvider {
 
   constructor(collection: string, ydoc: Y.Doc) {
     this.persistence = new IndexeddbPersistence(collection, ydoc);
-    // Normalize y-indexeddb's event-based API to a Promise
+
+    // Handle race: check synced state before attaching listener
+    // If database is empty or fast, synced event may fire before we attach
     this.whenSynced = new Promise((resolve) => {
-      this.persistence.on('synced', () => resolve());
+      if (this.persistence.synced) {
+        // Already synced - resolve immediately
+        resolve();
+      } else {
+        // Not yet synced - wait for event (use once to prevent listener accumulation)
+        this.persistence.once('synced', () => resolve());
+      }
     });
   }
 
