@@ -1,8 +1,19 @@
 import { defineConfig } from '@rslib/core';
+import { pluginEslint } from '@rsbuild/plugin-eslint';
 import { pluginTypeCheck } from '@rsbuild/plugin-type-check';
 
 export default defineConfig({
-  plugins: [pluginTypeCheck()],
+  plugins: [
+    pluginTypeCheck(),
+    pluginEslint({
+      enable: true,
+      eslintPluginOptions: {
+        configType: 'flat',
+        fix: true,
+        cacheLocation: 'node_modules/.cache/eslint',
+      },
+    }),
+  ],
   lib: [
     {
       // Shared types - types-only module safe for any environment

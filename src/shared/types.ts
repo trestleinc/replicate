@@ -13,7 +13,7 @@ export interface FragmentValue {
 
 /** ProseMirror-compatible JSON for XmlFragment serialization */
 export interface XmlFragmentJSON {
-  type: 'doc';
+  type: "doc";
   content?: XmlNodeJSON[];
 }
 
@@ -23,13 +23,13 @@ export interface XmlNodeJSON {
   attrs?: Record<string, unknown>;
   content?: XmlNodeJSON[];
   text?: string;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  marks?: { type: string; attrs?: Record<string, unknown> }[];
 }
 
 /** Operation type for streaming changes */
 export enum OperationType {
-  Delta = 'delta',
-  Snapshot = 'snapshot',
+  Delta = "delta",
+  Snapshot = "snapshot",
 }
 
 /**
