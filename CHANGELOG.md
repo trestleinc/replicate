@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Refactored API to nested object pattern** - Cleaner noun-verb API design:
+  - `persistence.indexeddb()`, `persistence.sqlite.browser()`, `persistence.sqlite.native()`, `persistence.memory()`
+  - `schema.table()`, `schema.prose()` (server-side)
+  - `prose.extract()` (client-side text extraction)
+  - `errors.*` namespace for all error classes
+  - `adapters.sqljs`, `adapters.opsqlite` for SQLite adapters
+
 ### Added
 
 - **Universal SQLite persistence** - Works in both browser and React Native with automatic platform detection:

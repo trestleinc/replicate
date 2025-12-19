@@ -103,19 +103,19 @@ export default app;
 
 ### Step 2: Define Your Schema
 
-Use the `table()` helper to automatically inject required fields:
+Use the `schema.table()` helper to automatically inject required fields:
 
 ```typescript
 // convex/schema.ts
 import { defineSchema } from 'convex/server';
 import { v } from 'convex/values';
-import { table, prose } from '@trestleinc/replicate/server';
+import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
-  tasks: table(
+  tasks: schema.table(
     {
       // Your application fields only!
-      // version and timestamp are automatically injected by table()
+      // version and timestamp are automatically injected by schema.table()
       id: v.string(),
       text: v.string(),
       isCompleted: v.boolean(),
@@ -127,7 +127,7 @@ export default defineSchema({
 });
 ```
 
-**What `table()` does:**
+**What `schema.table()` does:**
 - Automatically injects `version: v.number()` (for CRDT versioning)
 - Automatically injects `timestamp: v.number()` (for incremental sync)
 - You only define your business logic fields
@@ -411,24 +411,24 @@ export const {
 
 ### Rich Text / Prose Fields
 
-For collaborative rich text editing, use the `prose()` validator and `extract()` function:
+For collaborative rich text editing, use the `schema.prose()` validator and `prose.extract()` function:
 
 ```typescript
 // convex/schema.ts
-import { table, prose } from '@trestleinc/replicate/server';
+import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
-  notebooks: table({
+  notebooks: schema.table({
     id: v.string(),
     title: v.string(),
-    content: prose(),  // ProseMirror-compatible JSON
+    content: schema.prose(),  // ProseMirror-compatible JSON
   }),
 });
 
 // Client: Extract plain text for search
-import { extract } from '@trestleinc/replicate/client';
+import { prose } from '@trestleinc/replicate/client';
 
-const plainText = extract(notebook.content);
+const plainText = prose.extract(notebook.content);
 
 // Client: Get editor binding for ProseMirror/TipTap
 const binding = await collection.utils.prose(notebookId, 'content');
@@ -480,38 +480,43 @@ await ctx.runMutation(api.tasks.versions.remove, {
 Choose the right storage backend for your platform:
 
 ```typescript
-import {
-  indexeddbPersistence,  // Browser (default)
-  sqlitePersistence,     // Universal: Browser + React Native
-  memoryPersistence,     // Testing
-} from '@trestleinc/replicate/client';
+import { persistence, adapters } from '@trestleinc/replicate/client';
 
 // Browser: IndexedDB (default, no config needed)
 convexCollectionOptions<Task>({
   // ... other options
-  persistence: indexeddbPersistence(),
+  persistence: persistence.indexeddb(),
 });
 
-// Universal SQLite: Works in both browser AND React Native
-// Auto-detects platform and uses appropriate SQLite backend
+// Browser SQLite: Uses sql.js WASM with OPFS persistence
+// You initialize sql.js and pass the SQL object
+import initSqlJs from 'sql.js';
+const SQL = await initSqlJs({ locateFile: (file) => `/${file}` });
 convexCollectionOptions<Task>({
   // ... other options
-  persistence: await sqlitePersistence('my-app-db'),
+  persistence: await persistence.sqlite.browser(SQL, 'my-app-db'),
+});
+
+// React Native SQLite: Uses op-sqlite (native SQLite)
+import { open } from '@op-engineering/op-sqlite';
+const db = open({ name: 'my-app-db' });
+convexCollectionOptions<Task>({
+  // ... other options
+  persistence: await persistence.sqlite.native(db, 'my-app-db'),
 });
 
 // Testing: In-memory (no persistence)
 convexCollectionOptions<Task>({
   // ... other options
-  persistence: memoryPersistence(),
+  persistence: persistence.memory(),
 });
 ```
 
 **IndexedDB** (default) - Uses y-indexeddb for Y.Doc persistence and browser-level for metadata. Browser only.
 
-**SQLite** - Universal persistence for browser and React Native. Auto-detects platform:
-- **Browser**: Uses sql.js (SQLite compiled to WASM, ~500KB) with optional OPFS persistence
-- **React Native**: Uses op-sqlite (native SQLite)
-- Uses y-leveldb for Y.Doc persistence and sqlite-level for metadata
+**SQLite Browser** - Uses sql.js (SQLite compiled to WASM) with OPFS persistence. You initialize sql.js yourself and pass the SQL object.
+
+**SQLite Native** - Uses op-sqlite for React Native. You create the database and pass it.
 
 **Memory** - No persistence, useful for testing without IndexedDB side effects.
 
@@ -577,7 +582,7 @@ const collection = createCollection(
 );
 ```
 
-#### `extract(proseJson)`
+#### `prose.extract(proseJson)`
 
 Extract plain text from ProseMirror JSON.
 
@@ -588,37 +593,47 @@ Extract plain text from ProseMirror JSON.
 
 **Example:**
 ```typescript
-const plainText = extract(task.content);
+import { prose } from '@trestleinc/replicate/client';
+
+const plainText = prose.extract(task.content);
 ```
 
 #### Persistence Providers
 
 ```typescript
-import {
-  indexeddbPersistence,  // Browser: IndexedDB (default)
-  sqlitePersistence,     // Universal: Browser + React Native SQLite
-  memoryPersistence,     // Testing: in-memory (no persistence)
-} from '@trestleinc/replicate/client';
+import { persistence, adapters } from '@trestleinc/replicate/client';
+
+// Persistence providers
+persistence.indexeddb()           // Browser: IndexedDB (default)
+persistence.sqlite.browser(SQL, name)  // Browser: sql.js WASM + OPFS
+persistence.sqlite.native(db, name)    // React Native: op-sqlite
+persistence.memory()              // Testing: in-memory (no persistence)
+
+// SQLite adapters (for advanced use)
+adapters.sqljs    // SqlJsAdapter class for browser
+adapters.opsqlite // OPSqliteAdapter class for React Native
 ```
 
-**`indexeddbPersistence()`** - Browser-only, uses y-indexeddb + browser-level.
+**`persistence.indexeddb()`** - Browser-only, uses y-indexeddb + browser-level.
 
-**`sqlitePersistence(name)`** - Universal SQLite for browser (sql.js WASM) and React Native (op-sqlite). Auto-detects platform.
+**`persistence.sqlite.browser(SQL, name)`** - Browser SQLite using sql.js WASM. You initialize sql.js and pass the SQL object.
 
-**`memoryPersistence()`** - In-memory, no persistence. Useful for testing.
+**`persistence.sqlite.native(db, name)`** - React Native SQLite using op-sqlite. You create the database and pass it.
+
+**`persistence.memory()`** - In-memory, no persistence. Useful for testing.
 
 #### Error Classes
 
 ```typescript
-import {
-  NetworkError,           // Network-related failures
-  IDBError,               // IndexedDB read errors
-  IDBWriteError,          // IndexedDB write errors
-  ReconciliationError,    // Phantom document cleanup errors
-  ProseError,             // Rich text field errors
-  CollectionNotReadyError,// Collection not initialized
-  NonRetriableError,      // Errors that should not be retried (auth, validation)
-} from '@trestleinc/replicate/client';
+import { errors } from '@trestleinc/replicate/client';
+
+errors.Network           // Network-related failures
+errors.IDB               // IndexedDB read errors
+errors.IDBWrite          // IndexedDB write errors
+errors.Reconciliation    // Phantom document cleanup errors
+errors.Prose             // Rich text field errors
+errors.CollectionNotReady// Collection not initialized
+errors.NonRetriable      // Errors that should not be retried (auth, validation)
 ```
 
 ### Server-Side (`@trestleinc/replicate/server`)
@@ -686,7 +701,7 @@ interface ReplicateConfig<T> {
 - `remove` - Dual-storage delete mutation (auto-compacts when threshold exceeded)
 - `versions` - Version history APIs (create, list, get, restore, remove)
 
-#### `table(userFields, applyIndexes?)`
+#### `schema.table(userFields, applyIndexes?)`
 
 Automatically inject replication metadata fields (`version`, `timestamp`).
 
@@ -698,7 +713,9 @@ Automatically inject replication metadata fields (`version`, `timestamp`).
 
 **Example:**
 ```typescript
-tasks: table(
+import { schema } from '@trestleinc/replicate/server';
+
+tasks: schema.table(
   {
     id: v.string(),
     text: v.string(),
@@ -709,7 +726,7 @@ tasks: table(
 )
 ```
 
-#### `prose()`
+#### `schema.prose()`
 
 Validator for ProseMirror-compatible JSON fields.
 
@@ -717,7 +734,7 @@ Validator for ProseMirror-compatible JSON fields.
 
 **Example:**
 ```typescript
-content: prose()  // Validates ProseMirror JSON structure
+content: schema.prose()  // Validates ProseMirror JSON structure
 ```
 
 ## Performance

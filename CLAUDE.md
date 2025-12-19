@@ -109,22 +109,27 @@ Client edit -> merge.ts (encode delta) -> collection.ts -> TanStack DB sync
 // Main entry point
 convexCollectionOptions()    // Create collection options for TanStack DB
 
-// Persistence providers (swappable storage backends)
-indexeddbPersistence()       // Browser: IndexedDB (default)
-sqlitePersistence()          // Universal: SQLite (browser + React Native)
-memoryPersistence()          // Testing: in-memory
+// Persistence providers (nested object)
+persistence.indexeddb()              // Browser: IndexedDB (default)
+persistence.sqlite.browser(SQL, name) // Browser: sql.js WASM + OPFS
+persistence.sqlite.native(db, name)   // React Native: op-sqlite
+persistence.memory()                  // Testing: in-memory
 
-// Text extraction
-extract()                    // Extract plain text from ProseMirror JSON
+// Text extraction (nested object)
+prose.extract()              // Extract plain text from ProseMirror JSON
 
-// Effect TaggedErrors
-NetworkError
-IDBError
-IDBWriteError
-ReconciliationError
-ProseError
-CollectionNotReadyError
-NonRetriableError            // Error that should not be retried
+// Error classes (nested object)
+errors.Network               // Network-related failures
+errors.IDB                   // IndexedDB read errors
+errors.IDBWrite              // IndexedDB write errors
+errors.Reconciliation        // Phantom document cleanup errors
+errors.Prose                 // Rich text field errors
+errors.CollectionNotReady    // Collection not initialized
+errors.NonRetriable          // Errors that should not be retried
+
+// SQLite adapters (nested object)
+adapters.sqljs               // SqlJsAdapter class for browser
+adapters.opsqlite            // OPSqliteAdapter class for React Native
 
 // Collection utils (accessed via collection.utils.*)
 collection.utils.prose(id, field)   // Returns EditorBinding for rich text
@@ -133,8 +138,10 @@ collection.utils.prose(id, field)   // Returns EditorBinding for rich text
 ### Server (`@trestleinc/replicate/server`)
 ```typescript
 replicate()             // Factory to create bound replicate function
-table()                 // Define replicated table schema (injects version/timestamp fields)
-prose()                 // Validator for ProseMirror-compatible JSON
+
+// Schema helpers (nested object)
+schema.table()          // Define replicated table schema (injects version/timestamp fields)
+schema.prose()          // Validator for ProseMirror-compatible JSON
 
 // Type exports
 ReplicateConfig         // Configuration type for replicate
@@ -202,24 +209,24 @@ const collection = createCollection(
 const binding = await collection.utils.prose(id, 'content');  // Editor binding
 ```
 
-### Schema: table() Helper
+### Schema: schema.table() Helper
 ```typescript
-import { table, prose } from '@trestleinc/replicate/server';
+import { schema } from '@trestleinc/replicate/server';
 
 // Automatically injects version and timestamp fields
-tasks: table({
+tasks: schema.table({
   id: v.string(),
   text: v.string(),
-  content: prose(),  // optional: ProseMirror-compatible rich text
+  content: schema.prose(),  // optional: ProseMirror-compatible rich text
 }, (t) => t.index('by_id', ['id']))
 ```
 
 ### Text Extraction
 ```typescript
-import { extract } from '@trestleinc/replicate/client';
+import { prose } from '@trestleinc/replicate/client';
 
 // Extract plain text from ProseMirror JSON
-const plainText = extract(task.content);
+const plainText = prose.extract(task.content);
 ```
 
 ## Technology Stack
@@ -235,7 +242,7 @@ const plainText = extract(task.content);
 
 ## Naming Conventions
 
-- **Public API**: Single-word function names (`replicate()`, `table()`, `extract()`)
+- **Public API**: Single-word function names, nested under noun objects (`replicate()`, `schema.table()`, `prose.extract()`)
 - **Service files**: lowercase, no suffix (`checkpoint.ts`, not `CheckpointService.ts`)
 - **Service exports**: PascalCase, no "Service" suffix (`Checkpoint`, `CheckpointLive`)
 - **Error classes**: Short names with "Error" suffix (`ProseError`, not `ProseFieldNotFoundError`)
