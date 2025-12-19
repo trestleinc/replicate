@@ -78,11 +78,10 @@ class SqlitePersistenceProvider implements PersistenceProvider {
 
   constructor(collection: string, _ydoc: Y.Doc, leveldb: LeveldbPersistence) {
     this.persistence = leveldb;
-    // Load existing document state
-    this.whenSynced = this.persistence.getYDoc(collection).then((storedDoc: Y.Doc) => {
-      // Apply stored state to provided ydoc
-      const state = storedDoc.store;
-      if (state) {
+    // Load existing document state (may be null for new collections)
+    this.whenSynced = this.persistence.getYDoc(collection).then((storedDoc: Y.Doc | null) => {
+      if (storedDoc) {
+        // Apply stored state to provided ydoc
         // The stored doc and ydoc are merged via y-leveldb's internal mechanisms
       }
     });
