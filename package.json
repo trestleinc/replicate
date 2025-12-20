@@ -1,43 +1,118 @@
 {
-  "name": "@convex-replicate",
-  "version": "0.1.0",
+  "name": "@trestleinc/replicate",
+  "version": "1.1.1",
+  "description": "Offline-first data replication with Yjs CRDTs and Convex",
+  "repository": "github:trestleinc/replicate",
+  "homepage": "https://github.com/trestleinc/replicate#readme",
+  "bugs": {
+    "url": "https://github.com/trestleinc/replicate/issues"
+  },
   "license": "Apache-2.0",
-  "private": true,
-  "workspaces": [
-    "packages/*",
-    "examples/*"
+  "keywords": [
+    "convex",
+    "replicate",
+    "crdt",
+    "yjs",
+    "offline-first",
+    "tanstack"
   ],
+  "type": "module",
+  "private": false,
   "resolutions": {
-    "convex": "1.28.0"
+    "convex": "^1.31.0"
+  },
+  "overrides": {
+    "convex": "^1.31.0"
   },
   "scripts": {
-    "build": "bun run build:component && bun run build:core",
-    "build:component": "cd packages/component && bun run build",
-    "build:core": "cd packages/core && bun run build",
-    "clean": "rm -rf packages/*/dist",
-    "typecheck": "bun run typecheck:component && bun run typecheck:core",
-    "typecheck:component": "cd packages/component && bun run typecheck",
-    "typecheck:core": "cd packages/core && tsc --noEmit",
-    "dev:example": "cd examples/tanstack-start && bun run dev",
-    "build:example": "cd examples/tanstack-start && bun run build",
-    "lint": "biome lint .",
-    "lint:fix": "biome lint --write .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "check": "biome check .",
-    "check:fix": "biome check --write .",
-    "release": "./scripts/release.sh"
+    "build": "rslib build",
+    "dev": "rslib build --watch",
+    "clean": "rm -rf dist"
   },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/shared/index.d.ts",
+        "default": "./dist/shared.js"
+      }
+    },
+    "./package.json": "./package.json",
+    "./client": {
+      "import": {
+        "@convex-dev/component-source": "./src/client/index.ts",
+        "types": "./dist/client/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server.js"
+      }
+    },
+    "./convex.config": {
+      "import": {
+        "@convex-dev/component-source": "./src/component/convex.config.ts",
+        "types": "./dist/component/convex.config.d.ts",
+        "default": "./dist/component/convex.config.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
-    "@automerge/automerge": "3.1.2",
-    "@automerge/automerge-repo-storage-indexeddb": "2.4.0",
-    "@logtape/logtape": "1.1.2",
-    "zod": "4.1.12"
+    "@effect/platform": "0.93.8",
+    "@logtape/logtape": "1.2.2",
+    "abstract-level": "3.1.1",
+    "browser-level": "3.0.0",
+    "effect": "3.19.12",
+    "y-indexeddb": "9.0.12",
+    "y-leveldb": "0.2.0"
+  },
+  "peerDependencies": {
+    "@tanstack/db": "^0.5.0",
+    "convex": "^1.31.0",
+    "lib0": "^0.2.0",
+    "yjs": "^13.6.0"
+  },
+  "peerDependenciesMeta": {
+    "sql.js": {
+      "optional": true
+    },
+    "@op-engineering/op-sqlite": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.2",
-    "@types/node": "22.18.12",
-    "convex": "1.28.0",
-    "typescript": "5.9.3"
+    "@convex-dev/eslint-plugin": "1.1.1",
+    "@edge-runtime/vm": "5.0.0",
+    "@microsoft/api-extractor": "7.55.2",
+    "@rsbuild/plugin-eslint": "1.2.0",
+    "@rsbuild/plugin-type-check": "1.3.2",
+    "@rslib/core": "0.18.4",
+    "@stylistic/eslint-plugin": "5.6.1",
+    "@tanstack/db": "0.5.12",
+    "@types/node": "25.0.2",
+    "@types/sql.js": "1.4.9",
+    "convex": "1.31.0",
+    "dotenv": "17.2.3",
+    "eslint": "9.39.2",
+    "fake-indexeddb": "6.2.5",
+    "globals": "16.5.0",
+    "lib0": "0.2.114",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.50.0",
+    "yjs": "13.6.27",
+    "zod": "4.1.13"
+  },
+  "main": "./dist/shared.js",
+  "types": "./dist/shared/index.d.ts",
+  "module": "./dist/shared.js",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -9,7 +9,13 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
-    "useDefineForClassFields": true
+
+    "useDefineForClassFields": true,
+
+    "paths": {
+      "$/*": ["./src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/test"]
 }
