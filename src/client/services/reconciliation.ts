@@ -1,7 +1,7 @@
 import { Effect, Context, Layer } from 'effect';
 import * as Y from 'yjs';
-import { yjsTransact, serializeYMap } from '$/client/merge.js';
-import { ReconciliationError as ReconciliationErrorImport } from '$/client/errors.js';
+import { yjsTransact, serializeYMap } from '$/client/merge';
+import { ReconciliationError as ReconciliationErrorImport } from '$/client/errors';
 
 /**
  * Reconciliation handles removal of phantom documents -

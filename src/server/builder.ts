@@ -1,5 +1,5 @@
 import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from 'convex/server';
-import { Replicate } from '$/server/storage.js';
+import { Replicate } from '$/server/storage';
 
 /**
  * Configuration for replicate handlers (without component - used with factory pattern).
@@ -53,6 +53,8 @@ function replicateInternal<T extends object>(component: any, config: ReplicateCo
   });
 
   return {
+    __collection: config.collection,
+
     stream: storage.createStreamQuery({
       evalRead: config.hooks?.evalRead,
       onStream: config.hooks?.onStream,

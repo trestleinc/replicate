@@ -1,6 +1,6 @@
 import { Effect, Context, Layer } from 'effect';
-import { IDBError, IDBWriteError } from '$/client/errors.js';
-import type { KeyValueStore } from '$/client/persistence/types.js';
+import { IDBError, IDBWriteError } from '$/client/errors';
+import type { KeyValueStore } from '$/client/persistence/types';
 
 export interface CheckpointData {
   lastModified: number;

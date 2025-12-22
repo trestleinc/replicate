@@ -17,6 +17,17 @@ export interface XmlFragmentJSON {
   content?: XmlNodeJSON[];
 }
 
+declare const PROSE_BRAND: unique symbol;
+
+/**
+ * Branded prose type for Zod schemas.
+ * Extends XmlFragmentJSON with a unique brand for type-level detection.
+ * Use the `prose()` helper from `@trestleinc/replicate/client` to create this type.
+ */
+export interface ProseValue extends XmlFragmentJSON {
+  readonly [PROSE_BRAND]: typeof PROSE_BRAND;
+}
+
 /** ProseMirror node structure */
 export interface XmlNodeJSON {
   type: string;
@@ -33,20 +44,9 @@ export enum OperationType {
 }
 
 /**
- * Extract field names from T where the value type is XmlFragmentJSON.
- * Used for type-safe prose field configuration.
- *
- * @example
- * ```typescript
- * interface Notebook {
- *   id: string;
- *   title: string;
- *   content: XmlFragmentJSON;
- * }
- *
- * type Fields = ProseFields<Notebook>; // 'content'
- * ```
+ * Extract prose field names from T (fields typed as ProseValue).
+ * Used internally for type-safe prose field operations.
  */
 export type ProseFields<T> = {
-  [K in keyof T]: T[K] extends XmlFragmentJSON ? K : never;
+  [K in keyof T]: T[K] extends ProseValue ? K : never;
 }[keyof T];

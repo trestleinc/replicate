@@ -5,8 +5,8 @@
  */
 
 import * as Y from 'yjs';
-import { getLogger } from '$/client/logger.js';
-import type { KeyValueStore } from '$/client/persistence/types.js';
+import { getLogger } from '$/client/logger';
+import type { KeyValueStore } from '$/client/persistence/types';
 
 const logger = getLogger(['replicate', 'merge']);
 
@@ -188,7 +188,7 @@ export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
   return null;
 }
 
-import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared/types.js';
+import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared/types';
 
 /**
  * Check if a value looks like ProseMirror/BlockNote JSON document.

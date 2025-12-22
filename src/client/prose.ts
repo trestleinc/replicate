@@ -7,8 +7,8 @@
 
 import * as Y from 'yjs';
 import type { Collection } from '@tanstack/db';
-import { getLogger } from '$/client/logger.js';
-import { serializeYMapValue } from '$/client/merge.js';
+import { getLogger } from '$/client/logger';
+import { serializeYMapValue } from '$/client/merge';
 
 /** Server origin - changes from server should not trigger local sync */
 const SERVER_ORIGIN = 'server';

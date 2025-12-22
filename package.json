@@ -18,22 +18,27 @@
   ],
   "type": "module",
   "private": false,
+  "workspaces": ["example"],
   "resolutions": {
-    "convex": "^1.31.0"
+    "convex": "1.31.2",
+    "@standard-schema/spec": "1.1.0",
+    "zod": "4.2.1"
   },
   "overrides": {
-    "convex": "^1.31.0"
+    "convex": "1.31.2",
+    "@standard-schema/spec": "1.1.0",
+    "zod": "4.2.1"
   },
   "scripts": {
-    "build": "rslib build",
-    "dev": "rslib build --watch",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
     "clean": "rm -rf dist"
   },
   "exports": {
     ".": {
       "import": {
         "types": "./dist/shared/index.d.ts",
-        "default": "./dist/shared.js"
+        "default": "./dist/shared/index.js"
       }
     },
     "./package.json": "./package.json",
@@ -41,13 +46,13 @@
       "import": {
         "@convex-dev/component-source": "./src/client/index.ts",
         "types": "./dist/client/index.d.ts",
-        "default": "./dist/index.js"
+        "default": "./dist/client/index.js"
       }
     },
     "./server": {
       "import": {
         "types": "./dist/server/index.d.ts",
-        "default": "./dist/server.js"
+        "default": "./dist/server/index.js"
       }
     },
     "./convex.config": {
@@ -74,7 +79,8 @@
     "y-leveldb": "0.2.0"
   },
   "peerDependencies": {
-    "@tanstack/db": "^0.5.0",
+    "@standard-schema/spec": "^1.1.0",
+    "@tanstack/db": "^0.5.15",
     "convex": "^1.31.0",
     "lib0": "^0.2.0",
     "yjs": "^13.6.0"
@@ -91,27 +97,26 @@
     "@convex-dev/eslint-plugin": "1.1.1",
     "@edge-runtime/vm": "5.0.0",
     "@microsoft/api-extractor": "7.55.2",
-    "@rsbuild/plugin-eslint": "1.2.0",
-    "@rsbuild/plugin-type-check": "1.3.2",
-    "@rslib/core": "0.18.4",
+    "@standard-schema/spec": "1.1.0",
     "@stylistic/eslint-plugin": "5.6.1",
-    "@tanstack/db": "0.5.12",
+    "@tanstack/db": "0.5.15",
     "@types/node": "25.0.2",
     "@types/sql.js": "1.4.9",
-    "convex": "1.31.0",
+    "convex": "1.31.2",
     "dotenv": "17.2.3",
     "eslint": "9.39.2",
     "fake-indexeddb": "6.2.5",
     "globals": "16.5.0",
     "lib0": "0.2.114",
+    "tsdown": "0.18.2",
     "typescript": "5.9.3",
     "typescript-eslint": "8.50.0",
     "yjs": "13.6.27",
-    "zod": "4.1.13"
+    "zod": "4.2.1"
   },
-  "main": "./dist/shared.js",
+  "main": "./dist/shared/index.js",
   "types": "./dist/shared/index.d.ts",
-  "module": "./dist/shared.js",
+  "module": "./dist/shared/index.js",
   "publishConfig": {
     "access": "public"
   }

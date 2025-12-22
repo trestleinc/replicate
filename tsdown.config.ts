@@ -1,0 +1,63 @@
+import { defineConfig } from 'tsdown';
+
+const jsExtensions = () => ({ js: '.js', dts: '.d.ts' });
+
+export default defineConfig([
+  {
+    entry: { 'shared/index': 'src/shared/index.ts' },
+    format: 'esm',
+    outDir: 'dist',
+    dts: true,
+    clean: true,
+    platform: 'node',
+    external: [/^convex/],
+    outExtensions: jsExtensions,
+  },
+  {
+    entry: { 'client/index': 'src/client/index.ts' },
+    format: 'esm',
+    outDir: 'dist',
+    dts: true,
+    clean: false,
+    platform: 'browser',
+    shims: true,
+    external: [
+      'yjs',
+      'lib0',
+      '@tanstack/offline-transactions',
+      '@tanstack/db',
+      /^convex/,
+      '@logtape/logtape',
+      'effect',
+      '@effect/platform',
+      'sql.js',
+      '@op-engineering/op-sqlite',
+      'abstract-level',
+      'browser-level',
+      'y-indexeddb',
+      'y-leveldb',
+    ],
+    outExtensions: jsExtensions,
+  },
+  {
+    entry: { 'server/index': 'src/server/index.ts' },
+    format: 'esm',
+    outDir: 'dist',
+    dts: true,
+    clean: false,
+    platform: 'node',
+    external: [/^convex/, 'yjs', 'lib0'],
+    outExtensions: jsExtensions,
+  },
+  {
+    entry: ['src/component/**/*.ts'],
+    format: 'esm',
+    outDir: 'dist/component',
+    dts: true,
+    clean: false,
+    unbundle: true,
+    platform: 'node',
+    external: [/^convex/, 'yjs', 'lib0', '@logtape/logtape'],
+    outExtensions: jsExtensions,
+  },
+]);

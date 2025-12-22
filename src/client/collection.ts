@@ -1,15 +1,16 @@
 import * as Y from 'yjs';
 import { createMutex } from 'lib0/mutex';
-import type { Persistence, PersistenceProvider } from '$/client/persistence/types.js';
+import type { Persistence, PersistenceProvider } from '$/client/persistence/types';
 import type { ConvexClient } from 'convex/browser';
-import type { FunctionReference } from 'convex/server';
-import type { CollectionConfig, Collection } from '@tanstack/db';
+import { getFunctionName, type FunctionReference } from 'convex/server';
+import type { CollectionConfig, Collection, NonSingleResult, InferSchemaOutput } from '@tanstack/db';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { Effect, Layer } from 'effect';
-import { getLogger } from '$/client/logger.js';
-import { ProseError, NonRetriableError } from '$/client/errors.js';
-import { Checkpoint, createCheckpointLayer } from '$/client/services/checkpoint.js';
-import { Reconciliation, ReconciliationLive } from '$/client/services/reconciliation.js';
-import { createReplicateOps, type BoundReplicateOps } from '$/client/replicate.js';
+import { getLogger } from '$/client/logger';
+import { ProseError, NonRetriableError } from '$/client/errors';
+import { Checkpoint, createCheckpointLayer } from '$/client/services/checkpoint';
+import { Reconciliation, ReconciliationLive } from '$/client/services/reconciliation';
+import { createReplicateOps, type BoundReplicateOps } from '$/client/replicate';
 import {
   createYjsDocument,
   getYMap,
@@ -21,8 +22,10 @@ import {
   fragmentFromJSON,
   serializeYMapValue,
   getFragmentFromYMap,
-} from '$/client/merge.js';
-import * as prose from '$/client/prose.js';
+} from '$/client/merge';
+import * as prose from '$/client/prose';
+import { extractProseFields } from '$/client/prose-schema';
+import { z } from 'zod';
 
 /** Origin markers for Yjs transactions */
 enum YjsOrigin {
@@ -30,7 +33,7 @@ enum YjsOrigin {
   Fragment = 'fragment',
   Server = 'server',
 }
-import type { ProseFields, XmlFragmentJSON } from '$/shared/types.js';
+import type { ProseFields, XmlFragmentJSON } from '$/shared/types';
 
 const logger = getLogger(['replicate', 'collection']);
 
@@ -91,26 +94,27 @@ export type Materialized<T> = {
   crdtBytes?: ArrayBuffer;
 };
 
-/** Configuration for creating a Convex-backed collection */
-export interface ConvexCollectionOptionsConfig<T extends object> {
-  getKey: (item: T) => string | number;
+/** API object from replicate() */
+interface ConvexCollectionApi {
+  stream: FunctionReference<'query'>;
+  insert: FunctionReference<'mutation'>;
+  update: FunctionReference<'mutation'>;
+  remove: FunctionReference<'mutation'>;
+  recovery: FunctionReference<'query'>;
+  material?: FunctionReference<'query'>;
+}
+
+interface ConvexCollectionOptionsBaseConfig<
+  T extends object,
+  TSchema extends StandardSchemaV1 = never,
+  TKey extends string | number = string | number
+> {
+  schema: TSchema;
+  getKey: (item: T) => TKey;
   material?: Materialized<T>;
   convexClient: ConvexClient;
-  api: {
-    stream: FunctionReference<'query'>;
-    insert: FunctionReference<'mutation'>;
-    update: FunctionReference<'mutation'>;
-    remove: FunctionReference<'mutation'>;
-    recovery: FunctionReference<'query'>;
-    material?: FunctionReference<'query'>;
-    [key: string]: any;
-  };
-  collection: string;
-  /** Fields that contain prose (rich text) content stored as Y.XmlFragment */
-  prose: Array<ProseFields<T>>;
-  /** Undo capture timeout in ms. Changes within this window merge into one undo. Default: 500 */
+  api: ConvexCollectionApi;
   undoCaptureTimeout?: number;
-  /** Persistence provider for Y.Doc and key-value storage */
   persistence: Persistence;
 }
 
@@ -236,42 +240,83 @@ function getOrCreateFragmentUndoManager(
   return um;
 }
 
+type ConvexCollectionOptionsResult<
+  T extends object,
+  TKey extends string | number = string | number,
+  TSchema extends StandardSchemaV1 = never
+> = CollectionConfig<T, TKey, TSchema> & NonSingleResult & {
+  _convexClient: ConvexClient;
+  _collection: string;
+  _proseFields: string[];
+  _persistence: Persistence;
+  utils: ConvexCollectionUtils<T>;
+  schema: TSchema;
+};
+
 /**
  * Create TanStack DB collection options with Convex + Yjs replication.
+ * Schema is required - types and prose fields are auto-detected.
  *
  * @example
  * ```typescript
- * const options = convexCollectionOptions<Task>({
- *   getKey: (t) => t.id,
- *   convexClient,
- *   api: { stream: api.tasks.stream, insert: api.tasks.insert, ... },
- *   collection: 'tasks',
+ * import { prose } from '@trestleinc/replicate/client';
+ *
+ * const taskSchema = z.object({
+ *   id: z.string(),
+ *   title: z.string(),
+ *   content: prose(),  // Rich text field - auto-detected
  * });
- * const collection = createCollection(options);
+ *
+ * const collection = createCollection(
+ *   convexCollectionOptions({
+ *     schema: taskSchema,
+ *     getKey: (t) => t.id,
+ *     convexClient,
+ *     api: api.tasks,  // __collection is extracted automatically
+ *     persistence,
+ *   })
+ * );
  * ```
  */
-export function convexCollectionOptions<T extends object>({
-  getKey,
-  material,
-  convexClient,
-  api,
-  collection,
-  prose: proseFields,
-  undoCaptureTimeout = 500,
-  persistence,
-}: ConvexCollectionOptionsConfig<T>): CollectionConfig<T> & {
-  _convexClient: ConvexClient;
-  _collection: string;
-  _proseFields: Array<ProseFields<T>>;
-  _persistence: Persistence;
-  utils: ConvexCollectionUtils<T>;
-} {
+export function convexCollectionOptions<
+  TSchema extends z.ZodObject<z.ZodRawShape>,
+  TKey extends string | number = string | number
+>(
+  config: ConvexCollectionOptionsBaseConfig<z.infer<TSchema>, TSchema, TKey>
+): ConvexCollectionOptionsResult<z.infer<TSchema>, TKey, TSchema>;
+
+// Implementation (must be compatible with both overloads)
+export function convexCollectionOptions(
+  config: ConvexCollectionOptionsBaseConfig<any, any, any>
+): ConvexCollectionOptionsResult<any, any, any> {
+  const {
+    schema,
+    getKey,
+    material,
+    convexClient,
+    api,
+    undoCaptureTimeout = 500,
+    persistence,
+  } = config;
+
+  // Extract collection name from function reference path (e.g., "intervals:stream" -> "intervals")
+  const functionPath = getFunctionName(api.stream);
+  const collection = functionPath.split(':')[0];
+  if (!collection) {
+    throw new Error('Could not extract collection name from api.stream function reference');
+  }
+
+  const proseFields: string[] =
+    schema && schema instanceof z.ZodObject ? extractProseFields(schema) : [];
+
+  // DataType is 'any' in implementation - type safety comes from overload signatures
+  type DataType = any;
   // Create a Set for O(1) lookup of prose fields
-  const proseFieldSet = new Set<string>(proseFields as string[]);
+  const proseFieldSet = new Set<string>(proseFields);
 
   // Create utils object - prose() waits for Y.Doc to be ready via collectionDocs
-  const utils: ConvexCollectionUtils<T> = {
-    async prose(documentId: string, field: ProseFields<T>): Promise<EditorBinding> {
+  const utils: ConvexCollectionUtils<DataType> = {
+    async prose(documentId: string, field: ProseFields<DataType>): Promise<EditorBinding> {
       const fieldStr = field as string;
 
       // Validate field is in prose config
@@ -387,7 +432,7 @@ export function convexCollectionOptions<T extends object>({
 
   // Bound replicate operations - set during sync initialization
   // Used by onDelete and other handlers that need to sync with TanStack DB
-  let ops: BoundReplicateOps<T> = null as any;
+  let ops: BoundReplicateOps<DataType> = null as any;
 
   // Create services layer with the persistence KV store
   const checkpointLayer = createCheckpointLayer(persistence.kv);
@@ -403,7 +448,7 @@ export function convexCollectionOptions<T extends object>({
     resolveOptimisticReady = resolve;
   });
 
-  const reconcile = (ops: BoundReplicateOps<T>) =>
+  const reconcile = (ops: BoundReplicateOps<DataType>) =>
     Effect.gen(function* () {
       if (!api.material) return;
 
@@ -417,14 +462,14 @@ export function convexCollectionOptions<T extends object>({
 
       const serverDocs = Array.isArray(serverResponse)
         ? serverResponse
-        : ((serverResponse as any).documents as T[] | undefined) || [];
+        : ((serverResponse as any).documents as DataType[] | undefined) || [];
 
       const removedItems = yield* reconciliation.reconcile(
         ydoc,
         ymap,
         collection,
         serverDocs,
-        (doc: T) => String(getKey(doc))
+        (doc: DataType) => String(getKey(doc))
       );
 
       if (removedItems.length > 0) {
@@ -490,7 +535,7 @@ export function convexCollectionOptions<T extends object>({
     }
   };
 
-  const applyYjsInsert = (mutations: CollectionMutation<T>[]): Uint8Array => {
+  const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array => {
     const { delta } = transactWithDelta(
       ydoc,
       () => {
@@ -517,7 +562,7 @@ export function convexCollectionOptions<T extends object>({
     return delta;
   };
 
-  const applyYjsUpdate = (mutations: CollectionMutation<T>[]): Uint8Array => {
+  const applyYjsUpdate = (mutations: CollectionMutation<DataType>[]): Uint8Array => {
     const { delta } = transactWithDelta(
       ydoc,
       () => {
@@ -563,7 +608,7 @@ export function convexCollectionOptions<T extends object>({
     return delta;
   };
 
-  const applyYjsDelete = (mutations: CollectionMutation<T>[]): Uint8Array => {
+  const applyYjsDelete = (mutations: CollectionMutation<DataType>[]): Uint8Array => {
     const { delta } = transactWithDelta(
       ydoc,
       () => {
@@ -579,13 +624,14 @@ export function convexCollectionOptions<T extends object>({
   return {
     id: collection,
     getKey,
+    schema: schema as any,
     _convexClient: convexClient,
     _collection: collection,
     _proseFields: proseFields,
     _persistence: persistence,
     utils,
 
-    onInsert: async ({ transaction }: CollectionTransaction<T>) => {
+    onInsert: async ({ transaction }: CollectionTransaction<DataType>) => {
       try {
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
         const delta = applyYjsInsert(transaction.mutations);
@@ -607,7 +653,7 @@ export function convexCollectionOptions<T extends object>({
       }
     },
 
-    onUpdate: async ({ transaction }: CollectionTransaction<T>) => {
+    onUpdate: async ({ transaction }: CollectionTransaction<DataType>) => {
       try {
         const mutation = transaction.mutations[0];
         const documentKey = String(mutation.key);
@@ -653,13 +699,13 @@ export function convexCollectionOptions<T extends object>({
       }
     },
 
-    onDelete: async ({ transaction }: CollectionTransaction<T>) => {
+    onDelete: async ({ transaction }: CollectionTransaction<DataType>) => {
       try {
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
         const delta = applyYjsDelete(transaction.mutations);
         const itemsToDelete = transaction.mutations
           .map((mut) => mut.original)
-          .filter((item): item is T => item !== undefined && Object.keys(item).length > 0);
+          .filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
         ops.delete(itemsToDelete);
         if (delta.length > 0) {
           const documentKey = String(transaction.mutations[0].key);
@@ -691,7 +737,7 @@ export function convexCollectionOptions<T extends object>({
         const ssrDocuments = material?.documents;
         const ssrCheckpoint = material?.checkpoint;
         const ssrCRDTBytes = material?.crdtBytes;
-        const docs: T[] = ssrDocuments ? [...ssrDocuments] : [];
+        const docs: DataType[] = ssrDocuments ? [...ssrDocuments] : [];
 
         (async () => {
           try {
@@ -717,7 +763,7 @@ export function convexCollectionOptions<T extends object>({
 
             // Create bound replicate operations for this collection
             // These are tied to this collection's TanStack DB params
-            ops = createReplicateOps<T>(params);
+            ops = createReplicateOps<DataType>(params);
             resolveOptimisticReady?.();
 
             // Note: Fragment sync is handled by utils.prose() debounce handler
@@ -740,7 +786,7 @@ export function convexCollectionOptions<T extends object>({
 
             // Step 2: Push local+recovered data to TanStack DB
             if (ymap.size > 0) {
-              const items = extractItems<T>(ymap);
+              const items = extractItems<DataType>(ymap);
               ops.replace(items); // Atomic replace, not accumulative insert
               logger.info('Data loaded to TanStack DB', {
                 collection,
@@ -792,7 +838,7 @@ export function convexCollectionOptions<T extends object>({
                     bytesLength: crdtBytes.byteLength,
                   });
                   applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Server);
-                  const items = extractItems<T>(ymap);
+                  const items = extractItems<DataType>(ymap);
                   logger.debug('Snapshot applied', { collection, itemCount: items.length });
                   ops.replace(items);
                 } catch (error) {
@@ -818,7 +864,7 @@ export function convexCollectionOptions<T extends object>({
                     bytesLength: crdtBytes.byteLength,
                   });
 
-                  const itemBefore = documentId ? extractItem<T>(ymap, documentId) : null;
+                  const itemBefore = documentId ? extractItem<DataType>(ymap, documentId) : null;
                   applyUpdate(ydoc, new Uint8Array(crdtBytes), YjsOrigin.Server);
 
                   if (!documentId) {
@@ -826,7 +872,7 @@ export function convexCollectionOptions<T extends object>({
                     return;
                   }
 
-                  const itemAfter = extractItem<T>(ymap, documentId);
+                  const itemAfter = extractItem<DataType>(ymap, documentId);
                   if (itemAfter) {
                     logger.debug('Upserting item after delta', { collection, documentId });
                     ops.upsert([itemAfter]);

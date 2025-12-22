@@ -2,7 +2,7 @@ export {
   convexCollectionOptions,
   type ConvexCollection,
   type EditorBinding,
-} from '$/client/collection.js';
+} from '$/client/collection';
 
 import {
   NetworkError,
@@ -12,7 +12,7 @@ import {
   ProseError,
   CollectionNotReadyError,
   NonRetriableError,
-} from '$/client/errors.js';
+} from '$/client/errors';
 
 export const errors = {
   Network: NetworkError,
@@ -24,11 +24,10 @@ export const errors = {
   NonRetriable: NonRetriableError,
 } as const;
 
-import { extract } from '$/client/merge.js';
+import { extract } from '$/client/merge';
+import { prose as proseSchema } from '$/client/prose-schema';
 
-export const prose = {
-  extract,
-} as const;
+export const prose = Object.assign(proseSchema, { extract });
 
 export {
   persistence,
@@ -38,12 +37,12 @@ export {
   type SqlitePersistenceOptions,
   type SqliteAdapter,
   type SqlJsStatic,
-} from '$/client/persistence/index.js';
+} from '$/client/persistence/index';
 
 import {
   SqlJsAdapter,
   OPSqliteAdapter,
-} from '$/client/persistence/adapters/index.js';
+} from '$/client/persistence/adapters/index';
 
 export const adapters = {
   sqljs: SqlJsAdapter,
@@ -54,4 +53,4 @@ export type {
   SqlJsDatabase,
   SqlJsAdapterOptions,
   OPSQLiteDatabase,
-} from '$/client/persistence/adapters/index.js';
+} from '$/client/persistence/adapters/index';
