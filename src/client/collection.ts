@@ -3,7 +3,7 @@ import { createMutex } from 'lib0/mutex';
 import type { Persistence, PersistenceProvider } from '$/client/persistence/types';
 import type { ConvexClient } from 'convex/browser';
 import { getFunctionName, type FunctionReference } from 'convex/server';
-import type { CollectionConfig, Collection, NonSingleResult, InferSchemaOutput } from '@tanstack/db';
+import type { CollectionConfig, Collection, NonSingleResult } from '@tanstack/db';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { Effect, Layer } from 'effect';
 import { getLogger } from '$/client/logger';

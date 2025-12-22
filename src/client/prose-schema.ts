@@ -3,7 +3,7 @@ import type { ProseValue } from '$/shared/types';
 
 const PROSE_MARKER = Symbol.for('replicate:prose');
 
-export function prose(): z.ZodType<ProseValue> {
+function createProseSchema(): z.ZodType<ProseValue> {
   const schema = z.custom<ProseValue>(
     (val) => {
       if (val == null) return true;
@@ -17,6 +17,16 @@ export function prose(): z.ZodType<ProseValue> {
 
   return schema;
 }
+
+function emptyProse(): ProseValue {
+  return { type: 'doc', content: [] } as unknown as ProseValue;
+}
+
+export function prose(): z.ZodType<ProseValue> {
+  return createProseSchema();
+}
+
+prose.empty = emptyProse;
 
 export function isProseSchema(schema: unknown): boolean {
   return (
