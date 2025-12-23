@@ -69,7 +69,8 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 
   private async saveUpdate(update: Uint8Array): Promise<void> {
     this.updateCounter++;
-    const key = `${UPDATE_PREFIX}${this.collection}:${String(this.updateCounter).padStart(10, "0")}`;
+    const paddedCounter = String(this.updateCounter).padStart(10, "0");
+    const key = `${UPDATE_PREFIX}${this.collection}:${paddedCounter}`;
     await this.adapter.set(key, update);
   }
 

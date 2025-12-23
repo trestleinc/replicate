@@ -1,12 +1,29 @@
 import { v } from "convex/values";
 import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from "convex/server";
 import { queryGeneric, mutationGeneric } from "convex/server";
+import { type CompactionConfig, parseSize, parseDuration } from "$/shared/types";
+
+const BYTES_PER_MB = 1024 * 1024;
+const MS_PER_HOUR = 60 * 60 * 1000;
+const DEFAULT_SIZE_THRESHOLD_5MB = 5 * BYTES_PER_MB;
+const DEFAULT_PEER_TIMEOUT_24H = 24 * MS_PER_HOUR;
 
 export class Replicate<T extends object> {
+  private sizeThreshold: number;
+  private peerTimeout: number;
+
   constructor(
     public component: any,
     public collectionName: string,
-  ) {}
+    compaction?: Partial<CompactionConfig>,
+  ) {
+    this.sizeThreshold = compaction?.sizeThreshold
+      ? parseSize(compaction.sizeThreshold)
+      : DEFAULT_SIZE_THRESHOLD_5MB;
+    this.peerTimeout = compaction?.peerTimeout
+      ? parseDuration(compaction.peerTimeout)
+      : DEFAULT_PEER_TIMEOUT_24H;
+  }
 
   createStreamQuery(opts?: {
     evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
@@ -255,7 +272,7 @@ export class Replicate<T extends object> {
     });
   }
 
-  createAckMutation(opts?: {
+  createMarkMutation(opts?: {
     evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, peerId: string) => void | Promise<void>;
   }) {
     const component = this.component;
@@ -284,7 +301,10 @@ export class Replicate<T extends object> {
   }
 
   createCompactMutation(opts?: {
-    evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, documentId: string) => void | Promise<void>;
+    evalWrite?: (
+      ctx: GenericMutationCtx<GenericDataModel>,
+      documentId: string,
+    ) => void | Promise<void>;
   }) {
     const component = this.component;
     const collection = this.collectionName;

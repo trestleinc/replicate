@@ -101,7 +101,7 @@ interface ConvexCollectionApi {
   update: FunctionReference<"mutation">;
   remove: FunctionReference<"mutation">;
   recovery: FunctionReference<"query">;
-  ack: FunctionReference<"mutation">;
+  mark: FunctionReference<"mutation">;
   compact: FunctionReference<"mutation">;
   material?: FunctionReference<"query">;
 }
@@ -954,7 +954,7 @@ export function convexCollectionOptions(
                     await persistence.kv.set(key, newCursor);
                     logger.debug("Cursor saved", { collection, cursor: newCursor });
 
-                    await convexClient.mutation(api.ack, {
+                    await convexClient.mutation(api.mark, {
                       peerId,
                       syncedSeq: newCursor,
                     });

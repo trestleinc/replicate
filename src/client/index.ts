@@ -34,6 +34,7 @@ export {
   type Persistence,
   type PersistenceProvider,
   type KeyValueStore,
+  type StorageAdapter,
   type SqlitePersistenceOptions,
   type SqliteAdapter,
   type SqlJsStatic,

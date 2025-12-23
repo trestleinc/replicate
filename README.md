@@ -111,7 +111,7 @@ export default defineSchema({
       isCompleted: v.boolean(),
     },
     (t) => t
-      .index('by_user_id', ['id'])      // Required for document lookups
+      .index('by_doc_id', ['id'])      // Required for document lookups
       .index('by_timestamp', ['timestamp']) // Required for incremental sync
   ),
 });
@@ -122,7 +122,7 @@ export default defineSchema({
 - You only define your business logic fields
 
 **Required indexes:**
-- `by_user_id` on `['id']` - Enables fast document lookups during updates
+- `by_doc_id` on `['id']` - Enables fast document lookups during updates
 - `by_timestamp` on `['timestamp']` - Enables efficient incremental synchronization
 
 ### Step 3: Create Replication Functions
@@ -705,7 +705,7 @@ tasks: schema.table(
     text: v.string(),
   },
   (t) => t
-    .index('by_user_id', ['id'])
+    .index('by_doc_id', ['id'])
     .index('by_timestamp', ['timestamp'])
 )
 ```
