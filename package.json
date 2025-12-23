@@ -2,6 +2,7 @@
   "name": "@trestleinc/replicate",
   "version": "1.1.1",
   "description": "Offline-first data replication with Yjs CRDTs and Convex",
+  
   "repository": "github:trestleinc/replicate",
   "homepage": "https://github.com/trestleinc/replicate#readme",
   "bugs": {
@@ -73,9 +74,9 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@effect/platform": "0.93.8",
-    "@logtape/logtape": "1.2.2",
-    "effect": "3.19.12"
+    "@effect/platform": "0.94.0",
+    "@logtape/logtape": "1.3.5",
+    "effect": "3.19.13"
   },
   "peerDependencies": {
     "@standard-schema/spec": "^1.1.0",
@@ -99,19 +100,19 @@
     "@standard-schema/spec": "1.1.0",
     "@stylistic/eslint-plugin": "5.6.1",
     "@tanstack/db": "0.5.15",
-    "@types/node": "25.0.2",
+    "@types/node": "25.0.3",
     "@types/sql.js": "1.4.9",
     "convex": "1.31.2",
     "dotenv": "17.2.3",
     "eslint": "9.39.2",
     "fake-indexeddb": "6.2.5",
     "globals": "16.5.0",
-    "lib0": "0.2.114",
-    "publint": "0.3.12",
+    "lib0": "0.2.116",
+    "publint": "0.3.16",
     "tsdown": "0.18.2",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.50.0",
-    "yjs": "13.6.27",
+    "typescript-eslint": "8.50.1",
+    "yjs": "13.6.28",
     "zod": "4.2.1"
   },
   "main": "./dist/shared/index.js",

@@ -30,3 +30,4 @@ test-results/
 
 # Test Convex deployment
 src/test/convex/_generated/
+**/build/

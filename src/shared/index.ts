@@ -1,1 +1,5 @@
-export type { ProseValue } from "./types.js";
+export type {
+  ProseValue,
+  XmlFragmentJSON,
+  XmlNodeJSON,
+} from "./types.js";

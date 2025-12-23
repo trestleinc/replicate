@@ -620,6 +620,53 @@ await configure({
 
 ### Client-Side (`@trestleinc/replicate/client`)
 
+#### `collection.create({ persistence, config })`
+
+Creates a lazy-initialized collection with deferred persistence and config resolution. Both `persistence` and `config` are factory functions that are only called when `init()` is invoked (browser-only).
+
+**Parameters:**
+- `persistence` - Async factory function that returns a `Persistence` instance
+- `config` - Sync factory function that returns the collection config (ConvexClient, schema, api, etc.)
+
+**Returns:** `LazyCollection` with `init(material?)` and `get()` methods
+
+**Example:**
+```typescript
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
+import initSqlJs from 'sql.js';
+
+export const tasks = collection.create({
+  persistence: async () => {
+    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+    return persistence.sqlite.browser(SQL, 'tasks');
+  },
+  config: () => ({
+    schema: taskSchema,
+    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+    api: api.tasks,
+    getKey: (task) => task.id,
+  }),
+});
+
+// In your app initialization (browser only):
+// Pass SSR-prefetched material for instant hydration
+await tasks.init(material);
+const collection = tasks.get();
+```
+
+**SSR Prefetch (server-side):**
+```typescript
+// SvelteKit: +layout.server.ts
+import { ConvexHttpClient } from 'convex/browser';
+const httpClient = new ConvexHttpClient(PUBLIC_CONVEX_URL);
+
+export async function load() {
+  const material = await httpClient.query(api.tasks.material);
+  return { material };
+}
+```
+
 #### `convexCollectionOptions<TSchema>(config)`
 
 Creates collection options for TanStack DB with Yjs CRDT integration.

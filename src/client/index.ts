@@ -1,8 +1,4 @@
-export {
-  convexCollectionOptions,
-  type ConvexCollection,
-  type EditorBinding,
-} from "$/client/collection";
+export { collection, type EditorBinding, type ConvexCollection, type Materialized } from "$/client/collection";
 
 import {
   NetworkError,
@@ -24,19 +20,14 @@ export const errors = {
   NonRetriable: NonRetriableError,
 } as const;
 
+import type { ProseValue } from "$/shared/types";
 import { extract } from "$/client/merge";
 import { prose as proseSchema } from "$/client/prose-schema";
 
-export const prose = Object.assign(proseSchema, { extract });
+function empty(): ProseValue {
+  return { type: "doc", content: [] } as unknown as ProseValue;
+}
 
-export { persistence, type StorageAdapter } from "$/client/persistence/index";
+export const prose = Object.assign(proseSchema, { extract, empty });
 
-import {
-  SqlJsAdapter,
-  OPSqliteAdapter,
-} from "$/client/persistence/adapters/index";
-
-export const adapters = {
-  sqljs: SqlJsAdapter,
-  opsqlite: OPSqliteAdapter,
-} as const;
+export { persistence, type StorageAdapter, type Persistence } from "$/client/persistence/index";

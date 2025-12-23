@@ -3,7 +3,13 @@ import { createMutex } from "lib0/mutex";
 import type { Persistence, PersistenceProvider } from "$/client/persistence/types";
 import type { ConvexClient } from "convex/browser";
 import { getFunctionName, type FunctionReference } from "convex/server";
-import type { CollectionConfig, Collection, NonSingleResult } from "@tanstack/db";
+import {
+  createCollection,
+  type CollectionConfig,
+  type Collection,
+  type NonSingleResult,
+  type BaseCollectionConfig,
+} from "@tanstack/db";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { Effect, Layer } from "effect";
 import { getLogger } from "$/client/logger";
@@ -106,18 +112,17 @@ interface ConvexCollectionApi {
   material?: FunctionReference<"query">;
 }
 
-interface ConvexCollectionOptionsBaseConfig<
-  T extends object,
+export interface ConvexCollectionConfig<
+  T extends object = object,
   TSchema extends StandardSchemaV1 = never,
   TKey extends string | number = string | number,
-> {
+> extends BaseCollectionConfig<T, TKey, TSchema> {
   schema: TSchema;
-  getKey: (item: T) => TKey;
-  material?: Materialized<T>;
   convexClient: ConvexClient;
   api: ConvexCollectionApi;
-  undoCaptureTimeout?: number;
   persistence: Persistence;
+  material?: Materialized<T>;
+  undoCaptureTimeout?: number;
 }
 
 /** Editor binding for BlockNote/TipTap collaboration */
@@ -157,12 +162,6 @@ interface ConvexCollectionUtils<T extends object> {
    * @returns Promise resolving to EditorBinding
    */
   prose(documentId: string, field: ProseFields<T>): Promise<EditorBinding>;
-}
-
-/** Extended collection with prose field utilities */
-export interface ConvexCollection<T extends object> extends Collection<T> {
-  /** Utilities for prose field operations */
-  utils: ConvexCollectionUtils<T>;
 }
 
 // Module-level storage for Y.Doc and Y.Map instances
@@ -242,55 +241,24 @@ function getOrCreateFragmentUndoManager(
   return um;
 }
 
-type ConvexCollectionOptionsResult<
-  T extends object,
-  TKey extends string | number = string | number,
-  TSchema extends StandardSchemaV1 = never,
-> = CollectionConfig<T, TKey, TSchema> & NonSingleResult & {
-  _convexClient: ConvexClient;
-  _collection: string;
-  _proseFields: string[];
-  _persistence: Persistence;
-  utils: ConvexCollectionUtils<T>;
-  schema: TSchema;
-};
-
-/**
- * Create TanStack DB collection options with Convex + Yjs replication.
- * Schema is required - types and prose fields are auto-detected.
- *
- * @example
- * ```typescript
- * import { prose } from '@trestleinc/replicate/client';
- *
- * const taskSchema = z.object({
- *   id: z.string(),
- *   title: z.string(),
- *   content: prose(),  // Rich text field - auto-detected
- * });
- *
- * const collection = createCollection(
- *   convexCollectionOptions({
- *     schema: taskSchema,
- *     getKey: (t) => t.id,
- *     convexClient,
- *     api: api.tasks,  // __collection is extracted automatically
- *     persistence,
- *   })
- * );
- * ```
- */
 export function convexCollectionOptions<
   TSchema extends z.ZodObject<z.ZodRawShape>,
   TKey extends string | number = string | number,
 >(
-  config: ConvexCollectionOptionsBaseConfig<z.infer<TSchema>, TSchema, TKey>,
-): ConvexCollectionOptionsResult<z.infer<TSchema>, TKey, TSchema>;
+  config: ConvexCollectionConfig<z.infer<TSchema>, TSchema, TKey>,
+): CollectionConfig<z.infer<TSchema>, TKey, TSchema, ConvexCollectionUtils<z.infer<TSchema>>> & {
+  id: string;
+  utils: ConvexCollectionUtils<z.infer<TSchema>>;
+  schema: TSchema;
+};
 
-// Implementation (must be compatible with both overloads)
 export function convexCollectionOptions(
-  config: ConvexCollectionOptionsBaseConfig<any, any, any>,
-): ConvexCollectionOptionsResult<any, any, any> {
+  config: ConvexCollectionConfig<any, any, any>,
+): CollectionConfig<any, any, any, ConvexCollectionUtils<any>> & {
+  id: string;
+  utils: ConvexCollectionUtils<any>;
+  schema: any;
+} {
   const {
     schema,
     getKey,
@@ -632,10 +600,6 @@ export function convexCollectionOptions(
     id: collection,
     getKey,
     schema: schema,
-    _convexClient: convexClient,
-    _collection: collection,
-    _proseFields: proseFields,
-    _persistence: persistence,
     utils,
 
     onInsert: async ({ transaction }: CollectionTransaction<DataType>) => {
@@ -1063,3 +1027,58 @@ export function convexCollectionOptions(
     },
   };
 }
+
+type LazyCollectionConfig<TSchema extends z.ZodObject<z.ZodRawShape>> = Omit<
+  ConvexCollectionConfig<z.infer<TSchema>, TSchema, string>,
+  "persistence" | "material"
+>;
+
+interface LazyCollection<T extends object> {
+  init(material?: Materialized<T>): Promise<void>;
+  get(): Collection<T, string, ConvexCollectionUtils<T>, any, T> & NonSingleResult;
+}
+
+export type ConvexCollection<T extends object>
+  = Collection<T, any, ConvexCollectionUtils<T>, any, T> & NonSingleResult;
+
+interface CreateCollectionOptions<TSchema extends z.ZodObject<z.ZodRawShape>> {
+  persistence: () => Promise<Persistence>;
+  config: () => Omit<LazyCollectionConfig<TSchema>, "material">;
+}
+
+export const collection = {
+  create<TSchema extends z.ZodObject<z.ZodRawShape>>(
+    options: CreateCollectionOptions<TSchema>,
+  ): LazyCollection<z.infer<TSchema>> {
+    let persistence: Persistence | null = null;
+    let resolvedConfig: LazyCollectionConfig<TSchema> | null = null;
+    let material: Materialized<z.infer<TSchema>> | undefined;
+    type Instance = LazyCollection<z.infer<TSchema>>["get"] extends () => infer R ? R : never;
+    let instance: Instance | null = null;
+
+    return {
+      async init(mat?: Materialized<z.infer<TSchema>>) {
+        if (!persistence) {
+          persistence = await options.persistence();
+          resolvedConfig = options.config();
+          material = mat;
+        }
+      },
+
+      get() {
+        if (!persistence || !resolvedConfig) {
+          throw new Error("Call init() before get()");
+        }
+        if (!instance) {
+          const opts = convexCollectionOptions({
+            ...resolvedConfig,
+            persistence,
+            material,
+          } as any);
+          instance = createCollection(opts) as any;
+        }
+        return instance!;
+      },
+    };
+  },
+};
