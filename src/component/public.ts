@@ -6,103 +6,16 @@ import { OperationType } from "$/shared/types";
 
 export { OperationType };
 
-// Default size threshold for auto-compaction (5MB)
 const DEFAULT_SIZE_THRESHOLD = 5_000_000;
+const DEFAULT_PEER_TIMEOUT = 5 * 60 * 1000;
 
-/**
- * Auto-compacts a document's deltas into a snapshot when size threshold is exceeded.
- * Returns null if no compaction needed, or the compaction result.
- */
-async function _maybeCompactDocument(
-  ctx: any,
-  collection: string,
-  documentId: string,
-  threshold: number = DEFAULT_SIZE_THRESHOLD,
-): Promise<{ deltasCompacted: number; snapshotSize: number } | null> {
-  const logger = getLogger(["compaction"]);
-
-  // Get all deltas for this specific document
-  const deltas = await ctx.db
+async function getNextSeq(ctx: any, collection: string): Promise<number> {
+  const latest = await ctx.db
     .query("documents")
-    .withIndex("by_collection_document_version", (q: any) =>
-      q.eq("collection", collection).eq("documentId", documentId),
-    )
-    .collect();
-
-  // Calculate total size
-  const totalSize = deltas.reduce((sum: number, d: any) => sum + d.crdtBytes.byteLength, 0);
-
-  // Skip if below size threshold
-  if (totalSize < threshold) {
-    return null;
-  }
-
-  logger.info("Auto-compacting document", {
-    collection,
-    documentId,
-    deltaCount: deltas.length,
-    totalSize,
-    threshold,
-  });
-
-  // Merge deltas into snapshot
-  const sorted = deltas.sort((a: any, b: any) => a.timestamp - b.timestamp);
-  const updates = sorted.map((d: any) => new Uint8Array(d.crdtBytes));
-  const compactedState = Y.mergeUpdatesV2(updates);
-
-  // Validate compacted state
-  const testDoc = new Y.Doc({ guid: `${collection}:${documentId}` });
-  try {
-    Y.applyUpdateV2(testDoc, compactedState);
-  }
-  catch (error) {
-    logger.error("Compacted state validation failed", {
-      collection,
-      documentId,
-      error: String(error),
-    });
-    testDoc.destroy();
-    return null;
-  }
-  testDoc.destroy();
-
-  // Delete existing snapshot for this document (keep only 1)
-  const existingSnapshot = await ctx.db
-    .query("snapshots")
-    .withIndex("by_document", (q: any) =>
-      q.eq("collection", collection).eq("documentId", documentId),
-    )
+    .withIndex("by_seq", (q: any) => q.eq("collection", collection))
+    .order("desc")
     .first();
-  if (existingSnapshot) {
-    await ctx.db.delete("snapshots", existingSnapshot._id);
-  }
-
-  // Store new per-document snapshot
-  await ctx.db.insert("snapshots", {
-    collection,
-    documentId,
-    snapshotBytes: compactedState.buffer as ArrayBuffer,
-    latestCompactionTimestamp: sorted[sorted.length - 1].timestamp,
-    createdAt: Date.now(),
-    metadata: {
-      deltaCount: deltas.length,
-      totalSize,
-    },
-  });
-
-  // Delete old deltas
-  for (const delta of sorted) {
-    await ctx.db.delete("documents", delta._id);
-  }
-
-  logger.info("Auto-compaction completed", {
-    collection,
-    documentId,
-    deltasCompacted: deltas.length,
-    snapshotSize: compactedState.length,
-  });
-
-  return { deltasCompacted: deltas.length, snapshotSize: compactedState.length };
+  return (latest?.seq ?? 0) + 1;
 }
 
 export const insertDocument = mutation({
@@ -110,34 +23,22 @@ export const insertDocument = mutation({
     collection: v.string(),
     documentId: v.string(),
     crdtBytes: v.bytes(),
-    version: v.number(),
-    threshold: v.optional(v.number()),
   },
   returns: v.object({
     success: v.boolean(),
-    compacted: v.optional(v.boolean()),
+    seq: v.number(),
   }),
   handler: async (ctx, args) => {
+    const seq = await getNextSeq(ctx, args.collection);
+
     await ctx.db.insert("documents", {
       collection: args.collection,
       documentId: args.documentId,
       crdtBytes: args.crdtBytes,
-      version: args.version,
-      timestamp: Date.now(),
+      seq,
     });
 
-    // Auto-compact if size threshold exceeded
-    const compactionResult = await _maybeCompactDocument(
-      ctx,
-      args.collection,
-      args.documentId,
-      args.threshold ?? DEFAULT_SIZE_THRESHOLD,
-    );
-
-    return {
-      success: true,
-      compacted: compactionResult !== null,
-    };
+    return { success: true, seq };
   },
 });
 
@@ -146,34 +47,22 @@ export const updateDocument = mutation({
     collection: v.string(),
     documentId: v.string(),
     crdtBytes: v.bytes(),
-    version: v.number(),
-    threshold: v.optional(v.number()),
   },
   returns: v.object({
     success: v.boolean(),
-    compacted: v.optional(v.boolean()),
+    seq: v.number(),
   }),
   handler: async (ctx, args) => {
+    const seq = await getNextSeq(ctx, args.collection);
+
     await ctx.db.insert("documents", {
       collection: args.collection,
       documentId: args.documentId,
       crdtBytes: args.crdtBytes,
-      version: args.version,
-      timestamp: Date.now(),
+      seq,
     });
 
-    // Auto-compact if size threshold exceeded
-    const compactionResult = await _maybeCompactDocument(
-      ctx,
-      args.collection,
-      args.documentId,
-      args.threshold ?? DEFAULT_SIZE_THRESHOLD,
-    );
-
-    return {
-      success: true,
-      compacted: compactionResult !== null,
-    };
+    return { success: true, seq };
   },
 });
 
@@ -182,141 +71,250 @@ export const deleteDocument = mutation({
     collection: v.string(),
     documentId: v.string(),
     crdtBytes: v.bytes(),
-    version: v.number(),
-    threshold: v.optional(v.number()),
   },
   returns: v.object({
     success: v.boolean(),
-    compacted: v.optional(v.boolean()),
+    seq: v.number(),
   }),
   handler: async (ctx, args) => {
+    const seq = await getNextSeq(ctx, args.collection);
+
     await ctx.db.insert("documents", {
       collection: args.collection,
       documentId: args.documentId,
       crdtBytes: args.crdtBytes,
-      version: args.version,
-      timestamp: Date.now(),
+      seq,
     });
 
-    // Auto-compact if size threshold exceeded
-    const compactionResult = await _maybeCompactDocument(
-      ctx,
-      args.collection,
-      args.documentId,
-      args.threshold ?? DEFAULT_SIZE_THRESHOLD,
-    );
+    return { success: true, seq };
+  },
+});
 
-    return {
-      success: true,
-      compacted: compactionResult !== null,
-    };
+export const ack = mutation({
+  args: {
+    collection: v.string(),
+    peerId: v.string(),
+    syncedSeq: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("peers")
+      .withIndex("by_collection_peer", (q: any) =>
+        q.eq("collection", args.collection).eq("peerId", args.peerId),
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastSyncedSeq: Math.max(existing.lastSyncedSeq, args.syncedSeq),
+        lastSeenAt: Date.now(),
+      });
+    }
+    else {
+      await ctx.db.insert("peers", {
+        collection: args.collection,
+        peerId: args.peerId,
+        lastSyncedSeq: args.syncedSeq,
+        lastSeenAt: Date.now(),
+      });
+    }
+
+    return null;
+  },
+});
+
+export const compact = mutation({
+  args: {
+    collection: v.string(),
+    documentId: v.string(),
+    snapshotBytes: v.bytes(),
+    stateVector: v.bytes(),
+    peerTimeout: v.optional(v.number()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    removed: v.number(),
+    retained: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const logger = getLogger(["compaction"]);
+    const now = Date.now();
+    const peerTimeout = args.peerTimeout ?? DEFAULT_PEER_TIMEOUT;
+    const peerCutoff = now - peerTimeout;
+
+    const deltas = await ctx.db
+      .query("documents")
+      .withIndex("by_collection_document", (q: any) =>
+        q.eq("collection", args.collection).eq("documentId", args.documentId),
+      )
+      .collect();
+
+    const activePeers = await ctx.db
+      .query("peers")
+      .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
+      .filter((q: any) => q.gt(q.field("lastSeenAt"), peerCutoff))
+      .collect();
+
+    const minSyncedSeq = activePeers.length > 0
+      ? Math.min(...activePeers.map((p: any) => p.lastSyncedSeq))
+      : Infinity;
+
+    const existingSnapshot = await ctx.db
+      .query("snapshots")
+      .withIndex("by_document", (q: any) =>
+        q.eq("collection", args.collection).eq("documentId", args.documentId),
+      )
+      .first();
+
+    if (existingSnapshot) {
+      await ctx.db.delete(existingSnapshot._id);
+    }
+
+    const snapshotSeq = deltas.length > 0
+      ? Math.max(...deltas.map((d: any) => d.seq))
+      : 0;
+
+    await ctx.db.insert("snapshots", {
+      collection: args.collection,
+      documentId: args.documentId,
+      snapshotBytes: args.snapshotBytes,
+      stateVector: args.stateVector,
+      snapshotSeq,
+      createdAt: now,
+    });
+
+    let removed = 0;
+    for (const delta of deltas) {
+      if (delta.seq < minSyncedSeq) {
+        await ctx.db.delete(delta._id);
+        removed++;
+      }
+    }
+
+    logger.info("Compaction completed", {
+      collection: args.collection,
+      documentId: args.documentId,
+      removed,
+      retained: deltas.length - removed,
+      activePeers: activePeers.length,
+      minSyncedSeq,
+    });
+
+    return { success: true, removed, retained: deltas.length - removed };
   },
 });
 
 export const stream = query({
   args: {
     collection: v.string(),
-    checkpoint: v.object({
-      lastModified: v.number(),
-    }),
-    vector: v.optional(v.bytes()),
+    cursor: v.number(),
     limit: v.optional(v.number()),
+    sizeThreshold: v.optional(v.number()),
   },
   returns: v.object({
     changes: v.array(
       v.object({
-        documentId: v.optional(v.string()),
+        documentId: v.string(),
         crdtBytes: v.bytes(),
-        version: v.number(),
-        timestamp: v.number(),
+        seq: v.number(),
         operationType: v.string(),
       }),
     ),
-    checkpoint: v.object({
-      lastModified: v.number(),
-    }),
+    cursor: v.number(),
     hasMore: v.boolean(),
+    compact: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
+    const sizeThreshold = args.sizeThreshold ?? DEFAULT_SIZE_THRESHOLD;
 
-    // Get deltas newer than checkpoint
     const documents = await ctx.db
       .query("documents")
-      .withIndex("by_timestamp", q =>
-        q.eq("collection", args.collection).gt("timestamp", args.checkpoint.lastModified),
+      .withIndex("by_seq", (q: any) =>
+        q.eq("collection", args.collection).gt("seq", args.cursor),
       )
       .order("asc")
       .take(limit);
 
     if (documents.length > 0) {
-      const changes = documents.map(doc => ({
+      const changes = documents.map((doc: any) => ({
         documentId: doc.documentId,
         crdtBytes: doc.crdtBytes,
-        version: doc.version,
-        timestamp: doc.timestamp,
+        seq: doc.seq,
         operationType: OperationType.Delta,
       }));
 
-      const newCheckpoint = {
-        lastModified: documents[documents.length - 1]?.timestamp ?? args.checkpoint.lastModified,
-      };
+      const newCursor = documents[documents.length - 1]?.seq ?? args.cursor;
+
+      let compactHint: string | undefined;
+      const allDocs = await ctx.db
+        .query("documents")
+        .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
+        .collect();
+
+      const sizeByDocument = new Map<string, number>();
+      for (const doc of allDocs) {
+        const current = sizeByDocument.get(doc.documentId) ?? 0;
+        sizeByDocument.set(doc.documentId, current + doc.crdtBytes.byteLength);
+      }
+
+      for (const [docId, size] of sizeByDocument) {
+        if (size > sizeThreshold) {
+          compactHint = docId;
+          break;
+        }
+      }
 
       return {
         changes,
-        checkpoint: newCheckpoint,
+        cursor: newCursor,
         hasMore: documents.length === limit,
+        compact: compactHint,
       };
     }
 
-    // Check for disparity - client checkpoint older than oldest delta
     const oldestDelta = await ctx.db
       .query("documents")
-      .withIndex("by_timestamp", q => q.eq("collection", args.collection))
+      .withIndex("by_seq", (q: any) => q.eq("collection", args.collection))
       .order("asc")
       .first();
 
-    if (oldestDelta && args.checkpoint.lastModified < oldestDelta.timestamp) {
-      // Disparity detected - need to send all per-document snapshots
-      // Get all snapshots for this collection
+    if (oldestDelta && args.cursor < oldestDelta.seq) {
       const snapshots = await ctx.db
         .query("snapshots")
-        .withIndex("by_document", q => q.eq("collection", args.collection))
+        .withIndex("by_document", (q: any) => q.eq("collection", args.collection))
         .collect();
 
       if (snapshots.length === 0) {
         throw new Error(
           `Disparity detected but no snapshots available for collection: ${args.collection}. `
-          + `Client checkpoint: ${args.checkpoint.lastModified}, `
-          + `Oldest delta: ${oldestDelta.timestamp}`,
+          + `Client cursor: ${args.cursor}, Oldest delta seq: ${oldestDelta.seq}`,
         );
       }
 
-      // Return all snapshots as changes
-      const changes = snapshots.map(snapshot => ({
+      const changes = snapshots.map((snapshot: any) => ({
         documentId: snapshot.documentId,
         crdtBytes: snapshot.snapshotBytes,
-        version: 0,
-        timestamp: snapshot.createdAt,
+        seq: snapshot.snapshotSeq,
         operationType: OperationType.Snapshot,
       }));
 
-      // Find the latest compaction timestamp to use as checkpoint
-      const latestTimestamp = Math.max(...snapshots.map(s => s.latestCompactionTimestamp));
+      const latestSeq = Math.max(...snapshots.map((s: any) => s.snapshotSeq));
 
       return {
         changes,
-        checkpoint: {
-          lastModified: latestTimestamp,
-        },
+        cursor: latestSeq,
         hasMore: false,
+        compact: undefined,
       };
     }
 
     return {
       changes: [],
-      checkpoint: args.checkpoint,
+      cursor: args.cursor,
       hasMore: false,
+      compact: undefined,
     };
   },
 });
@@ -328,25 +326,21 @@ export const getInitialState = query({
   returns: v.union(
     v.object({
       crdtBytes: v.bytes(),
-      checkpoint: v.object({
-        lastModified: v.number(),
-      }),
+      cursor: v.number(),
     }),
     v.null(),
   ),
   handler: async (ctx, args) => {
     const logger = getLogger(["ssr"]);
 
-    // Get all per-document snapshots for this collection
     const snapshots = await ctx.db
       .query("snapshots")
-      .withIndex("by_document", q => q.eq("collection", args.collection))
+      .withIndex("by_document", (q: any) => q.eq("collection", args.collection))
       .collect();
 
-    // Get all deltas for this collection
     const deltas = await ctx.db
       .query("documents")
-      .withIndex("by_collection", q => q.eq("collection", args.collection))
+      .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
       .collect();
 
     if (snapshots.length === 0 && deltas.length === 0) {
@@ -356,21 +350,18 @@ export const getInitialState = query({
       return null;
     }
 
-    // Merge all snapshots and deltas together
     const updates: Uint8Array[] = [];
-    let latestTimestamp = 0;
+    let latestSeq = 0;
 
-    // Add all per-document snapshots
     for (const snapshot of snapshots) {
       updates.push(new Uint8Array(snapshot.snapshotBytes));
-      latestTimestamp = Math.max(latestTimestamp, snapshot.latestCompactionTimestamp);
+      latestSeq = Math.max(latestSeq, snapshot.snapshotSeq);
     }
 
-    // Add all deltas
-    const sorted = deltas.sort((a, b) => a.timestamp - b.timestamp);
+    const sorted = deltas.sort((a: any, b: any) => a.seq - b.seq);
     for (const delta of sorted) {
       updates.push(new Uint8Array(delta.crdtBytes));
-      latestTimestamp = Math.max(latestTimestamp, delta.timestamp);
+      latestSeq = Math.max(latestSeq, delta.seq);
     }
 
     logger.info("Reconstructing initial state", {
@@ -389,17 +380,11 @@ export const getInitialState = query({
 
     return {
       crdtBytes: merged.buffer as ArrayBuffer,
-      checkpoint: {
-        lastModified: latestTimestamp,
-      },
+      cursor: latestSeq,
     };
   },
 });
 
-/**
- * Recovery query for state vector based sync.
- * Client sends its state vector, server computes and returns the diff.
- */
 export const recovery = query({
   args: {
     collection: v.string(),
@@ -408,44 +393,45 @@ export const recovery = query({
   returns: v.object({
     diff: v.optional(v.bytes()),
     serverStateVector: v.bytes(),
+    cursor: v.number(),
   }),
   handler: async (ctx, args) => {
     const logger = getLogger(["recovery"]);
 
-    // Get all snapshots for this collection
     const snapshots = await ctx.db
       .query("snapshots")
-      .withIndex("by_document", q => q.eq("collection", args.collection))
+      .withIndex("by_document", (q: any) => q.eq("collection", args.collection))
       .collect();
 
-    // Get all deltas for this collection
     const deltas = await ctx.db
       .query("documents")
-      .withIndex("by_collection", q => q.eq("collection", args.collection))
+      .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
       .collect();
 
     if (snapshots.length === 0 && deltas.length === 0) {
-      // Empty collection - return empty state vector
       const emptyDoc = new Y.Doc();
       const emptyVector = Y.encodeStateVector(emptyDoc);
       emptyDoc.destroy();
-      return { serverStateVector: emptyVector.buffer as ArrayBuffer };
+      return {
+        serverStateVector: emptyVector.buffer as ArrayBuffer,
+        cursor: 0,
+      };
     }
 
-    // Merge all snapshots and deltas into full server state
     const updates: Uint8Array[] = [];
+    let latestSeq = 0;
 
     for (const snapshot of snapshots) {
       updates.push(new Uint8Array(snapshot.snapshotBytes));
+      latestSeq = Math.max(latestSeq, snapshot.snapshotSeq);
     }
 
     for (const delta of deltas) {
       updates.push(new Uint8Array(delta.crdtBytes));
+      latestSeq = Math.max(latestSeq, delta.seq);
     }
 
     const mergedState = Y.mergeUpdatesV2(updates);
-
-    // Compute diff relative to client's state vector
     const clientVector = new Uint8Array(args.clientStateVector);
     const diff = Y.diffUpdateV2(mergedState, clientVector);
     const serverVector = Y.encodeStateVectorFromUpdateV2(mergedState);
@@ -461,6 +447,7 @@ export const recovery = query({
     return {
       diff: diff.byteLength > 0 ? (diff.buffer as ArrayBuffer) : undefined,
       serverStateVector: serverVector.buffer as ArrayBuffer,
+      cursor: latestSeq,
     };
   },
 });

@@ -6,24 +6,27 @@ export default defineSchema({
     collection: v.string(),
     documentId: v.string(),
     crdtBytes: v.bytes(),
-    version: v.number(),
-    timestamp: v.number(),
+    seq: v.number(),
   })
     .index("by_collection", ["collection"])
-    .index("by_collection_document_version", ["collection", "documentId", "version"])
-    .index("by_timestamp", ["collection", "timestamp"]),
+    .index("by_collection_document", ["collection", "documentId"])
+    .index("by_seq", ["collection", "seq"]),
 
   snapshots: defineTable({
     collection: v.string(),
     documentId: v.string(),
     snapshotBytes: v.bytes(),
-    latestCompactionTimestamp: v.number(),
+    stateVector: v.bytes(),
+    snapshotSeq: v.number(),
     createdAt: v.number(),
-    metadata: v.optional(
-      v.object({
-        deltaCount: v.number(),
-        totalSize: v.number(),
-      }),
-    ),
   }).index("by_document", ["collection", "documentId"]),
+
+  peers: defineTable({
+    collection: v.string(),
+    peerId: v.string(),
+    lastSyncedSeq: v.number(),
+    lastSeenAt: v.number(),
+  })
+    .index("by_collection", ["collection"])
+    .index("by_collection_peer", ["collection", "peerId"]),
 });
