@@ -129,12 +129,11 @@ function IntervalEditorView({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Create TipTap editor with Yjs collaboration
   const editor = useEditor(
     {
       extensions: [
         StarterKit.configure({
-          undoRedo: false, // Yjs handles undo/redo
+          undoRedo: false,
         }),
         Collaboration.configure({
           fragment: binding.fragment,
@@ -152,21 +151,18 @@ function IntervalEditorView({
     [binding.fragment],
   );
 
-  // Sync title from external changes (collaborative edits, other tabs)
   useEffect(() => {
     if (!isEditingTitle) {
       setTitle(interval.title);
     }
   }, [interval.title, isEditingTitle]);
 
-  // Focus input when entering edit mode
   useEffect(() => {
     if (isEditingTitle) {
       inputRef.current?.focus();
     }
   }, [isEditingTitle]);
 
-  // Handle title changes
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
   };
@@ -193,76 +189,73 @@ function IntervalEditorView({
 
   return (
     <div className="max-w-[680px] mx-auto px-8 py-12 w-full">
-      {/* Header with title and mobile properties */}
-      <div className="mb-8 pb-6 border-b border-border">
-        {/* Mobile properties row */}
-        {onPropertyUpdate && (
-          <div className="flex items-center gap-2 mb-4 lg:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-muted transition-colors">
-                <StatusIcon status={interval.status} size={14} />
-                <span>{StatusLabels[interval.status]}</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuRadioGroup
-                  value={interval.status}
-                  onValueChange={v => onPropertyUpdate({ status: v as StatusValue })}
-                >
-                  {statusOptions.map(status => (
-                    <DropdownMenuRadioItem key={status} value={status}>
-                      <StatusIcon status={status} size={14} />
-                      {StatusLabels[status]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+      {/* Title */}
+      {isEditingTitle
+        ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={title}
+              onChange={e => handleTitleChange(e.target.value)}
+              onBlur={handleTitleBlur}
+              onKeyDown={handleTitleKeyDown}
+              className="w-full font-display text-3xl font-normal text-foreground bg-transparent border-none border-b-2 border-primary p-0 pb-1 leading-tight outline-none"
+            />
+          )
+        : (
+            <button
+              type="button"
+              className="w-full font-display text-3xl font-normal text-foreground leading-tight cursor-text transition-colors hover:text-primary text-left bg-transparent border-none p-0"
+              onClick={() => setIsEditingTitle(true)}
+            >
+              {title || "Untitled"}
+            </button>
+          )}
 
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-muted transition-colors">
-                <PriorityIcon priority={interval.priority} size={14} />
-                <span>{PriorityLabels[interval.priority]}</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuRadioGroup
-                  value={interval.priority}
-                  onValueChange={v => onPropertyUpdate({ priority: v as PriorityValue })}
-                >
-                  {priorityOptions.map(priority => (
-                    <DropdownMenuRadioItem key={priority} value={priority}>
-                      <PriorityIcon priority={priority} size={14} />
-                      {PriorityLabels[priority]}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
-
-        {/* Title */}
-        {isEditingTitle
-          ? (
-              <input
-                ref={inputRef}
-                type="text"
-                value={title}
-                onChange={e => handleTitleChange(e.target.value)}
-                onBlur={handleTitleBlur}
-                onKeyDown={handleTitleKeyDown}
-                className="w-full font-display text-3xl font-normal text-foreground bg-transparent border-none border-b-2 border-primary p-0 pb-1 leading-tight outline-none"
-              />
-            )
-          : (
-              <button
-                type="button"
-                className="w-full font-display text-3xl font-normal text-foreground leading-tight cursor-text transition-colors hover:text-primary text-left bg-transparent border-none p-0"
-                onClick={() => setIsEditingTitle(true)}
+      {/* Properties row - always visible */}
+      {onPropertyUpdate && (
+        <div className="flex items-center gap-4 mt-4 mb-8 pb-6 border-b border-border text-sm">
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-muted transition-colors">
+              <StatusIcon status={interval.status} size={14} />
+              <span>{StatusLabels[interval.status]}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup
+                value={interval.status}
+                onValueChange={v => onPropertyUpdate({ status: v as StatusValue })}
               >
-                {title || "Untitled"}
-              </button>
-            )}
-      </div>
+                {statusOptions.map(status => (
+                  <DropdownMenuRadioItem key={status} value={status}>
+                    <StatusIcon status={status} size={14} />
+                    {StatusLabels[status]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-muted transition-colors">
+              <PriorityIcon priority={interval.priority} size={14} />
+              <span>{PriorityLabels[interval.priority]}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup
+                value={interval.priority}
+                onValueChange={v => onPropertyUpdate({ priority: v as PriorityValue })}
+              >
+                {priorityOptions.map(priority => (
+                  <DropdownMenuRadioItem key={priority} value={priority}>
+                    <PriorityIcon priority={priority} size={14} />
+                    {PriorityLabels[priority]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {/* Editor content */}
       <div className="min-h-[200px]">

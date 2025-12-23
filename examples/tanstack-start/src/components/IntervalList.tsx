@@ -2,10 +2,9 @@ import { useMemo } from "react";
 import { useIntervalsContext } from "../contexts/IntervalsContext";
 import { useFilterContext } from "../routes/__root";
 import { IntervalRow } from "./IntervalRow";
-import { Skeleton } from "./ui/skeleton";
 
 export function IntervalList() {
-  const { intervals, isLoading } = useIntervalsContext();
+  const { intervals } = useIntervalsContext();
   const { statusFilter, priorityFilter } = useFilterContext();
 
   // Filter and sort intervals
@@ -25,23 +24,6 @@ export function IntervalList() {
 
     return result;
   }, [intervals, statusFilter, priorityFilter]);
-
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex flex-col">
-          {Array.from({ length: 5 }).map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton list
-            <div key={i} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="w-5 h-5 rounded-full" />
-              <Skeleton className="h-4 flex-1" />
-              <Skeleton className="h-4 w-16" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">

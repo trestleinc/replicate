@@ -1,5 +1,4 @@
 import { IntervalEditor } from "./IntervalEditor";
-import { IntervalProperties } from "./IntervalProperties";
 import { CommentList } from "./CommentList";
 import type { Interval } from "../types/interval";
 import type { intervals } from "../collections/useIntervals";
@@ -20,22 +19,14 @@ export function IntervalDetail({ intervalId, collection, interval }: IntervalDet
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      {/* Main content */}
-      <div className="flex-1 overflow-auto">
-        <IntervalEditor
-          intervalId={intervalId}
-          collection={collection}
-          interval={interval}
-          onPropertyUpdate={handlePropertyUpdate}
-        />
-        <CommentList intervalId={intervalId} />
-      </div>
-
-      {/* Sidebar - hidden on mobile */}
-      <aside className="hidden lg:block w-64 shrink-0 border-l border-border overflow-auto bg-card">
-        <IntervalProperties interval={interval} onUpdate={handlePropertyUpdate} />
-      </aside>
+    <div className="flex-1 overflow-auto">
+      <IntervalEditor
+        intervalId={intervalId}
+        collection={collection}
+        interval={interval}
+        onPropertyUpdate={handlePropertyUpdate}
+      />
+      <CommentList intervalId={intervalId} />
     </div>
   );
 }

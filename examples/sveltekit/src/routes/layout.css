@@ -286,15 +286,7 @@
 
 /* TipTap Editor */
 .tiptap-editor {
-  @apply outline-none min-h-[200px] leading-relaxed;
-}
-
-.tiptap-editor p {
-  @apply m-0 mb-4;
-}
-
-.tiptap-editor p:last-child {
-  @apply mb-0;
+  @apply outline-none min-h-[200px];
 }
 
 .tiptap-editor p.is-editor-empty:first-child::before {

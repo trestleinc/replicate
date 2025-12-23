@@ -10,33 +10,21 @@ function IntervalPageComponent() {
   const { intervalId } = Route.useParams();
 
   return (
-    <ClientOnly fallback={<IntervalLoading />}>
+    <ClientOnly fallback={null}>
       <LiveIntervalView intervalId={intervalId} />
     </ClientOnly>
   );
 }
 
 function LiveIntervalView({ intervalId }: { intervalId: string }) {
-  const { collection, intervals, isLoading } = useIntervalsContext();
+  const { collection, intervals } = useIntervalsContext();
   const interval = intervals.find(i => i.id === intervalId);
-
-  if (isLoading) {
-    return <IntervalLoading />;
-  }
 
   if (!interval) {
     return <IntervalNotFound />;
   }
 
   return <IntervalDetail intervalId={intervalId} collection={collection} interval={interval} />;
-}
-
-function IntervalLoading() {
-  return (
-    <div className="interval-loading">
-      <div className="interval-loading-pulse" />
-    </div>
-  );
 }
 
 function IntervalNotFound() {
