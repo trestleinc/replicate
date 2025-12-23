@@ -13,7 +13,7 @@
  * const adapter = new OPSqliteAdapter(db);
  * ```
  */
-import type { SqliteAdapter } from "../sqlite-level.js";
+import type { SqliteAdapter } from "../sqlite.js";
 
 /**
  * Interface for op-sqlite Database.

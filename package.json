@@ -75,11 +75,7 @@
   "dependencies": {
     "@effect/platform": "0.93.8",
     "@logtape/logtape": "1.2.2",
-    "abstract-level": "3.1.1",
-    "browser-level": "3.0.0",
-    "effect": "3.19.12",
-    "y-indexeddb": "9.0.12",
-    "y-leveldb": "0.2.0"
+    "effect": "3.19.12"
   },
   "peerDependencies": {
     "@standard-schema/spec": "^1.1.0",
