@@ -90,7 +90,7 @@ export const deleteDocument = mutation({
   },
 });
 
-export const ack = mutation({
+export const mark = mutation({
   args: {
     collection: v.string(),
     peerId: v.string(),

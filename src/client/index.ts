@@ -29,16 +29,7 @@ import { prose as proseSchema } from "$/client/prose-schema";
 
 export const prose = Object.assign(proseSchema, { extract });
 
-export {
-  persistence,
-  type Persistence,
-  type PersistenceProvider,
-  type KeyValueStore,
-  type StorageAdapter,
-  type SqlitePersistenceOptions,
-  type SqliteAdapter,
-  type SqlJsStatic,
-} from "$/client/persistence/index";
+export { persistence, type StorageAdapter } from "$/client/persistence/index";
 
 import {
   SqlJsAdapter,
@@ -49,9 +40,3 @@ export const adapters = {
   sqljs: SqlJsAdapter,
   opsqlite: OPSqliteAdapter,
 } as const;
-
-export type {
-  SqlJsDatabase,
-  SqlJsAdapterOptions,
-  OPSQLiteDatabase,
-} from "$/client/persistence/adapters/index";

@@ -289,7 +289,7 @@ export class Replicate<T extends object> {
           await opts.evalWrite(ctx, args.peerId);
         }
 
-        await ctx.runMutation(component.public.ack, {
+        await ctx.runMutation(component.public.mark, {
           collection,
           peerId: args.peerId,
           syncedSeq: args.syncedSeq,
