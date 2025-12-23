@@ -8,7 +8,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { Effect, Layer } from "effect";
 import { getLogger } from "$/client/logger";
 import { ProseError, NonRetriableError } from "$/client/errors";
-import { Checkpoint, createCheckpointLayer } from "$/client/services/checkpoint";
+import { CursorService, createCursorLayer, type Cursor } from "$/client/services/cursor";
 import { Reconciliation, ReconciliationLive } from "$/client/services/reconciliation";
 import { createReplicateOps, type BoundReplicateOps } from "$/client/replicate";
 import {
@@ -89,7 +89,7 @@ const cleanupFunctions = new Map<string, () => void>();
 /** Server-rendered material data for SSR hydration */
 export interface Materialized<T> {
   documents: readonly T[];
-  checkpoint?: { lastModified: number };
+  cursor?: Cursor;
   count?: number;
   crdtBytes?: ArrayBuffer;
 }
@@ -101,6 +101,8 @@ interface ConvexCollectionApi {
   update: FunctionReference<"mutation">;
   remove: FunctionReference<"mutation">;
   recovery: FunctionReference<"query">;
+  ack: FunctionReference<"mutation">;
+  compact: FunctionReference<"mutation">;
   material?: FunctionReference<"query">;
 }
 
@@ -436,8 +438,8 @@ export function convexCollectionOptions(
   let ops: BoundReplicateOps<DataType> = null as any;
 
   // Create services layer with the persistence KV store
-  const checkpointLayer = createCheckpointLayer(persistence.kv);
-  const servicesLayer = Layer.mergeAll(checkpointLayer, ReconciliationLive);
+  const cursorLayer = createCursorLayer(persistence.kv);
+  const servicesLayer = Layer.mergeAll(cursorLayer, ReconciliationLive);
 
   let resolvePersistenceReady: (() => void) | undefined;
   const persistenceReadyPromise = new Promise<void>((resolve) => {
@@ -743,7 +745,7 @@ export function convexCollectionOptions(
 
         let subscription: (() => void) | null = null;
         const ssrDocuments = material?.documents;
-        const ssrCheckpoint = material?.checkpoint;
+        const ssrCursor = material?.cursor;
         const ssrCRDTBytes = material?.crdtBytes;
         const docs: DataType[] = ssrDocuments ? [...ssrDocuments] : [];
 
@@ -816,20 +818,21 @@ export function convexCollectionOptions(
             markReady();
             logger.info("Collection ready", { collection, ymapSize: ymap.size });
 
-            // Step 4: Load checkpoint for subscription (background replication)
-            const checkpoint
-              = ssrCheckpoint
-                || (await Effect.runPromise(
-                  Effect.gen(function* () {
-                    const checkpointSvc = yield* Checkpoint;
-                    return yield* checkpointSvc.loadCheckpoint(collection);
-                  }).pipe(Effect.provide(checkpointLayer)),
-                ));
+            // Step 4: Load cursor and peerId for subscription (background replication)
+            const [cursor, peerId] = await Effect.runPromise(
+              Effect.gen(function* () {
+                const cursorSvc = yield* CursorService;
+                const c = ssrCursor ?? (yield* cursorSvc.loadCursor(collection));
+                const p = yield* cursorSvc.loadPeerId(collection);
+                return [c, p] as const;
+              }).pipe(Effect.provide(cursorLayer)),
+            );
 
-            logger.info("Checkpoint loaded", {
+            logger.info("Cursor loaded", {
               collection,
-              checkpoint,
-              source: ssrCheckpoint ? "SSR" : "IndexedDB",
+              cursor,
+              peerId,
+              source: ssrCursor !== undefined ? "SSR" : "storage",
               ymapSize: ymap.size,
             });
 
@@ -912,18 +915,15 @@ export function convexCollectionOptions(
               });
             };
 
-            // Simple async subscription handler - bypasses Effect for reliability
             const handleSubscriptionUpdate = async (response: any) => {
               try {
-                // Validate response shape
                 if (!response || !Array.isArray(response.changes)) {
                   logger.error("Invalid subscription response", { response });
                   return;
                 }
 
-                const { changes, checkpoint: newCheckpoint } = response;
+                const { changes, cursor: newCursor, compact: compactHint } = response;
 
-                // Process each change
                 for (const change of changes) {
                   const { operationType, crdtBytes, documentId } = change;
                   if (!crdtBytes) {
@@ -945,21 +945,45 @@ export function convexCollectionOptions(
                       documentId,
                       error: String(changeError),
                     });
-                    // Continue processing other changes
                   }
                 }
 
-                // Save checkpoint using persistence KV store
-                if (newCheckpoint) {
+                if (newCursor !== undefined) {
                   try {
-                    const key = `checkpoint:${collection}`;
-                    await persistence.kv.set(key, newCheckpoint);
-                    logger.debug("Checkpoint saved", { collection, checkpoint: newCheckpoint });
+                    const key = `cursor:${collection}`;
+                    await persistence.kv.set(key, newCursor);
+                    logger.debug("Cursor saved", { collection, cursor: newCursor });
+
+                    await convexClient.mutation(api.ack, {
+                      peerId,
+                      syncedSeq: newCursor,
+                    });
+                    logger.debug("Ack sent", { collection, peerId, syncedSeq: newCursor });
                   }
-                  catch (checkpointError) {
-                    logger.error("Failed to save checkpoint", {
+                  catch (ackError) {
+                    logger.error("Failed to save cursor or ack", {
                       collection,
-                      error: String(checkpointError),
+                      error: String(ackError),
+                    });
+                  }
+                }
+
+                if (compactHint) {
+                  try {
+                    const snapshot = Y.encodeStateAsUpdate(ydoc);
+                    const stateVector = Y.encodeStateVector(ydoc);
+                    await convexClient.mutation(api.compact, {
+                      documentId: compactHint,
+                      snapshotBytes: snapshot.buffer,
+                      stateVector: stateVector.buffer,
+                    });
+                    logger.info("Compaction triggered", { collection, documentId: compactHint });
+                  }
+                  catch (compactError) {
+                    logger.error("Compaction failed", {
+                      collection,
+                      documentId: compactHint,
+                      error: String(compactError),
                     });
                   }
                 }
@@ -971,22 +995,21 @@ export function convexCollectionOptions(
 
             logger.info("Establishing subscription", {
               collection,
-              checkpoint,
+              cursor,
               limit: 1000,
             });
 
             subscription = convexClient.onUpdate(
               api.stream,
-              { checkpoint, limit: 1000 },
+              { cursor, limit: 1000 },
               (response: any) => {
                 logger.debug("Subscription received update", {
                   collection,
                   changesCount: response.changes?.length ?? 0,
-                  checkpoint: response.checkpoint,
+                  cursor: response.cursor,
                   hasMore: response.hasMore,
                 });
 
-                // Call async handler directly - no Effect wrapper
                 handleSubscriptionUpdate(response);
               },
             );

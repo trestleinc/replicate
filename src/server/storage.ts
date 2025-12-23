@@ -6,7 +6,6 @@ export class Replicate<T extends object> {
   constructor(
     public component: any,
     public collectionName: string,
-    private options?: { threshold?: number },
   ) {}
 
   createStreamQuery(opts?: {
@@ -18,22 +17,22 @@ export class Replicate<T extends object> {
 
     return queryGeneric({
       args: {
-        checkpoint: v.object({ lastModified: v.number() }),
+        cursor: v.number(),
         limit: v.optional(v.number()),
-        vector: v.optional(v.bytes()),
+        sizeThreshold: v.optional(v.number()),
       },
       returns: v.object({
         changes: v.array(
           v.object({
-            documentId: v.optional(v.string()),
+            documentId: v.string(),
             crdtBytes: v.bytes(),
-            version: v.number(),
-            timestamp: v.number(),
+            seq: v.number(),
             operationType: v.string(),
           }),
         ),
-        checkpoint: v.object({ lastModified: v.number() }),
+        cursor: v.number(),
         hasMore: v.boolean(),
+        compact: v.optional(v.string()),
       }),
       handler: async (ctx, args) => {
         if (opts?.evalRead) {
@@ -41,9 +40,9 @@ export class Replicate<T extends object> {
         }
         const result = await ctx.runQuery(component.public.stream, {
           collection,
-          checkpoint: args.checkpoint,
+          cursor: args.cursor,
           limit: args.limit,
-          vector: args.vector,
+          sizeThreshold: args.sizeThreshold,
         });
 
         if (opts?.onStream) {
@@ -67,7 +66,7 @@ export class Replicate<T extends object> {
       args: {},
       returns: v.object({
         documents: v.any(),
-        checkpoint: v.optional(v.object({ lastModified: v.number() })),
+        cursor: v.optional(v.number()),
         count: v.number(),
         crdtBytes: v.optional(v.bytes()),
       }),
@@ -80,17 +79,13 @@ export class Replicate<T extends object> {
           docs = await opts.transform(docs);
         }
 
-        const latestTimestamp
-          = docs.length > 0 ? Math.max(...docs.map((doc: any) => doc.timestamp || 0)) : 0;
-
         const response: {
           documents: T[];
-          checkpoint?: { lastModified: number };
+          cursor?: number;
           count: number;
           crdtBytes?: ArrayBuffer;
         } = {
           documents: docs,
-          checkpoint: latestTimestamp > 0 ? { lastModified: latestTimestamp } : undefined,
           count: docs.length,
         };
 
@@ -101,7 +96,7 @@ export class Replicate<T extends object> {
 
           if (crdtState) {
             response.crdtBytes = crdtState.crdtBytes;
-            response.checkpoint = crdtState.checkpoint;
+            response.cursor = crdtState.cursor;
           }
         }
         return response;
@@ -115,7 +110,6 @@ export class Replicate<T extends object> {
   }) {
     const component = this.component;
     const collection = this.collectionName;
-    const threshold = this.options?.threshold;
 
     return mutationGeneric({
       args: {
@@ -125,7 +119,7 @@ export class Replicate<T extends object> {
       },
       returns: v.object({
         success: v.boolean(),
-        metadata: v.any(),
+        seq: v.number(),
       }),
       handler: async (ctx, args) => {
         const doc = args.materializedDoc as T;
@@ -134,13 +128,10 @@ export class Replicate<T extends object> {
           await opts.evalWrite(ctx, doc);
         }
 
-        const version = Date.now();
-        await ctx.runMutation(component.public.insertDocument, {
+        const result = await ctx.runMutation(component.public.insertDocument, {
           collection,
           documentId: args.documentId,
           crdtBytes: args.crdtBytes,
-          version,
-          threshold,
         });
 
         await ctx.db.insert(collection, {
@@ -155,11 +146,7 @@ export class Replicate<T extends object> {
 
         return {
           success: true,
-          metadata: {
-            documentId: args.documentId,
-            timestamp: Date.now(),
-            collection,
-          },
+          seq: result.seq,
         };
       },
     });
@@ -171,7 +158,6 @@ export class Replicate<T extends object> {
   }) {
     const component = this.component;
     const collection = this.collectionName;
-    const threshold = this.options?.threshold;
 
     return mutationGeneric({
       args: {
@@ -181,7 +167,7 @@ export class Replicate<T extends object> {
       },
       returns: v.object({
         success: v.boolean(),
-        metadata: v.any(),
+        seq: v.number(),
       }),
       handler: async (ctx, args) => {
         const doc = args.materializedDoc as T;
@@ -190,13 +176,10 @@ export class Replicate<T extends object> {
           await opts.evalWrite(ctx, doc);
         }
 
-        const version = Date.now();
-        await ctx.runMutation(component.public.updateDocument, {
+        const result = await ctx.runMutation(component.public.updateDocument, {
           collection,
           documentId: args.documentId,
           crdtBytes: args.crdtBytes,
-          version,
-          threshold,
         });
 
         const existing = await ctx.db
@@ -205,7 +188,7 @@ export class Replicate<T extends object> {
           .first();
 
         if (existing) {
-          await ctx.db.patch(collection, existing._id, {
+          await ctx.db.patch(existing._id, {
             ...(args.materializedDoc as object),
             timestamp: Date.now(),
           });
@@ -217,11 +200,7 @@ export class Replicate<T extends object> {
 
         return {
           success: true,
-          metadata: {
-            documentId: args.documentId,
-            timestamp: Date.now(),
-            collection,
-          },
+          seq: result.seq,
         };
       },
     });
@@ -233,7 +212,6 @@ export class Replicate<T extends object> {
   }) {
     const component = this.component;
     const collection = this.collectionName;
-    const threshold = this.options?.threshold;
 
     return mutationGeneric({
       args: {
@@ -242,7 +220,7 @@ export class Replicate<T extends object> {
       },
       returns: v.object({
         success: v.boolean(),
-        metadata: v.any(),
+        seq: v.number(),
       }),
       handler: async (ctx, args) => {
         const documentId = args.documentId;
@@ -250,13 +228,10 @@ export class Replicate<T extends object> {
           await opts.evalRemove(ctx, documentId);
         }
 
-        const version = Date.now();
-        await ctx.runMutation(component.public.deleteDocument, {
+        const result = await ctx.runMutation(component.public.deleteDocument, {
           collection,
           documentId: documentId,
           crdtBytes: args.crdtBytes,
-          version,
-          threshold,
         });
 
         const existing = await ctx.db
@@ -265,7 +240,7 @@ export class Replicate<T extends object> {
           .first();
 
         if (existing) {
-          await ctx.db.delete(collection, existing._id);
+          await ctx.db.delete(existing._id);
         }
 
         if (opts?.onRemove) {
@@ -274,12 +249,70 @@ export class Replicate<T extends object> {
 
         return {
           success: true,
-          metadata: {
-            documentId: documentId,
-            timestamp: Date.now(),
-            collection,
-          },
+          seq: result.seq,
         };
+      },
+    });
+  }
+
+  createAckMutation(opts?: {
+    evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, peerId: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return mutationGeneric({
+      args: {
+        peerId: v.string(),
+        syncedSeq: v.number(),
+      },
+      returns: v.null(),
+      handler: async (ctx, args) => {
+        if (opts?.evalWrite) {
+          await opts.evalWrite(ctx, args.peerId);
+        }
+
+        await ctx.runMutation(component.public.ack, {
+          collection,
+          peerId: args.peerId,
+          syncedSeq: args.syncedSeq,
+        });
+
+        return null;
+      },
+    });
+  }
+
+  createCompactMutation(opts?: {
+    evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, documentId: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return mutationGeneric({
+      args: {
+        documentId: v.string(),
+        snapshotBytes: v.bytes(),
+        stateVector: v.bytes(),
+        peerTimeout: v.optional(v.number()),
+      },
+      returns: v.object({
+        success: v.boolean(),
+        removed: v.number(),
+        retained: v.number(),
+      }),
+      handler: async (ctx, args) => {
+        if (opts?.evalWrite) {
+          await opts.evalWrite(ctx, args.documentId);
+        }
+
+        return await ctx.runMutation(component.public.compact, {
+          collection,
+          documentId: args.documentId,
+          snapshotBytes: args.snapshotBytes,
+          stateVector: args.stateVector,
+          peerTimeout: args.peerTimeout,
+        });
       },
     });
   }
@@ -297,6 +330,7 @@ export class Replicate<T extends object> {
       returns: v.object({
         diff: v.optional(v.bytes()),
         serverStateVector: v.bytes(),
+        cursor: v.number(),
       }),
       handler: async (ctx, args) => {
         if (opts?.evalRead) {
