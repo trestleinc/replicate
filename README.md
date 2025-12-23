@@ -166,17 +166,16 @@ export const {
 - `mark` - Report sync progress to server (peer tracking for safe compaction)
 - `compact` - Manual compaction trigger (peer-aware, respects active peer sync state)
 
-### Step 4: Create a Custom Hook
+### Step 4: Define Your Collection
 
-Create a hook that wraps TanStack DB with Convex collection options:
+Create a collection definition using `collection.create()`. This is SSR-safe because persistence and config are deferred until `init()` is called in the browser:
 
 ```typescript
-// src/useTasks.ts
-import { createCollection, type Collection } from '@tanstack/react-db';
-import { convexCollectionOptions, persistence } from '@trestleinc/replicate/client';
-import { api } from '../convex/_generated/api';
-import { convexClient } from './router';
-import { useMemo } from 'react';
+// src/collections/tasks.ts
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
+import { api } from '../../convex/_generated/api';
+import initSqlJs from 'sql.js';
 import { z } from 'zod';
 
 // Define your Zod schema (required)
@@ -188,56 +187,50 @@ const taskSchema = z.object({
 
 export type Task = z.infer<typeof taskSchema>;
 
-// Define collection type with TanStack DB discriminator
-type TasksCollection = Collection<Task> & {
-  singleResult?: never;
-};
-
-// Module-level singleton to prevent multiple collection instances
-let tasksCollection: TasksCollection | null = null;
-
-// Initialize persistence (SQLite for browser)
-import initSqlJs from 'sql.js';
-const SQL = await initSqlJs({ locateFile: (file) => `/${file}` });
-const tasksPersistence = await persistence.sqlite.browser(SQL, 'tasks-db');
-
-export function useTasks(
-  initialData?: { documents: Task[], cursor?: number, count?: number, crdtBytes?: ArrayBuffer }
-) {
-  return useMemo(() => {
-    if (!tasksCollection) {
-      tasksCollection = createCollection(
-        convexCollectionOptions({
-          schema: taskSchema,           // Required: Zod schema
-          getKey: (task) => task.id,
-          convexClient,
-          api: api.tasks,               // Collection name auto-extracted from function path
-          persistence: tasksPersistence, // Required: SQLite, memory, or custom
-          material: initialData,
-        })
-      ) as unknown as TasksCollection;
-    }
-    return tasksCollection;
-  }, [initialData]);
-}
+// Create lazy-initialized collection (SSR-safe)
+export const tasks = collection.create({
+  // Async factory - only called in browser during init()
+  persistence: async () => {
+    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+    return persistence.sqlite.browser(SQL, 'tasks');
+  },
+  // Sync factory - only called in browser during init()
+  config: () => ({
+    schema: taskSchema,
+    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+    api: api.tasks,
+    getKey: (task) => task.id,
+  }),
+});
 ```
 
-**Key differences from previous versions:**
-- `schema` is now **required** (Zod schema for type inference and prose field detection)
-- `collection` prop removed (auto-extracted from `api.stream` function path)
-- `prose` prop removed (auto-detected from schema fields using `prose()` type)
-- `persistence` is now **required** (SQLite, memory, or custom adapter)
+**Key points:**
+- `collection.create()` returns a lazy collection that's safe to import during SSR
+- `persistence` and `config` are factory functions, not values - they're only called during `init()`
+- `schema` is required (Zod schema for type inference and prose field detection)
+- Collection name is auto-extracted from `api.tasks` function path
 
-### Step 5: Use in Components
+### Step 5: Initialize and Use in Components
+
+Initialize the collection once in your app's entry point (browser only), then use it in components:
 
 ```typescript
-// src/routes/index.tsx
+// src/routes/__root.tsx (or app entry point)
+import { tasks } from '../collections/tasks';
+
+// Initialize once during app startup (browser only)
+// For SSR frameworks, do this in a client-side effect or loader
+await tasks.init();
+```
+
+```typescript
+// src/components/TaskList.tsx
 import { useLiveQuery } from '@tanstack/react-db';
-import { useTasks } from '../useTasks';
+import { tasks, type Task } from '../collections/tasks';
 
 export function TaskList() {
-  const collection = useTasks();
-  const { data: tasks, isLoading, isError } = useLiveQuery(collection);
+  const collection = tasks.get();
+  const { data: taskList, isLoading, isError } = useLiveQuery(collection);
 
   const handleCreate = () => {
     collection.insert({
@@ -270,7 +263,7 @@ export function TaskList() {
     <div>
       <button onClick={handleCreate}>Add Task</button>
 
-      {tasks.map((task) => (
+      {taskList.map((task) => (
         <div key={task.id}>
           <input
             type="checkbox"
@@ -286,9 +279,14 @@ export function TaskList() {
 }
 ```
 
+**Lifecycle:**
+1. `collection.create()` - Define collection (module-level, SSR-safe)
+2. `await tasks.init()` - Initialize persistence and config (browser only, call once)
+3. `tasks.get()` - Get the TanStack DB collection instance (after init)
+
 ### Step 6: Server-Side Rendering (Recommended)
 
-For frameworks that support SSR (TanStack Start, Next.js, Remix, SvelteKit), preloading data on the server is the recommended approach for instant page loads and better SEO.
+For frameworks that support SSR (TanStack Start, Next.js, Remix, SvelteKit), preloading data on the server enables instant page loads.
 
 **Why SSR is recommended:**
 - **Instant page loads** - No loading spinners on first render
@@ -296,40 +294,73 @@ For frameworks that support SSR (TanStack Start, Next.js, Remix, SvelteKit), pre
 - **Reduced client work** - Data already available on hydration
 - **Seamless transition** - Real-time sync takes over after hydration
 
-**Step 1: Use the `material` query from replicate()**
+**Step 1: Prefetch material on the server**
 
-The `material` query is automatically generated by `replicate()` and returns all documents for SSR hydration.
-
-**Step 2: Load data in your route loader**
+Use `ConvexHttpClient` to fetch data during SSR. The `material` query is generated by `replicate()`:
 
 ```typescript
-// src/routes/index.tsx
-import { createFileRoute } from '@tanstack/react-router';
+// TanStack Start: src/routes/__root.tsx
+import { createRootRoute } from '@tanstack/react-router';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../convex/_generated/api';
-import type { Task } from '../useTasks';
 
 const httpClient = new ConvexHttpClient(import.meta.env.VITE_CONVEX_URL);
 
-export const Route = createFileRoute('/')({
+export const Route = createRootRoute({
   loader: async () => {
-    const tasks = await httpClient.query(api.tasks.material);
-    return { tasks };
+    const tasksMaterial = await httpClient.query(api.tasks.material);
+    return { tasksMaterial };
   },
 });
+```
 
-function TasksPage() {
-  const { tasks: initialTasks } = Route.useLoaderData();
+```typescript
+// SvelteKit: src/routes/+layout.server.ts
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../convex/_generated/api';
+import { PUBLIC_CONVEX_URL } from '$env/static/public';
 
-  // Pass initialData to your hook - no loading state on first render!
-  const collection = useTasks(initialTasks);
-  const { data: tasks } = useLiveQuery(collection);
+const httpClient = new ConvexHttpClient(PUBLIC_CONVEX_URL);
 
-  return <TaskList tasks={tasks} />;
+export async function load() {
+  const tasksMaterial = await httpClient.query(api.tasks.material);
+  return { tasksMaterial };
 }
 ```
 
-**Note:** If your framework doesn't support SSR, the collection works just fine without `initialData` - it will fetch data on mount and show a loading state.
+**Step 2: Pass material to init() on the client**
+
+```typescript
+// TanStack Start: src/routes/__root.tsx (client component)
+import { tasks } from '../collections/tasks';
+
+function RootComponent() {
+  const { tasksMaterial } = Route.useLoaderData();
+
+  useEffect(() => {
+    // Initialize with SSR data - no loading state!
+    tasks.init(tasksMaterial);
+  }, []);
+
+  return <Outlet />;
+}
+```
+
+```svelte
+<!-- SvelteKit: src/routes/+layout.svelte -->
+<script lang="ts">
+  import { tasks } from '../collections/tasks';
+  import { onMount } from 'svelte';
+
+  export let data; // From +layout.server.ts
+
+  onMount(async () => {
+    await tasks.init(data.tasksMaterial);
+  });
+</script>
+```
+
+**Note:** If your framework doesn't support SSR, just call `await tasks.init()` without arguments - it will fetch data on mount and show a loading state.
 
 ## Sync Protocol
 
@@ -523,37 +554,41 @@ const binding = await collection.utils.prose(notebookId, 'content');
 
 ### Persistence Providers
 
-Choose the right storage backend for your platform:
+Choose the right storage backend for your platform. Persistence is configured in the `persistence` factory of `collection.create()`:
 
 ```typescript
-import { persistence, adapters } from '@trestleinc/replicate/client';
+import { collection, persistence } from '@trestleinc/replicate/client';
 
 // Browser SQLite: Uses sql.js WASM with OPFS persistence
-import initSqlJs from 'sql.js';
-const SQL = await initSqlJs({ locateFile: (file) => `/${file}` });
-convexCollectionOptions({
-  // ... other options
-  persistence: await persistence.sqlite.browser(SQL, 'my-app-db'),
+export const tasks = collection.create({
+  persistence: async () => {
+    const initSqlJs = (await import('sql.js')).default;
+    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+    return persistence.sqlite.browser(SQL, 'my-app-db');
+  },
+  config: () => ({ /* ... */ }),
 });
 
 // React Native SQLite: Uses op-sqlite (native SQLite)
-import { open } from '@op-engineering/op-sqlite';
-const db = open({ name: 'my-app-db' });
-convexCollectionOptions({
-  // ... other options
-  persistence: await persistence.sqlite.native(db, 'my-app-db'),
+export const tasks = collection.create({
+  persistence: async () => {
+    const { open } = await import('@op-engineering/op-sqlite');
+    const db = open({ name: 'my-app-db' });
+    return persistence.sqlite.native(db, 'my-app-db');
+  },
+  config: () => ({ /* ... */ }),
 });
 
 // Testing: In-memory (no persistence)
-convexCollectionOptions({
-  // ... other options
-  persistence: persistence.memory(),
+export const tasks = collection.create({
+  persistence: async () => persistence.memory(),
+  config: () => ({ /* ... */ }),
 });
 
 // Custom backend: Implement StorageAdapter interface
-convexCollectionOptions({
-  // ... other options
-  persistence: persistence.custom(new MyCustomAdapter()),
+export const tasks = collection.create({
+  persistence: async () => persistence.custom(new MyCustomAdapter()),
+  config: () => ({ /* ... */ }),
 });
 ```
 
@@ -667,18 +702,17 @@ export async function load() {
 }
 ```
 
-#### `convexCollectionOptions<TSchema>(config)`
+#### Collection Config Options
 
-Creates collection options for TanStack DB with Yjs CRDT integration.
+The `config` factory in `collection.create()` accepts these options:
 
-**Config:**
 ```typescript
-interface ConvexCollectionOptionsConfig<T> {
+interface CollectionConfig<T> {
   schema: ZodObject;              // Required: Zod schema for type inference
-  getKey: (item: T) => string | number;
-  convexClient: ConvexClient;
-  api: {
-    stream: FunctionReference;    // Real-time subscription endpoint
+  getKey: (item: T) => string | number;  // Extract unique key from item
+  convexClient: ConvexClient;     // Convex client instance
+  api: {                          // API from replicate()
+    stream: FunctionReference;    // Real-time subscription
     insert: FunctionReference;    // Insert mutation
     update: FunctionReference;    // Update mutation
     remove: FunctionReference;    // Delete mutation
@@ -687,31 +721,24 @@ interface ConvexCollectionOptionsConfig<T> {
     compact: FunctionReference;   // Manual compaction
     material?: FunctionReference; // SSR hydration query
   };
-  persistence: Persistence;       // Required: SQLite, memory, or custom
-  material?: Materialized<T>;     // SSR hydration data
   undoCaptureTimeout?: number;    // Undo stack merge window (default: 500ms)
 }
 ```
 
-**Returns:** Collection options for `createCollection()`
-
 **Example:**
 ```typescript
-const taskSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  content: prose(),  // Auto-detected as prose field
-});
-
-const collection = createCollection(
-  convexCollectionOptions({
+export const tasks = collection.create({
+  persistence: async () => {
+    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+    return persistence.sqlite.browser(SQL, 'tasks');
+  },
+  config: () => ({
     schema: taskSchema,
     getKey: (task) => task.id,
-    convexClient,
+    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
-    persistence: await persistence.sqlite.browser(SQL, 'tasks'),
-  })
-);
+  }),
+});
 ```
 
 #### `prose.extract(proseJson)`
@@ -733,17 +760,13 @@ const plainText = prose.extract(task.content);
 #### Persistence Providers
 
 ```typescript
-import { persistence, adapters, type StorageAdapter } from '@trestleinc/replicate/client';
+import { persistence, type StorageAdapter } from '@trestleinc/replicate/client';
 
-// Persistence providers
+// Persistence providers (use in collection.create persistence factory)
 persistence.sqlite.browser(SQL, name)  // Browser: sql.js WASM + OPFS
 persistence.sqlite.native(db, name)    // React Native: op-sqlite
 persistence.memory()                   // Testing: in-memory (no persistence)
 persistence.custom(adapter)            // Custom: your StorageAdapter implementation
-
-// SQLite adapters (for advanced use)
-adapters.sqljs    // SqlJsAdapter class for browser
-adapters.opsqlite // OPSqliteAdapter class for React Native
 ```
 
 **`persistence.sqlite.browser(SQL, name)`** - Browser SQLite using sql.js WASM. You initialize sql.js and pass the SQL object.
@@ -915,8 +938,8 @@ A full-featured offline-first issue tracker built with Replicate, demonstrating 
 **Live Demo:** [interval.robelest.com](https://interval.robelest.com)
 
 **Source Code:** Available in two framework variants:
-- [`illustrations/web/tanstack-start/`](./illustrations/web/tanstack-start/) - TanStack Start (React)
-- [`illustrations/web/sveltekit/`](./illustrations/web/sveltekit/) - SvelteKit (Svelte)
+- [`examples/tanstack-start/`](./examples/tanstack-start/) - TanStack Start (React)
+- [`examples/sveltekit/`](./examples/sveltekit/) - SvelteKit (Svelte)
 
 **Features demonstrated:**
 - Offline-first with SQLite persistence (sql.js + OPFS)

@@ -19,14 +19,21 @@
 ### Server (`@trestleinc/replicate/server`)
 ```typescript
 replicate()              // Factory to create bound replicate function
-table()                  // Define replicated table schema
-prose()                  // Validator for prose fields
+schema.table()           // Define replicated table schema (injects timestamp)
+schema.prose()           // Validator for prose fields
 ```
 
 ### Client (`@trestleinc/replicate/client`)
 ```typescript
-convexCollectionOptions()   // Main entry point
-extract()                   // Extract text from prose JSON
+collection.create()          // Main entry point - create lazy-initialized collections
+persistence.sqlite.browser() // Browser SQLite persistence (sql.js + OPFS)
+persistence.sqlite.native()  // React Native SQLite persistence (op-sqlite)
+persistence.memory()         // In-memory persistence (testing)
+persistence.custom()         // Custom storage adapter
+prose()                      // Zod schema for prose fields
+prose.extract()              // Extract plain text from prose JSON
+prose.empty()                // Create empty prose value
+errors.*                     // Error classes (Network, IDB, Prose, etc.)
 ```
 
 ## Critical Rules (from CLAUDE.md)
