@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Search, Plus, ArrowLeft, SlidersHorizontal } from '@lucide/svelte';
+	import { Search, Plus, SlidersHorizontal } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 	import { intervals } from '$collections/useIntervals';
@@ -32,20 +32,9 @@
 	}
 </script>
 
-<div
-	class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 md:hidden pb-[env(safe-area-inset-bottom)]"
->
-	<div class="flex items-center gap-1 bg-card border border-border shadow-lg p-1">
-		<Button
-			variant="ghost"
-			size="icon"
-			onclick={() => goto('/intervals')}
-			aria-label="Back to intervals"
-			class="h-10 w-10"
-		>
-			<ArrowLeft class="w-5 h-5" />
-		</Button>
-		<div class="w-px h-6 bg-border"></div>
+<!-- Right Island: Actions (Search, Filter, Create) -->
+<div class="floating-island floating-island-actions">
+	<div class="flex items-center gap-1 p-1">
 		<Button
 			variant="ghost"
 			size="icon"

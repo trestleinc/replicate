@@ -212,7 +212,9 @@ function AppLayout() {
           hasActiveFilters={hasActiveFilters}
         />
         <main className="main-content">
-          <Outlet />
+          <div className="main-scroll-area">
+            <Outlet />
+          </div>
         </main>
         <ClientOnly fallback={null}>
           <KeyboardShortcuts onSearchOpen={() => setIsSearchOpen(true)} />
@@ -225,6 +227,7 @@ function AppLayout() {
             onStatusChange={setStatusFilter}
             onPriorityChange={setPriorityFilter}
           />
+          <MobileBackButton />
           <MobileActionBar
             onSearchOpen={() => setIsSearchOpen(true)}
             onFilterOpen={() => setIsFilterOpen(true)}
@@ -237,8 +240,34 @@ function AppLayout() {
 }
 
 /**
- * Floating action bar for mobile navigation.
- * tldraw-inspired but with sharp corners to match design language.
+ * Left floating island for back button (only visible on detail pages).
+ */
+function MobileBackButton() {
+  const navigate = useNavigate();
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const isDetailPage = pathname.startsWith("/intervals/") && pathname !== "/intervals";
+
+  if (!isDetailPage) return null;
+
+  return (
+    <div className="floating-island floating-island-back">
+      <div className="p-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate({ to: "/intervals" })}
+          aria-label="Back to intervals"
+          className="h-10 w-10"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Right floating island for actions (Search, Filter, Create).
  */
 function MobileActionBar({
   onSearchOpen,
@@ -249,22 +278,11 @@ function MobileActionBar({
   onFilterOpen: () => void;
   hasActiveFilters: boolean;
 }) {
-  const navigate = useNavigate();
   const createInterval = useCreateInterval();
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 md:hidden pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center gap-1 bg-card border border-border shadow-lg p-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate({ to: "/intervals" })}
-          aria-label="Back to intervals"
-          className="h-10 w-10"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="w-px h-6 bg-border" />
+    <div className="floating-island floating-island-actions">
+      <div className="flex items-center gap-1 p-1">
         <Button
           variant="ghost"
           size="icon"

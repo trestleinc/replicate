@@ -21,7 +21,7 @@ interface SidebarProps {
 export function Sidebar({ onSearchOpen, onFilterOpen, hasActiveFilters }: SidebarProps) {
   // Server-render the sidebar shell, client-only for intervals list
   return (
-    <aside className="hidden md:flex w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] h-screen sticky top-0 flex-col bg-sidebar overflow-hidden">
+    <aside className="hidden md:flex w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] h-dvh flex-col bg-sidebar overflow-hidden">
       {/* Header - server-rendered */}
       <div className="flex items-center justify-between px-3 py-3 border-b border-sidebar-border">
         <Link

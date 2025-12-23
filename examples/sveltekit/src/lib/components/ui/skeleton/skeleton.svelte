@@ -5,13 +5,18 @@
 	let {
 		ref = $bindable(null),
 		class: className,
+		delayed = false,
 		...restProps
-	}: WithoutChildren<WithElementRef<HTMLAttributes<HTMLDivElement>>> = $props();
+	}: WithoutChildren<WithElementRef<HTMLAttributes<HTMLDivElement>>> & { delayed?: boolean } = $props();
 </script>
 
 <div
 	bind:this={ref}
 	data-slot="skeleton"
-	class={cn("bg-accent animate-pulse rounded-md", className)}
+	class={cn(
+		"rounded-none",
+		delayed ? "skeleton-delayed" : "skeleton-warm",
+		className
+	)}
 	{...restProps}
 ></div>

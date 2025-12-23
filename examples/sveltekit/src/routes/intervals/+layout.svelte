@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import MobileActionBar from '$lib/components/MobileActionBar.svelte';
+	import MobileBackButton from '$lib/components/MobileBackButton.svelte';
 	import KeyboardShortcuts from '$lib/components/KeyboardShortcuts.svelte';
 	import SearchPanel from '$lib/components/SearchPanel.svelte';
 	import FilterDialog from '$lib/components/FilterDialog.svelte';
@@ -41,7 +42,9 @@
 	/>
 
 	<main class="main-content">
-		{@render children()}
+		<div class="main-scroll-area">
+			{@render children()}
+		</div>
 	</main>
 
 	<KeyboardShortcuts onsearchopen={() => (searchOpen = true)} />
@@ -54,6 +57,7 @@
 		onstatuschange={(s) => (statusFilter = s)}
 		onprioritychange={(p) => (priorityFilter = p)}
 	/>
+	<MobileBackButton />
 	<MobileActionBar
 		onsearchopen={() => (searchOpen = true)}
 		onfilteropen={() => (filterOpen = true)}

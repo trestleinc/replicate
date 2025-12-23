@@ -162,15 +162,97 @@
 }
 
 /* ============================================
+   Skeleton & Loading States
+   ============================================ */
+
+@keyframes skeleton-pulse {
+  0%, 100% {
+    background-color: oklch(0.94 0.01 70);
+  }
+  50% {
+    background-color: oklch(0.90 0.015 65);
+  }
+}
+
+.skeleton-warm {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Delayed skeleton - prevents flash on fast loads */
+.skeleton-delayed {
+  opacity: 0;
+  animation: skeleton-fade-in 150ms ease-out 150ms forwards,
+             skeleton-pulse 1.5s ease-in-out 150ms infinite;
+}
+
+@keyframes skeleton-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Content hydration animation */
+.content-hydrated {
+  animation: content-enter 200ms ease-out;
+}
+
+@keyframes content-enter {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ============================================
    App Layout
    ============================================ */
 
 .app-layout {
-  @apply flex min-h-screen bg-background;
+  @apply flex h-dvh overflow-hidden bg-background;
 }
 
 .main-content {
-  @apply flex-1 min-w-0 flex flex-col bg-card border-l border-border;
+  @apply flex-1 min-w-0 flex flex-col bg-card border-l border-border overflow-hidden;
+}
+
+.main-scroll-area {
+  @apply flex-1 overflow-auto pb-20 md:pb-0;
+}
+
+/* ============================================
+   Floating Islands (Mobile Navigation)
+   ============================================ */
+
+.floating-island {
+  @apply fixed bottom-4 z-40 md:hidden;
+  @apply bg-card/95 border border-border;
+  @apply pb-[env(safe-area-inset-bottom)];
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08),
+              0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.floating-island-back {
+  @apply left-8;
+  animation: island-slide-up 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.floating-island-actions {
+  @apply right-8;
+}
+
+@keyframes island-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ============================================
@@ -385,7 +467,7 @@
   }
 
   .editor-container {
-    @apply px-4 py-6 pb-24;
+    @apply px-4 py-6;
   }
 
   .editor-title {
@@ -394,16 +476,5 @@
 
   .welcome-hint {
     @apply hidden;
-  }
-
-  .welcome-page {
-    @apply pb-24;
-  }
-}
-
-/* Safe area handling for mobile action bar */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .main-content {
-    padding-bottom: env(safe-area-inset-bottom);
   }
 }
