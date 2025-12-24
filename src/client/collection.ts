@@ -397,9 +397,14 @@ export function convexCollectionOptions(
     },
   };
 
-  let ydoc: Y.Doc = null as any;
-  let ymap: Y.Map<unknown> = null as any;
+  // Create ydoc/ymap synchronously for immediate local-first operations
+  // Persistence sync will load state into this doc later
+  let ydoc: Y.Doc = new Y.Doc({ guid: collection } as any);
+  let ymap: Y.Map<unknown> = ydoc.getMap(collection);
   let docPersistence: PersistenceProvider = null as any;
+
+  // Register ydoc immediately so utils.prose() can access it
+  collectionDocs.set(collection, { ydoc, ymap });
 
   // Bound replicate operations - set during sync initialization
   // Used by onDelete and other handlers that need to sync with TanStack DB
@@ -603,13 +608,13 @@ export function convexCollectionOptions(
     utils,
 
     onInsert: async ({ transaction }: CollectionTransaction<DataType>) => {
+      const delta = applyYjsInsert(transaction.mutations);
+
       try {
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
-        const delta = applyYjsInsert(transaction.mutations);
         if (delta.length > 0) {
           const documentKey = String(transaction.mutations[0].key);
           const itemYMap = ymap.get(documentKey) as Y.Map<unknown>;
-          // Use serializeYMapValue to convert Y.XmlFragment → XmlFragmentJSON (same as onUpdate)
           const materializedDoc = itemYMap
             ? serializeYMapValue(itemYMap)
             : transaction.mutations[0].modified;
@@ -626,26 +631,26 @@ export function convexCollectionOptions(
     },
 
     onUpdate: async ({ transaction }: CollectionTransaction<DataType>) => {
+      const mutation = transaction.mutations[0];
+      const documentKey = String(mutation.key);
+
+      if (prose.isApplyingFromServer(collection, documentKey)) {
+        logger.debug("Skipping onUpdate - data from server", { collection, documentKey });
+        return;
+      }
+
+      const metadata = mutation.metadata as { contentSync?: ContentSyncMetadata } | undefined;
+      const isContentSync = !!metadata?.contentSync;
+
+      // Apply regular updates to Yjs immediately (local-first)
+      // ContentSync updates already have Yjs changes applied via fragment observer
+      const delta = isContentSync ? null : applyYjsUpdate(transaction.mutations);
+
       try {
-        const mutation = transaction.mutations[0];
-        const documentKey = String(mutation.key);
-
-        // Skip if this update originated from server (prevents echo loops)
-        // Now checks DOCUMENT-level flag, not collection-level
-        if (prose.isApplyingFromServer(collection, documentKey)) {
-          logger.debug("Skipping onUpdate - data from server", { collection, documentKey });
-          return;
-        }
-
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 
-        // Metadata is on mutation, not transaction (TanStack DB API)
-        const metadata = mutation.metadata as { contentSync?: ContentSyncMetadata } | undefined;
-
-        // Check if this is a content sync from utils.prose()
-        if (metadata?.contentSync) {
-          const { crdtBytes, materializedDoc } = metadata.contentSync;
-
+        if (isContentSync) {
+          const { crdtBytes, materializedDoc } = metadata!.contentSync!;
           await convexClient.mutation(api.update, {
             documentId: documentKey,
             crdtBytes,
@@ -654,11 +659,8 @@ export function convexCollectionOptions(
           return;
         }
 
-        // Regular update - apply to Y.Doc and generate delta
-        const delta = applyYjsUpdate(transaction.mutations);
-        if (delta.length > 0) {
+        if (delta && delta.length > 0) {
           const itemYMap = ymap.get(documentKey) as Y.Map<unknown>;
-          // Use serializeYMapValue to properly handle XmlFragment fields
           const fullDoc = itemYMap ? serializeYMapValue(itemYMap) : mutation.modified;
           await convexClient.mutation(api.update, {
             documentId: documentKey,
@@ -673,9 +675,10 @@ export function convexCollectionOptions(
     },
 
     onDelete: async ({ transaction }: CollectionTransaction<DataType>) => {
+      const delta = applyYjsDelete(transaction.mutations);
+
       try {
         await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
-        const delta = applyYjsDelete(transaction.mutations);
         const itemsToDelete = transaction.mutations
           .map(mut => mut.original)
           .filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
@@ -715,18 +718,14 @@ export function convexCollectionOptions(
 
         (async () => {
           try {
-            ydoc = await createYjsDocument(collection, persistence.kv);
-            ymap = getYMap<unknown>(ydoc, collection);
-
-            collectionDocs.set(collection, { ydoc, ymap });
-
-            // Store undo config for per-document undo managers
+            // ydoc/ymap already created synchronously - just set up undo config
             const trackedOrigins = new Set([YjsOrigin.Local]);
             collectionUndoConfig.set(collection, {
               captureTimeout: undoCaptureTimeout,
               trackedOrigins,
             });
 
+            // Load persisted state into existing ydoc
             docPersistence = persistence.createDocPersistence(collection, ydoc);
             docPersistence.whenSynced.then(() => {
               logger.debug("Persistence synced", { collection });
