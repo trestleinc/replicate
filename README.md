@@ -961,16 +961,22 @@ A full-featured offline-first issue tracker built with Replicate, demonstrating 
 
 **Live Demo:** [interval.robelest.com](https://interval.robelest.com)
 
-**Source Code:** Available in two framework variants:
-- [`examples/tanstack-start/`](./examples/tanstack-start/) - TanStack Start (React)
-- [`examples/sveltekit/`](./examples/sveltekit/) - SvelteKit (Svelte)
+**Source Code:** Available in three framework variants:
+- [`examples/tanstack-start/`](./examples/tanstack-start/) - TanStack Start (React, web)
+- [`examples/sveltekit/`](./examples/sveltekit/) - SvelteKit (Svelte, web)
+- [`examples/expo/`](./examples/expo/) - Expo (React Native, mobile)
 
-**Features demonstrated:**
+**Web features demonstrated:**
 - Offline-first with SQLite persistence (sql.js + OPFS)
 - Rich text editing with TipTap + Yjs collaboration
 - PWA with custom service worker
 - Real-time sync across devices
 - Search with client-side text extraction (`prose.extract()`)
+
+**Mobile features demonstrated (Expo):**
+- Native SQLite persistence (op-sqlite)
+- Plain TextInput prose binding via `useProseField` hook
+- Crypto polyfills for React Native
 
 ## Development
 

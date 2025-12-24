@@ -23,18 +23,15 @@ Single package with exports:
 ## Development Commands
 
 ```bash
-# Build (includes ESLint + TypeScript checking via rslib plugins)
-bun run build        # Build with Rslib (outputs to dist/)
+# Build (includes ESLint + TypeScript checking)
+bun run build        # Build with tsdown (outputs to dist/)
 bun run clean        # Remove dist/
 
 # Publishing
 bun run prepublish   # Runs build (which includes linting)
 ```
 
-**Note:** Linting, formatting, and type checking run automatically during `bun run build` via rslib plugins:
-- `pluginEslint` with `fix: true` - runs ESLint and auto-fixes issues
-- `pluginTypeCheck` - runs TypeScript type checking
-- `@stylistic/eslint-plugin` - handles code formatting (indentation, quotes, semicolons)
+**Note:** Build uses tsdown which includes TypeScript type checking. Linting runs separately via `bun run lint`.
 
 ## Architecture
 
@@ -104,32 +101,19 @@ Client edit -> merge.ts (encode delta) -> collection.ts -> TanStack DB sync
 ### Client (`@trestleinc/replicate/client`)
 ```typescript
 // Main entry point
-convexCollectionOptions()    // Create collection options for TanStack DB
+collection.create()           // Create lazy-initialized collection (SSR-safe)
 
 // Persistence providers (nested object)
 persistence.indexeddb()              // Browser: IndexedDB (default)
 persistence.sqlite.browser(SQL, name) // Browser: sql.js WASM + OPFS
 persistence.sqlite.native(db, name)   // React Native: op-sqlite
 persistence.memory()                  // Testing: in-memory
+persistence.custom(adapter)           // Custom storage adapter
 
-// Text extraction (nested object)
+// Prose utilities
+prose()                      // Zod schema for prose fields
 prose.extract()              // Extract plain text from ProseMirror JSON
-
-// Error classes (nested object)
-errors.Network               // Network-related failures
-errors.IDB                   // IndexedDB read errors
-errors.IDBWrite              // IndexedDB write errors
-errors.Reconciliation        // Phantom document cleanup errors
-errors.Prose                 // Rich text field errors
-errors.CollectionNotReady    // Collection not initialized
-errors.NonRetriable          // Errors that should not be retried
-
-// SQLite adapters (nested object)
-adapters.sqljs               // SqlJsAdapter class for browser
-adapters.opsqlite            // OPSqliteAdapter class for React Native
-
-// Collection utils (accessed via collection.utils.*)
-collection.utils.prose(id, field)   // Returns EditorBinding for rich text
+prose.empty()                // Create empty prose value
 ```
 
 ### Server (`@trestleinc/replicate/server`)
@@ -190,20 +174,29 @@ export const { stream, material, insert, update, remove, versions } =
 
 ### Client: Collection Setup
 ```typescript
-import { convexCollectionOptions } from '@trestleinc/replicate/client';
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
 
-const collection = createCollection(
-  convexCollectionOptions<Task>({
-    convexClient,
+// Create lazy-initialized collection (SSR-safe)
+export const tasks = collection.create({
+  persistence: async () => {
+    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+    return persistence.sqlite.browser(SQL, 'tasks');
+  },
+  config: () => ({
+    schema: taskSchema,
+    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
-    collection: 'tasks',
-    prose: ['content'],  // optional: prose fields for rich text
     getKey: (task) => task.id,
-  })
-);
+  }),
+});
+
+// Initialize once during app startup (browser only)
+await tasks.init();
+const collection = tasks.get();
 
 // Access utils methods
-const binding = await collection.utils.prose(id, 'content');  // Editor binding
+const binding = await collection.utils.prose(id, 'content');
 ```
 
 ### Schema: schema.table() Helper
@@ -233,8 +226,8 @@ const plainText = prose.extract(task.content);
 - **Yjs** for CRDTs (conflict-free replicated data types)
 - **Convex** for backend (cloud database + functions)
 - **TanStack DB** for reactive state management
-- **Rslib** for building (with ESLint + TypeScript plugins)
-- **ESLint** for linting (runs during build via rslib plugin)
+- **tsdown** for building (with TypeScript type checking)
+- **ESLint** for linting (runs separately via `bun run lint`)
 - **LogTape** for logging (avoid console.*)
 
 ## Naming Conventions
@@ -249,7 +242,7 @@ const plainText = prose.extract(task.content);
 
 - **Effect-based services** - Client services use Effect for DI; understand Effect basics
 - **Hard deletes** - Documents physically removed from main table, history kept in component
-- **Linting runs during build** - ESLint runs via rslib's `pluginEslint` during `bun run build`
+- **Linting runs separately** - ESLint runs via `bun run lint` (not during build)
 - **LogTape logging** - Use LogTape, not console.*
 - **Import types** - Use `import type` for type-only imports
 - **bun for commands** - Use `bun run` not `pnpm run` for all commands
