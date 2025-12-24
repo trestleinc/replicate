@@ -929,6 +929,30 @@ import type { ProseValue } from '@trestleinc/replicate/shared';
 // Use the prose() helper from client to create fields of this type
 ```
 
+## React Native
+
+React Native doesn't include the Web Crypto API by default. Install these polyfills:
+
+```bash
+npm install react-native-get-random-values react-native-random-uuid
+```
+
+Import them at the **very top** of your app's entry point (before any other imports):
+
+```javascript
+// index.js or app/_layout.tsx - MUST be first!
+import "react-native-get-random-values";
+import "react-native-random-uuid";
+
+// Then your other imports...
+```
+
+This provides:
+- `crypto.getRandomValues()` - Required by Yjs for CRDT operations
+- `crypto.randomUUID()` - Used for generating document and peer IDs
+
+See [`examples/expo/`](./examples/expo/) for a complete React Native example using Expo.
+
 ## Examples
 
 ### Interval - Linear-style Issue Tracker
