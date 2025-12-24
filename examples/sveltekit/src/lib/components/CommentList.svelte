@@ -2,7 +2,6 @@
   import { useLiveQuery } from "@tanstack/svelte-db";
   import { comments as commentsLazy } from "$collections/useComments";
   import CommentEditor from "./CommentEditor.svelte";
-  import { Card, CardHeader, CardContent } from "$lib/components/ui/card";
   import { Textarea } from "$lib/components/ui/textarea";
   import { Button } from "$lib/components/ui/button";
   import type { Comment } from "$lib/types";
@@ -53,34 +52,34 @@
     return new Date(timestamp).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
     });
   }
 </script>
 
-<div class="max-w-[680px] mx-auto px-8 pb-12 w-full border-t border-border pt-8 mt-8">
-  <h3 class="font-display text-lg font-normal mb-4">Comments</h3>
+<div class="max-w-[680px] mx-auto px-8 pb-12 w-full border-t border-border pt-6 mt-8">
+  <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Comments</h3>
 
   {#if filteredComments.length === 0}
-    <p class="text-sm text-muted-foreground py-4">No comments yet</p>
+    <p class="text-sm text-muted-foreground">No comments yet</p>
   {:else}
-    <div class="space-y-4">
+    <div>
       {#each filteredComments as comment (comment.id)}
-        <Card size="sm">
-          <CardHeader class="py-2 bg-muted/30 border-b border-border">
-            <span class="text-xs text-muted-foreground">{formatDate(comment.createdAt)}</span>
-          </CardHeader>
-          <CardContent>
+        <div class="flex items-start gap-2 pl-3 border-l-2 border-primary/20 mb-2">
+          <div class="flex-1 min-w-0">
             <CommentEditor commentId={comment.id} />
-          </CardContent>
-        </Card>
+          </div>
+          <span class="text-[10px] text-muted-foreground shrink-0 mt-0.5">{formatDate(comment.createdAt)}</span>
+        </div>
       {/each}
     </div>
   {/if}
 
-  <form onsubmit={handleSubmit} class="mt-6 space-y-3">
-    <Textarea bind:value={newCommentText} placeholder="Write a comment..." rows={3} />
-    <Button type="submit" disabled={!newCommentText.trim()}>Comment</Button>
+  <form onsubmit={handleSubmit} class="mt-4 flex items-end gap-2">
+    <Textarea
+      bind:value={newCommentText}
+      placeholder="Add a comment..."
+      class="min-h-0 resize-none text-sm"
+    />
+    <Button type="submit" size="sm" disabled={!newCommentText.trim()}>Post</Button>
   </form>
 </div>

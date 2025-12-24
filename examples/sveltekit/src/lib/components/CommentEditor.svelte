@@ -51,7 +51,7 @@
             ],
             editorProps: {
               attributes: {
-                class: "tiptap-editor prose text-sm outline-none min-h-[1.5em]",
+                class: "tiptap-editor comment-editor prose text-sm outline-none",
               },
             },
           });

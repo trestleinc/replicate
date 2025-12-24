@@ -9,7 +9,6 @@
 	import { Status, Priority, StatusLabels, PriorityLabels } from '$lib/types';
 	import type { Interval, StatusValue, PriorityValue } from '$lib/types';
 	import { intervals } from '$collections/useIntervals';
-	import { prose } from '@trestleinc/replicate/client';
 
 	type Props = {
 		interval: Interval;
@@ -22,17 +21,6 @@
 
 	const statusOptions = Object.values(Status) as StatusValue[];
 	const priorityOptions = Object.values(Priority) as PriorityValue[];
-
-	// Extract plain text preview from description using prose.extract
-	const preview = $derived(() => {
-		if (!interval.description) return '';
-		try {
-			const text = prose.extract(interval.description);
-			return text.slice(0, 100) + (text.length > 100 ? '...' : '');
-		} catch {
-			return '';
-		}
-	});
 
 	function handleStatusChange(newStatus: string) {
 		collection.update(interval.id, (draft) => {
@@ -86,16 +74,13 @@
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 
-	<!-- Title and preview - clickable link -->
+	<!-- Title - clickable link -->
 	<button
 		type="button"
 		onclick={handleRowClick}
-		class="flex-1 min-w-0 flex flex-col gap-0.5 text-left cursor-pointer bg-transparent border-none p-0"
+		class="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-none p-0"
 	>
 		<span class="text-sm font-medium truncate">{interval.title || 'Untitled'}</span>
-		{#if preview()}
-			<span class="text-xs text-muted-foreground truncate">{preview()}</span>
-		{/if}
 	</button>
 
 	<!-- Priority dropdown -->

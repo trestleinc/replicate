@@ -289,6 +289,14 @@
   @apply outline-none min-h-[200px];
 }
 
+.tiptap-editor.comment-editor {
+  @apply min-h-0;
+}
+
+.tiptap-editor.comment-editor p {
+  @apply m-0;
+}
+
 .tiptap-editor p.is-editor-empty:first-child::before {
   @apply text-muted-foreground float-left h-0 pointer-events-none;
   content: attr(data-placeholder);
