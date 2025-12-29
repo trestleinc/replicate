@@ -53,7 +53,7 @@
 		"@tiptap/extension-placeholder": "^3.14.0",
 		"@tiptap/pm": "^3.14.0",
 		"@tiptap/starter-kit": "^3.14.0",
-		"@trestleinc/replicate": "preview",
+		"@trestleinc/replicate": "^1.1.2",
 		"convex": "^1.31.2",
 		"convex-svelte": "^0.0.12",
 		"sql.js": "^1.13.0",

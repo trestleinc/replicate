@@ -19,7 +19,7 @@
     "@tailwindcss/postcss": "4.1.18",
     "@tanstack/db": "0.5.15",
     "@tanstack/react-db": "0.1.59",
-    "@trestleinc/replicate": "preview",
+    "@trestleinc/replicate": "^1.1.2",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "convex": "1.31.2",

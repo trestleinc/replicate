@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2025-12-28
+
+### Added
+
+- **Cursor-based sync protocol** - Replaced `_creationTime` with monotonically increasing sequence numbers (`seq`) to ensure no updates are missed during sync
+- **Peer tracking for safe compaction** - Server tracks sync progress per peer via `mark` mutation, enabling compaction that won't cause data loss for slow/offline clients
+- **React Native support** - Native SQLite persistence via `op-sqlite` now fully works after removing Level dependencies
+- **New Expo example** - Complete React Native example app with interval tracking (`examples/expo/`)
+- **`mark` mutation** - Clients report sync progress to server for peer-aware compaction
+- **`compact` mutation** - Manual compaction trigger with peer-aware safety (only deletes deltas all active peers have synced)
+- **Recovery cursor service** - Cursor-based subscription recovery for startup reconciliation
+- **SSR material prefetch** - `material` query for server-side rendering hydration
+- **Type-safe compaction config** - `sizeThreshold` ("5mb") and `peerTimeout` ("24h") with human-readable strings
+
+### Changed
+
+- **Refactored `collection.create()` API** - Lazy-initialized, SSR-safe collection creation with deferred persistence and config resolution
+- **SQLite-only persistence** - Simplified to direct SQLite storage (removed y-leveldb, abstract-level, browser-level dependencies)
+- **Renamed `ack` to `mark`** - Clearer naming for peer sync progress tracking
+- **Synchronous Yjs operations** - Local-first behavior with immediate Y.Doc updates
+- **Moved examples from `illustrations/` to `examples/`** - Cleaner project structure
+
+### Removed
+
+- **Level dependencies** - Removed `y-leveldb`, `abstract-level`, `browser-level` (React Native blockers)
+- **Checkpoint service** - Replaced by cursor service for seq-based sync
+- **Reconciliation service** - Simplified with cursor-based approach
+- **IndexedDB persistence** - Deprecated in favor of SQLite (sql.js for browser, op-sqlite for React Native)
+
+### Fixed
+
+- **Subscription recovery** - Use recovery cursor to prevent redundant reconciliation
+- **Missing sync events** - Cursor-based protocol ensures no updates are missed (fixes `_creationTime` ordering issue)
+
 ## [1.1.1] - 2025-12-19
 
 ### Fixed
