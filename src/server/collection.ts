@@ -12,7 +12,7 @@ export interface CollectionOptions<T extends object> {
     evalLeave?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
     evalCompact?: (
       ctx: GenericMutationCtx<GenericDataModel>,
-      documentId: string,
+      document: string,
     ) => void | Promise<void>;
     onStream?: (ctx: GenericQueryCtx<GenericDataModel>, result: any) => void | Promise<void>;
     onInsert?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;

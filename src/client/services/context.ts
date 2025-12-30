@@ -1,6 +1,7 @@
 import { createMutex } from "lib0/mutex";
 import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
+import type { Collection } from "@tanstack/db";
 import type { Persistence } from "$/client/persistence/types";
 import type { SubdocManager } from "$/client/subdocs";
 
@@ -18,15 +19,25 @@ interface ConvexCollectionApi {
   leave?: FunctionReference<"mutation">;
 }
 
+interface UndoConfig {
+  captureTimeout: number;
+  trackedOrigins: Set<unknown>;
+}
+
 export interface CollectionContext {
   collection: string;
   subdocManager: SubdocManager;
   convexClient: ConvexClient;
   api: ConvexCollectionApi;
-  peerId: string;
   persistence: Persistence;
   proseFields: Set<string>;
   mutex: ReturnType<typeof createMutex>;
+  undoConfig: UndoConfig;
+  debounceMs: number;
+  // Set during sync initialization (progressive)
+  peerId?: string;
+  collectionRef?: Collection<any>;
+  serverStateVector?: Uint8Array;
 }
 
 const contexts = new Map<string, CollectionContext>();
@@ -41,7 +52,12 @@ export function hasContext(collection: string): boolean {
   return contexts.has(collection);
 }
 
-export function initContext(config: Omit<CollectionContext, "mutex">): CollectionContext {
+type InitContextConfig = Omit<
+  CollectionContext,
+  "mutex" | "peerId" | "collectionRef" | "serverStateVector"
+>;
+
+export function initContext(config: InitContextConfig): CollectionContext {
   const ctx: CollectionContext = {
     ...config,
     mutex: createMutex(),
@@ -54,9 +70,11 @@ export function deleteContext(collection: string): void {
   contexts.delete(collection);
 }
 
+type UpdateableFields = "peerId" | "collectionRef" | "serverStateVector";
+
 export function updateContext(
   collection: string,
-  updates: Partial<Omit<CollectionContext, "collection" | "mutex">>,
+  updates: Partial<Pick<CollectionContext, UpdateableFields>>,
 ): CollectionContext {
   const ctx = getContext(collection);
   Object.assign(ctx, updates);

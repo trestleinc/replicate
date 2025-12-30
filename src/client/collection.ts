@@ -1,5 +1,4 @@
 import * as Y from "yjs";
-import { createMutex } from "lib0/mutex";
 import type { Persistence, PersistenceProvider } from "$/client/persistence/types";
 import type { ConvexClient } from "convex/browser";
 import { getFunctionName, type FunctionReference } from "convex/server";
@@ -14,7 +13,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { Effect } from "effect";
 import { getLogger } from "$/client/logger";
 import { ProseError, NonRetriableError } from "$/client/errors";
-import { CursorService, createCursorLayer, type Cursor } from "$/client/services/cursor";
+import { Cursor, createCursorLayer, type Seq } from "$/client/services/cursor";
 import { createReplicateOps, type BoundReplicateOps } from "$/client/ops";
 import {
   isDoc,
@@ -24,15 +23,20 @@ import {
   createSubdocManager,
   extractDocumentFromSubdoc,
   extractAllDocuments,
-  type SubdocManager,
 } from "$/client/subdocs";
 import * as prose from "$/client/prose";
 import { extractProseFields } from "$/client/prose";
 import {
+  initContext,
+  getContext,
+  hasContext,
+  updateContext,
+  deleteContext,
+} from "$/client/services/context";
+import {
   createPresence,
   type CursorPosition,
   type ClientCursor,
-  type UserProfile,
 } from "$/client/services/presence";
 import { z } from "zod";
 
@@ -97,7 +101,7 @@ const cleanupFunctions = new Map<string, () => void>();
 /** Server-rendered material data for SSR hydration */
 export interface Materialized<T> {
   documents: readonly T[];
-  cursor?: Cursor;
+  cursor?: Seq;
   count?: number;
   bytes?: ArrayBuffer;
 }
@@ -165,53 +169,11 @@ interface ConvexCollectionUtils<T extends object> {
   prose(document: string, field: ProseFields<T>): Promise<EditorBinding>;
 }
 
-// Module-level storage for SubdocManagers per collection
-const collectionSubdocManagers = new Map<string, SubdocManager>();
-
-// Module-level storage for undo configuration per collection
-const collectionUndoConfig = new Map<
-  string,
-  { captureTimeout: number; trackedOrigins: Set<unknown> }
->();
-
-// Default undo capture timeout
 const DEFAULT_UNDO_CAPTURE_TIMEOUT = 500;
-
-// Default debounce time for prose sync
 const DEFAULT_DEBOUNCE_MS = 1000;
-
-// Mutex per collection for thread-safe updates
-const collectionMutex = new Map<string, ReturnType<typeof createMutex>>();
 
 // Fragment undo managers: "collection:document:field" -> UndoManager
 const fragmentUndoManagers = new Map<string, Y.UndoManager>();
-
-// Debounce config per collection
-const debounceConfig = new Map<string, number>();
-
-// Collection references - set in sync.sync() callback, used by utils.prose()
-const collectionRefs = new Map<string, Collection<any>>();
-
-const serverStateVectors = new Map<string, Uint8Array>();
-const collectionPeerIds = new Map<string, string>();
-const collectionConvexClients = new Map<string, ConvexClient>();
-const collectionApis = new Map<string, ConvexCollectionApi>();
-
-// ============================================================================
-// Mutex Management
-// ============================================================================
-
-/**
- * Get or create mutex for a collection.
- */
-function getOrCreateMutex(collection: string): ReturnType<typeof createMutex> {
-  let mux = collectionMutex.get(collection);
-  if (!mux) {
-    mux = createMutex();
-    collectionMutex.set(collection, mux);
-  }
-  return mux;
-}
 
 // ============================================================================
 // Fragment UndoManager (scoped to content field only)
@@ -232,11 +194,10 @@ function getOrCreateFragmentUndoManager(
   let um = fragmentUndoManagers.get(key);
   if (um) return um;
 
-  const config = collectionUndoConfig.get(collection);
+  const ctx = hasContext(collection) ? getContext(collection) : null;
 
   um = new Y.UndoManager([fragment], {
-    captureTimeout: config?.captureTimeout ?? DEFAULT_UNDO_CAPTURE_TIMEOUT,
-    // Only track local fragment edits, not server syncs
+    captureTimeout: ctx?.undoConfig.captureTimeout ?? DEFAULT_UNDO_CAPTURE_TIMEOUT,
     trackedOrigins: new Set([YjsOrigin.Fragment]),
   });
 
@@ -298,14 +259,14 @@ export function convexCollectionOptions(
         });
       }
 
-      let subdocManager = collectionSubdocManagers.get(collection);
+      let ctx = hasContext(collection) ? getContext(collection) : null;
 
-      if (!subdocManager) {
+      if (!ctx) {
         await new Promise<void>((resolve, reject) => {
           const maxWait = 10000;
           const startTime = Date.now();
           const check = setInterval(() => {
-            if (collectionSubdocManagers.has(collection)) {
+            if (hasContext(collection)) {
               clearInterval(check);
               resolve();
             }
@@ -321,10 +282,10 @@ export function convexCollectionOptions(
             }
           }, 10);
         });
-        subdocManager = collectionSubdocManagers.get(collection);
+        ctx = hasContext(collection) ? getContext(collection) : null;
       }
 
-      if (!subdocManager) {
+      if (!ctx) {
         throw new ProseError({
           document,
           field: fieldStr,
@@ -332,7 +293,7 @@ export function convexCollectionOptions(
         });
       }
 
-      const fragment = subdocManager.getFragment(document, fieldStr);
+      const fragment = ctx.subdocManager.getFragment(document, fieldStr);
       if (!fragment) {
         throw new ProseError({
           document,
@@ -341,8 +302,8 @@ export function convexCollectionOptions(
         });
       }
 
-      const subdoc = subdocManager.get(document);
-      const collectionRef = collectionRefs.get(collection);
+      const subdoc = ctx.subdocManager.get(document);
+      const collectionRef = ctx.collectionRef;
       if (collectionRef && subdoc) {
         prose.observeFragment({
           collection,
@@ -350,9 +311,9 @@ export function convexCollectionOptions(
           field: fieldStr,
           fragment,
           ydoc: subdoc,
-          ymap: subdocManager.getFields(document)!,
+          ymap: ctx.subdocManager.getFields(document)!,
           collectionRef,
-          debounceMs: debounceConfig.get(collection) ?? DEFAULT_DEBOUNCE_MS,
+          debounceMs: ctx.debounceMs,
         });
       }
 
@@ -363,9 +324,9 @@ export function convexCollectionOptions(
         fragment,
       );
 
-      const storedConvexClient = collectionConvexClients.get(collection);
-      const storedApi = collectionApis.get(collection);
-      const storedPeerId = collectionPeerIds.get(collection);
+      const storedConvexClient = ctx.convexClient;
+      const storedApi = ctx.api;
+      const storedPeerId = ctx.peerId;
 
       let presence: PresenceOps | null = null;
       if (storedConvexClient && storedApi?.cursors && storedApi?.leave && storedPeerId) {
@@ -425,7 +386,19 @@ export function convexCollectionOptions(
   const subdocManager = createSubdocManager(collection);
   let docPersistence: PersistenceProvider = null as any;
 
-  collectionSubdocManagers.set(collection, subdocManager);
+  initContext({
+    collection,
+    subdocManager,
+    convexClient,
+    api,
+    persistence,
+    proseFields: proseFieldSet,
+    undoConfig: {
+      captureTimeout: undoCaptureTimeout,
+      trackedOrigins: new Set([YjsOrigin.Local]),
+    },
+    debounceMs: DEFAULT_DEBOUNCE_MS,
+  });
 
   // Bound replicate operations - set during sync initialization
   // Used by onDelete and other handlers that need to sync with TanStack DB
@@ -444,7 +417,7 @@ export function convexCollectionOptions(
     resolveOptimisticReady = resolve;
   });
 
-  const recover = async (): Promise<Cursor> => {
+  const recover = async (): Promise<Seq> => {
     if (!api.recovery) {
       logger.debug("No recovery API configured", { collection });
       return 0;
@@ -462,7 +435,7 @@ export function convexCollectionOptions(
       });
 
       if (response.vector) {
-        serverStateVectors.set(collection, new Uint8Array(response.vector));
+        updateContext(collection, { serverStateVector: new Uint8Array(response.vector) });
       }
 
       const cursor = response.cursor ?? 0;
@@ -673,8 +646,7 @@ export function convexCollectionOptions(
       sync: (params: any) => {
         const { markReady, collection: collectionInstance } = params;
 
-        // Store collection reference for utils.prose() to access
-        collectionRefs.set(collection, collectionInstance);
+        updateContext(collection, { collectionRef: collectionInstance });
 
         const existingCleanup = cleanupFunctions.get(collection);
         if (existingCleanup) {
@@ -690,12 +662,6 @@ export function convexCollectionOptions(
 
         (async () => {
           try {
-            const trackedOrigins = new Set([YjsOrigin.Local]);
-            collectionUndoConfig.set(collection, {
-              captureTimeout: undoCaptureTimeout,
-              trackedOrigins,
-            });
-
             docPersistence = persistence.createDocPersistence(collection, subdocManager.rootDoc);
 
             subdocManager.enablePersistence((document, subdoc) => {
@@ -736,14 +702,12 @@ export function convexCollectionOptions(
 
             const peerId = await Effect.runPromise(
               Effect.gen(function* () {
-                const cursorSvc = yield* CursorService;
+                const cursorSvc = yield* Cursor;
                 return yield* cursorSvc.loadPeerId(collection);
               }).pipe(Effect.provide(cursorLayer)),
             );
 
-            collectionPeerIds.set(collection, peerId);
-            collectionConvexClients.set(collection, convexClient);
-            collectionApis.set(collection, api);
+            updateContext(collection, { peerId });
 
             markReady();
             logger.info("Collection ready", { collection, subdocCount: docIds.length });
@@ -757,10 +721,9 @@ export function convexCollectionOptions(
               source: ssrCursor !== undefined ? "SSR" : docIds.length > 0 ? "recovery" : "fresh",
             });
 
-            // Get mutex for thread-safe updates
-            const mux = getOrCreateMutex(collection);
+            const mux = getContext(collection).mutex;
 
-            const handleSnapshotChange = (crdtBytes: ArrayBuffer, document: string) => {
+            const handleSnapshotChange = (bytes: ArrayBuffer, document: string) => {
               prose.cancelAllPending(collection);
 
               mux(() => {
@@ -768,9 +731,9 @@ export function convexCollectionOptions(
                   logger.debug("Applying snapshot", {
                     collection,
                     document,
-                    bytesLength: crdtBytes.byteLength,
+                    bytesLength: bytes.byteLength,
                   });
-                  const update = new Uint8Array(crdtBytes);
+                  const update = new Uint8Array(bytes);
                   subdocManager.applyUpdate(document, update, YjsOrigin.Server);
                   const item = extractDocumentFromSubdoc(subdocManager, document);
                   if (item) {
@@ -786,7 +749,7 @@ export function convexCollectionOptions(
               });
             };
 
-            const handleDeltaChange = (crdtBytes: ArrayBuffer, document: string | undefined) => {
+            const handleDeltaChange = (bytes: ArrayBuffer, document: string | undefined) => {
               if (!document) {
                 logger.debug("Delta skipped (no document)", { collection });
                 return;
@@ -800,11 +763,11 @@ export function convexCollectionOptions(
                   logger.debug("Applying delta", {
                     collection,
                     document,
-                    bytesLength: crdtBytes.byteLength,
+                    bytesLength: bytes.byteLength,
                   });
 
                   const itemBefore = extractDocumentFromSubdoc(subdocManager, document);
-                  const update = new Uint8Array(crdtBytes);
+                  const update = new Uint8Array(bytes);
                   subdocManager.applyUpdate(document, update, YjsOrigin.Server);
 
                   const itemAfter = extractDocumentFromSubdoc(subdocManager, document);
@@ -961,7 +924,6 @@ export function convexCollectionOptions(
 
             const prefix = `${collection}:`;
 
-            // Destroy fragment undo managers
             for (const [key, um] of fragmentUndoManagers) {
               if (key.startsWith(prefix)) {
                 um.destroy();
@@ -969,20 +931,7 @@ export function convexCollectionOptions(
               }
             }
 
-            // Clean up mutex
-            collectionMutex.delete(collection);
-
-            // Clean up debounce config
-            debounceConfig.delete(collection);
-
-            // Clean up collection references
-            collectionRefs.delete(collection);
-
-            collectionUndoConfig.delete(collection);
-            collectionSubdocManagers.delete(collection);
-            collectionPeerIds.delete(collection);
-            collectionConvexClients.delete(collection);
-            collectionApis.delete(collection);
+            deleteContext(collection);
             docPersistence?.destroy();
             subdocManager?.destroy();
             cleanupFunctions.delete(collection);

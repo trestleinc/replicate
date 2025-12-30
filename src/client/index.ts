@@ -5,6 +5,8 @@ export {
   type Materialized,
 } from "$/client/collection";
 
+export { type Seq } from "$/client/services/cursor";
+
 export {
   type CursorPosition,
   type ClientCursor,
