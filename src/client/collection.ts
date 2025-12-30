@@ -28,6 +28,7 @@ import {
 } from "$/client/subdocs";
 import * as prose from "$/client/prose";
 import { extractProseFields } from "$/client/prose-schema";
+import { CursorTracker } from "$/client/cursor-tracker";
 import { z } from "zod";
 
 /** Origin markers for Yjs transactions */
@@ -107,6 +108,9 @@ interface ConvexCollectionApi {
   mark: FunctionReference<"mutation">;
   compact: FunctionReference<"mutation">;
   material?: FunctionReference<"query">;
+  sessions?: FunctionReference<"query">;
+  cursors?: FunctionReference<"query">;
+  leave?: FunctionReference<"mutation">;
 }
 
 export interface ConvexCollectionConfig<
@@ -124,29 +128,17 @@ export interface ConvexCollectionConfig<
 
 /** Editor binding for BlockNote/TipTap collaboration */
 export interface EditorBinding {
-  /** The Y.XmlFragment bound to the editor */
   readonly fragment: Y.XmlFragment;
-
-  /** Provider stub for BlockNote compatibility */
   readonly provider: { readonly awareness: null };
-
-  /** Current sync state - true if unsent changes exist */
   readonly pending: boolean;
+  readonly cursor: CursorTracker;
 
-  /** Subscribe to pending state changes. Returns unsubscribe function. */
   onPendingChange(callback: (pending: boolean) => void): () => void;
-
-  /** Undo the last content edit */
   undo(): void;
-
-  /** Redo the last undone edit */
   redo(): void;
-
-  /** Check if undo is available */
   canUndo(): boolean;
-
-  /** Check if redo is available */
   canRedo(): boolean;
+  destroy(): void;
 }
 
 /** Utilities exposed on collection.utils */
@@ -188,8 +180,10 @@ const debounceConfig = new Map<string, number>();
 // Collection references - set in sync.sync() callback, used by utils.prose()
 const collectionRefs = new Map<string, Collection<any>>();
 
-// Server state vectors for recovery sync
 const serverStateVectors = new Map<string, Uint8Array>();
+const collectionPeerIds = new Map<string, string>();
+const collectionConvexClients = new Map<string, ConvexClient>();
+const collectionApis = new Map<string, ConvexCollectionApi>();
 
 // ============================================================================
 // Mutex Management
@@ -358,9 +352,30 @@ export function convexCollectionOptions(
         fragment,
       );
 
-      return {
+      const storedConvexClient = collectionConvexClients.get(collection);
+      const storedApi = collectionApis.get(collection);
+      const storedPeerId = collectionPeerIds.get(collection);
+
+      let cursorTracker: CursorTracker | null = null;
+      if (storedConvexClient && storedApi?.cursors && storedApi?.leave && storedPeerId) {
+        cursorTracker = new CursorTracker({
+          convexClient: storedConvexClient,
+          api: {
+            mark: storedApi.mark,
+            cursors: storedApi.cursors,
+            leave: storedApi.leave,
+          },
+          collection,
+          document: documentId,
+          client: storedPeerId,
+          field: fieldStr,
+        });
+      }
+
+      const binding: EditorBinding = {
         fragment,
         provider: { awareness: null },
+        cursor: cursorTracker!,
 
         get pending() {
           return prose.isPending(collection, documentId);
@@ -385,7 +400,13 @@ export function convexCollectionOptions(
         canRedo() {
           return undoManager.canRedo();
         },
-      } satisfies EditorBinding;
+
+        destroy() {
+          cursorTracker?.destroy();
+        },
+      };
+
+      return binding;
     },
   };
 
@@ -710,6 +731,11 @@ export function convexCollectionOptions(
                 return yield* cursorSvc.loadPeerId(collection);
               }).pipe(Effect.provide(cursorLayer)),
             );
+
+            collectionPeerIds.set(collection, peerId);
+            collectionConvexClients.set(collection, convexClient);
+            collectionApis.set(collection, api);
+
             const cursor = ssrCursor ?? recoveryCursor;
 
             logger.info("Starting subscription", {
@@ -949,6 +975,9 @@ export function convexCollectionOptions(
 
             collectionUndoConfig.delete(collection);
             collectionSubdocManagers.delete(collection);
+            collectionPeerIds.delete(collection);
+            collectionConvexClients.delete(collection);
+            collectionApis.delete(collection);
             docPersistence?.destroy();
             subdocManager?.destroy();
             cleanupFunctions.delete(collection);

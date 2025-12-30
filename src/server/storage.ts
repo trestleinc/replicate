@@ -282,7 +282,18 @@ export class Replicate<T extends object> {
       args: {
         document: v.string(),
         client: v.string(),
-        seq: v.number(),
+        seq: v.optional(v.number()),
+        user: v.optional(v.string()),
+        profile: v.optional(v.object({
+          name: v.optional(v.string()),
+          color: v.optional(v.string()),
+          avatar: v.optional(v.string()),
+        })),
+        cursor: v.optional(v.object({
+          anchor: v.number(),
+          head: v.number(),
+          field: v.optional(v.string()),
+        })),
       },
       returns: v.null(),
       handler: async (ctx, args) => {
@@ -295,6 +306,104 @@ export class Replicate<T extends object> {
           document: args.document,
           client: args.client,
           seq: args.seq,
+          user: args.user,
+          profile: args.profile,
+          cursor: args.cursor,
+        });
+
+        return null;
+      },
+    });
+  }
+
+  createSessionsQuery(opts?: {
+    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return queryGeneric({
+      args: {
+        document: v.string(),
+        group: v.optional(v.boolean()),
+      },
+      returns: v.array(v.object({
+        client: v.string(),
+        document: v.string(),
+        user: v.optional(v.string()),
+        profile: v.optional(v.any()),
+        seen: v.number(),
+      })),
+      handler: async (ctx, args) => {
+        if (opts?.evalRead) {
+          await opts.evalRead(ctx, collection);
+        }
+
+        return await ctx.runQuery(component.public.sessions, {
+          collection,
+          document: args.document,
+          group: args.group,
+        });
+      },
+    });
+  }
+
+  createCursorsQuery(opts?: {
+    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return queryGeneric({
+      args: {
+        document: v.string(),
+        exclude: v.optional(v.string()),
+      },
+      returns: v.array(v.object({
+        client: v.string(),
+        user: v.optional(v.string()),
+        profile: v.optional(v.any()),
+        cursor: v.object({
+          anchor: v.number(),
+          head: v.number(),
+          field: v.optional(v.string()),
+        }),
+      })),
+      handler: async (ctx, args) => {
+        if (opts?.evalRead) {
+          await opts.evalRead(ctx, collection);
+        }
+
+        return await ctx.runQuery(component.public.cursors, {
+          collection,
+          document: args.document,
+          exclude: args.exclude,
+        });
+      },
+    });
+  }
+
+  createLeaveMutation(opts?: {
+    evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
+  }) {
+    const component = this.component;
+    const collection = this.collectionName;
+
+    return mutationGeneric({
+      args: {
+        document: v.string(),
+        client: v.string(),
+      },
+      returns: v.null(),
+      handler: async (ctx, args) => {
+        if (opts?.evalWrite) {
+          await opts.evalWrite(ctx, args.client);
+        }
+
+        await ctx.runMutation(component.public.leave, {
+          collection,
+          document: args.document,
+          client: args.client,
         });
 
         return null;

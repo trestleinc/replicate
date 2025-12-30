@@ -13,6 +13,7 @@ export interface ReplicateConfig<T extends object> {
     evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
     evalRemove?: (ctx: GenericMutationCtx<GenericDataModel>, docId: string) => void | Promise<void>;
     evalMark?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
+    evalLeave?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
     evalCompact?: (
       ctx: GenericMutationCtx<GenericDataModel>,
       documentId: string,
@@ -93,6 +94,18 @@ function replicateInternal<T extends object>(component: any, config: ReplicateCo
 
     compact: storage.createCompactMutation({
       evalWrite: config.hooks?.evalCompact,
+    }),
+
+    sessions: storage.createSessionsQuery({
+      evalRead: config.hooks?.evalRead,
+    }),
+
+    cursors: storage.createCursorsQuery({
+      evalRead: config.hooks?.evalRead,
+    }),
+
+    leave: storage.createLeaveMutation({
+      evalWrite: config.hooks?.evalLeave,
     }),
   };
 }

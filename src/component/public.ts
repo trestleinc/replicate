@@ -95,7 +95,18 @@ export const mark = mutation({
     collection: v.string(),
     document: v.string(),
     client: v.string(),
-    seq: v.number(),
+    seq: v.optional(v.number()),
+    user: v.optional(v.string()),
+    profile: v.optional(v.object({
+      name: v.optional(v.string()),
+      color: v.optional(v.string()),
+      avatar: v.optional(v.string()),
+    })),
+    cursor: v.optional(v.object({
+      anchor: v.number(),
+      head: v.number(),
+      field: v.optional(v.string()),
+    })),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -109,19 +120,32 @@ export const mark = mutation({
       )
       .first();
 
+    const updates: Record<string, unknown> = { seen: now };
+
+    if (args.seq !== undefined) {
+      updates.seq = existing ? Math.max(existing.seq, args.seq) : args.seq;
+    }
+    if (args.user !== undefined) updates.user = args.user;
+    if (args.profile !== undefined) updates.profile = args.profile;
+    if (args.cursor !== undefined) {
+      updates.cursor = args.cursor;
+      updates.active = now;
+    }
+
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        seq: Math.max(existing.seq, args.seq),
-        seen: now,
-      });
+      await ctx.db.patch(existing._id, updates);
     }
     else {
       await ctx.db.insert("sessions", {
         collection: args.collection,
         document: args.document,
         client: args.client,
-        seq: args.seq,
+        seq: args.seq ?? 0,
         seen: now,
+        user: args.user,
+        profile: args.profile,
+        cursor: args.cursor,
+        active: args.cursor ? now : undefined,
       });
     }
 
@@ -457,5 +481,116 @@ export const recovery = query({
       serverStateVector: serverVector.buffer as ArrayBuffer,
       cursor: latestSeq,
     };
+  },
+});
+
+export const sessions = query({
+  args: {
+    collection: v.string(),
+    document: v.string(),
+    group: v.optional(v.boolean()),
+  },
+  returns: v.array(v.object({
+    client: v.string(),
+    document: v.string(),
+    user: v.optional(v.string()),
+    profile: v.optional(v.any()),
+    seen: v.number(),
+  })),
+  handler: async (ctx, args) => {
+    const records = await ctx.db
+      .query("sessions")
+      .withIndex("document", (q: any) =>
+        q.eq("collection", args.collection)
+          .eq("document", args.document),
+      )
+      .collect();
+
+    let results = records.map((p: any) => ({
+      client: p.client,
+      document: p.document,
+      user: p.user,
+      profile: p.profile,
+      seen: p.seen,
+    }));
+
+    if (args.group) {
+      const byUser = new Map<string, typeof results[0]>();
+      for (const p of results) {
+        const key = p.user ?? p.client;
+        const existing = byUser.get(key);
+        if (!existing || p.seen > existing.seen) {
+          byUser.set(key, p);
+        }
+      }
+      results = Array.from(byUser.values());
+    }
+
+    return results;
+  },
+});
+
+export const cursors = query({
+  args: {
+    collection: v.string(),
+    document: v.string(),
+    exclude: v.optional(v.string()),
+  },
+  returns: v.array(v.object({
+    client: v.string(),
+    user: v.optional(v.string()),
+    profile: v.optional(v.any()),
+    cursor: v.object({
+      anchor: v.number(),
+      head: v.number(),
+      field: v.optional(v.string()),
+    }),
+  })),
+  handler: async (ctx, args) => {
+    const records = await ctx.db
+      .query("sessions")
+      .withIndex("document", (q: any) =>
+        q.eq("collection", args.collection)
+          .eq("document", args.document),
+      )
+      .collect();
+
+    return records
+      .filter((p: any) => p.client !== args.exclude)
+      .filter((p: any) => p.cursor)
+      .map((p: any) => ({
+        client: p.client,
+        user: p.user,
+        profile: p.profile,
+        cursor: p.cursor,
+      }));
+  },
+});
+
+export const leave = mutation({
+  args: {
+    collection: v.string(),
+    document: v.string(),
+    client: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("sessions")
+      .withIndex("client", (q: any) =>
+        q.eq("collection", args.collection)
+          .eq("document", args.document)
+          .eq("client", args.client),
+      )
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        cursor: undefined,
+        active: undefined,
+      });
+    }
+
+    return null;
   },
 });

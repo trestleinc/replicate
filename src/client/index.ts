@@ -5,6 +5,13 @@ export {
   type Materialized,
 } from "$/client/collection";
 
+export {
+  CursorTracker,
+  type CursorPosition,
+  type ClientCursor,
+  type UserProfile,
+} from "$/client/cursor-tracker";
+
 import {
   NetworkError,
   IDBError,

@@ -27,6 +27,18 @@ export default defineSchema({
     client: v.string(),
     seq: v.number(),
     seen: v.number(),
+    user: v.optional(v.string()),
+    profile: v.optional(v.object({
+      name: v.optional(v.string()),
+      color: v.optional(v.string()),
+      avatar: v.optional(v.string()),
+    })),
+    cursor: v.optional(v.object({
+      anchor: v.number(),
+      head: v.number(),
+      field: v.optional(v.string()),
+    })),
+    active: v.optional(v.number()),
   })
     .index("collection", ["collection"])
     .index("document", ["collection", "document"])
