@@ -841,3 +841,41 @@ dir/file.ts ← one word each, lowercase
 ```
 
 No PascalCase. No camelCase. No hyphens. Just lowercase words.
+
+---
+
+## Status: Completed Items
+
+### ✅ Completed
+- Phase 1: Schema field renames (`document`, `bytes`, `vector`, `seq`, `created`)
+- Phase 2: Effect.ts services (`context.ts`, `cursor.ts`, `presence.ts`)
+- Phase 3: Architecture cleanup (`CollectionContext` integration)
+- Phase 5: Parameter naming consistency (`documentId`→`document`, `crdtBytes`→`bytes`)
+- Phase 6: File renames (`ops.ts`, `mutations.ts`, `collection.ts`, `replicate.ts`)
+- Deleted `cursor-tracker.ts` (replaced by `services/presence.ts`)
+- Merged `prose-schema.ts` into `prose.ts`
+- Renamed `CursorService`→`Cursor`, `type Cursor`→`type Seq`
+- **All module-level Maps consolidated into `CollectionContext`**:
+  - Moved 9 Maps from `collection.ts` (subdocManagers, undoConfig, mutex, etc.)
+  - Moved 7 Maps from `prose.ts` (applyingFromServer, debounceTimers, pendingState, etc.)
+  - Moved `cleanupFunctions` and `fragmentUndoManagers` to context
+
+### 🔄 Deferred: SyncService Integration
+
+`services/sync.ts` is implemented with Effect-based `Sync` service providing:
+- `subscribe()` - Convex subscription with retry policies
+- `recover()` - Recovery logic with vector comparison
+- `compact()` - Compaction trigger
+- `ack()` - Acknowledgment sending
+
+**Current state**: The file exists but is not yet integrated into `collection.ts`. The inline async sync logic works correctly; Effect-based refactoring is deferred to avoid risk.
+
+**To integrate later**:
+1. Replace the ~300-line async IIFE in `collection.ts` with `Effect.gen`
+2. Compose `SyncService` via Layer
+3. Use `Effect.acquireRelease` for cleanup
+
+### 📋 Future Improvements
+
+- Split `collection.ts` (~930 lines) into `collection/` directory
+- Integrate `SyncService` into collection.ts

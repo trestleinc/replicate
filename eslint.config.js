@@ -53,6 +53,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/build/**",
       "**/_generated/**",
       "**/*.d.ts",
       "**/routeTree.gen.ts",

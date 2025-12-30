@@ -55,17 +55,19 @@ src/
 │   │   │   └── opsqlite.ts  # React Native: op-sqlite native adapter
 │   │   └── memory.ts        # Testing: in-memory (no persistence)
 │   └── services/            # Core services (Effect-based)
-│       ├── checkpoint.ts    # Sync checkpoints in persistence KV
-│       └── reconciliation.ts # Phantom document cleanup
+│       ├── context.ts       # CollectionContext for consolidated state
+│       ├── cursor.ts        # Cursor/Seq tracking in persistence KV
+│       ├── presence.ts      # Real-time cursor presence
+│       └── sync.ts          # Sync subscription and recovery (Phase 2)
 ├── server/                  # Server-side (Convex functions)
 │   ├── index.ts             # Public exports
-│   ├── builder.ts           # replicate() factory
+│   ├── collection.ts        # replicate() factory
 │   ├── schema.ts            # table(), prose() helpers
-│   └── storage.ts           # Replicate class (storage operations)
+│   └── replicate.ts         # Replicate class (storage operations)
 ├── component/               # Internal Convex component
 │   ├── convex.config.ts     # Component config
-│   ├── schema.ts            # Event log schema (documents, snapshots, versions)
-│   ├── public.ts            # Component API (stream, insertDocument, etc.)
+│   ├── schema.ts            # Event log schema (documents, snapshots, sessions)
+│   ├── mutations.ts         # Component API (stream, insert, update, etc.)
 │   └── logger.ts            # Component logging
 ├── shared/                  # Shared types (all environments)
 │   ├── index.ts             # Re-exports types.ts
@@ -86,8 +88,9 @@ src/
 
 **Client Services (Effect-based):**
 - Services in `src/client/services/` use Effect for dependency injection
-- `Checkpoint` - manages sync checkpoints in IndexedDB
-- `Reconciliation` - removes phantom documents
+- `Cursor` - manages sync sequence numbers (Seq) in persistence KV
+- `Context` - consolidated CollectionContext for module state
+- `Presence` - real-time cursor position sharing
 
 **Data Flow:**
 ```

@@ -7,7 +7,7 @@ import type { Comment } from "../lib/types";
 export const {
   stream, material, insert, update, remove,
   recovery, mark, compact, sessions, cursors, leave,
-} = collection<Comment>(components.replicate, "comments");
+} = collection.create<Comment>(components.replicate, "comments");
 
 export const get = query({
   args: { id: v.string() },

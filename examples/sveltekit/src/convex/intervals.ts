@@ -7,7 +7,7 @@ import type { Interval } from "../lib/types";
 export const {
   stream, material, insert, update, remove,
   recovery, mark, compact, sessions, cursors, leave,
-} = collection<Interval>(components.replicate, "intervals");
+} = collection.create<Interval>(components.replicate, "intervals");
 
 export const get = query({
   args: { id: v.string() },

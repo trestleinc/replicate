@@ -96,8 +96,6 @@ function handleMutationError(
   throw error;
 }
 
-const cleanupFunctions = new Map<string, () => void>();
-
 /** Server-rendered material data for SSR hydration */
 export interface Materialized<T> {
   documents: readonly T[];
@@ -172,36 +170,30 @@ interface ConvexCollectionUtils<T extends object> {
 const DEFAULT_UNDO_CAPTURE_TIMEOUT = 500;
 const DEFAULT_DEBOUNCE_MS = 1000;
 
-// Fragment undo managers: "collection:document:field" -> UndoManager
-const fragmentUndoManagers = new Map<string, Y.UndoManager>();
-
-// ============================================================================
-// Fragment UndoManager (scoped to content field only)
-// ============================================================================
-
-/**
- * Get or create an UndoManager scoped to a fragment field.
- * This tracks only content edits, not document-level changes like title.
- */
 function getOrCreateFragmentUndoManager(
   collection: string,
   document: string,
   field: string,
   fragment: Y.XmlFragment,
 ): Y.UndoManager {
-  const key = `${collection}:${document}:${field}`;
+  const key = `${document}:${field}`;
+  const ctx = hasContext(collection) ? getContext(collection) : null;
+  if (!ctx) {
+    return new Y.UndoManager([fragment], {
+      captureTimeout: DEFAULT_UNDO_CAPTURE_TIMEOUT,
+      trackedOrigins: new Set([YjsOrigin.Fragment]),
+    });
+  }
 
-  let um = fragmentUndoManagers.get(key);
+  let um = ctx.fragmentUndoManagers.get(key);
   if (um) return um;
 
-  const ctx = hasContext(collection) ? getContext(collection) : null;
-
   um = new Y.UndoManager([fragment], {
-    captureTimeout: ctx?.undoConfig.captureTimeout ?? DEFAULT_UNDO_CAPTURE_TIMEOUT,
+    captureTimeout: ctx.undoConfig.captureTimeout,
     trackedOrigins: new Set([YjsOrigin.Fragment]),
   });
 
-  fragmentUndoManagers.set(key, um);
+  ctx.fragmentUndoManagers.set(key, um);
   return um;
 }
 
@@ -648,10 +640,10 @@ export function convexCollectionOptions(
 
         updateContext(collection, { collectionRef: collectionInstance });
 
-        const existingCleanup = cleanupFunctions.get(collection);
-        if (existingCleanup) {
-          existingCleanup();
-          cleanupFunctions.delete(collection);
+        const ctx = getContext(collection);
+        if (ctx.cleanup) {
+          ctx.cleanup();
+          ctx.cleanup = undefined;
         }
 
         let subscription: (() => void) | null = null;
@@ -846,17 +838,17 @@ export function convexCollectionOptions(
                         seq: newCursor,
                       });
                     }
-                    logger.debug("Ack sent", {
+                    logger.debug("Mark sent", {
                       collection,
                       client: peerId,
                       seq: newCursor,
                       documents: syncedDocuments.size,
                     });
                   }
-                  catch (ackError) {
-                    logger.error("Failed to save cursor or ack", {
+                  catch (markError) {
+                    logger.error("Failed to save cursor or mark", {
                       collection,
-                      error: String(ackError),
+                      error: String(markError),
                     });
                   }
                 }
@@ -918,23 +910,19 @@ export function convexCollectionOptions(
           material: docs,
           cleanup: () => {
             subscription?.();
-
-            // Clean up prose module state (debounce timers, pending state, observers)
             prose.cleanup(collection);
 
-            const prefix = `${collection}:`;
-
-            for (const [key, um] of fragmentUndoManagers) {
-              if (key.startsWith(prefix)) {
+            const ctx = hasContext(collection) ? getContext(collection) : null;
+            if (ctx) {
+              for (const [, um] of ctx.fragmentUndoManagers) {
                 um.destroy();
-                fragmentUndoManagers.delete(key);
               }
+              ctx.fragmentUndoManagers.clear();
             }
 
             deleteContext(collection);
             docPersistence?.destroy();
             subdocManager?.destroy();
-            cleanupFunctions.delete(collection);
           },
         };
       },

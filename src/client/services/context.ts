@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import { createMutex } from "lib0/mutex";
 import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
@@ -24,6 +25,16 @@ interface UndoConfig {
   trackedOrigins: Set<unknown>;
 }
 
+export interface ProseState {
+  applyingFromServer: Map<string, boolean>;
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>;
+  lastSyncedVectors: Map<string, Uint8Array>;
+  pendingState: Map<string, boolean>;
+  pendingListeners: Map<string, Set<(pending: boolean) => void>>;
+  fragmentObservers: Map<string, () => void>;
+  failedSyncQueue: Map<string, boolean>;
+}
+
 export interface CollectionContext {
   collection: string;
   subdocManager: SubdocManager;
@@ -34,7 +45,9 @@ export interface CollectionContext {
   mutex: ReturnType<typeof createMutex>;
   undoConfig: UndoConfig;
   debounceMs: number;
-  // Set during sync initialization (progressive)
+  proseState: ProseState;
+  fragmentUndoManagers: Map<string, Y.UndoManager>;
+  cleanup?: () => void;
   peerId?: string;
   collectionRef?: Collection<any>;
   serverStateVector?: Uint8Array;
@@ -54,13 +67,33 @@ export function hasContext(collection: string): boolean {
 
 type InitContextConfig = Omit<
   CollectionContext,
-  "mutex" | "peerId" | "collectionRef" | "serverStateVector"
+  | "mutex"
+  | "proseState"
+  | "fragmentUndoManagers"
+  | "cleanup"
+  | "peerId"
+  | "collectionRef"
+  | "serverStateVector"
 >;
+
+function createProseState(): ProseState {
+  return {
+    applyingFromServer: new Map(),
+    debounceTimers: new Map(),
+    lastSyncedVectors: new Map(),
+    pendingState: new Map(),
+    pendingListeners: new Map(),
+    fragmentObservers: new Map(),
+    failedSyncQueue: new Map(),
+  };
+}
 
 export function initContext(config: InitContextConfig): CollectionContext {
   const ctx: CollectionContext = {
     ...config,
     mutex: createMutex(),
+    proseState: createProseState(),
+    fragmentUndoManagers: new Map(),
   };
   contexts.set(config.collection, ctx);
   return ctx;
@@ -70,7 +103,7 @@ export function deleteContext(collection: string): void {
   contexts.delete(collection);
 }
 
-type UpdateableFields = "peerId" | "collectionRef" | "serverStateVector";
+type UpdateableFields = "peerId" | "collectionRef" | "serverStateVector" | "cleanup";
 
 export function updateContext(
   collection: string,

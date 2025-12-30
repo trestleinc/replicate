@@ -22,15 +22,19 @@ export interface CollectionOptions<T extends object> {
   };
 }
 
-export function collection<T extends object>(
+function createCollection<T extends object>(
   component: any,
   name: string,
   options?: CollectionOptions<T>,
 ) {
-  return collectionInternal<T>(component, name, options);
+  return createCollectionInternal<T>(component, name, options);
 }
 
-function collectionInternal<T extends object>(
+export const collection = {
+  create: createCollection,
+} as const;
+
+function createCollectionInternal<T extends object>(
   component: any,
   name: string,
   options?: CollectionOptions<T>,

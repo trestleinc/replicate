@@ -62,7 +62,7 @@ export class Sync extends Context.Tag("Sync")<
     ) => Effect.Effect<() => void, NetworkError>;
     readonly recover: (vector: ArrayBuffer) => Effect.Effect<RecoveryResult, NetworkError>;
     readonly compact: (document: string) => Effect.Effect<CompactResult, NetworkError>;
-    readonly ack: (
+    readonly mark: (
       document: string,
       client: string,
       seq: number,
@@ -134,14 +134,14 @@ export function createSyncLayer(config: SyncConfig) {
           return result as CompactResult;
         }).pipe(Effect.retry(retryPolicy)),
 
-      ack: (document, client, seq) =>
+      mark: (document, client, seq) =>
         Effect.gen(function* () {
           yield* Effect.tryPromise({
             try: () => convexClient.mutation(api.mark, { document, client, seq }),
-            catch: cause => new NetworkError({ operation: "ack", cause, retryable: true }),
+            catch: cause => new NetworkError({ operation: "mark", cause, retryable: true }),
           });
 
-          logger.debug("Ack sent", { collection, document, client, seq });
+          logger.debug("Mark sent", { collection, document, client, seq });
         }),
     }),
   );
