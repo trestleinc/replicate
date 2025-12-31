@@ -3,7 +3,6 @@ import { Awareness } from "y-protocols/awareness";
 import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 
-
 const DEFAULT_HEARTBEAT_INTERVAL = 10000;
 const DEFAULT_THROTTLE_MS = 50;
 
@@ -93,7 +92,7 @@ export function createAwarenessProvider(
       };
       return serialized;
     }
-    catch (e) {
+    catch {
       return undefined;
     }
   };
@@ -139,7 +138,6 @@ export function createAwarenessProvider(
       profile,
       interval,
       vector,
-    }).catch((_) => {
     });
   };
 
@@ -189,10 +187,6 @@ export function createAwarenessProvider(
         if (destroyed) return;
 
         const validRemotes = remotes.filter(r => r.document === document);
-
-        if (validRemotes.length !== remotes.length) {
-        }
-
 
         const currentRemotes = new Set<string>();
 
@@ -250,7 +244,7 @@ export function createAwarenessProvider(
           cursor: undefined,
           interval,
           vector: getVector(),
-        }).catch(() => {});
+        });
       }
       else if (!wasVisible && visible) {
         sendToServer();
@@ -270,7 +264,7 @@ export function createAwarenessProvider(
       if (e.persisted) return;
       if (destroyed) return;
 
-      convexClient.mutation(api.leave, { document, client }).catch(() => {});
+      convexClient.mutation(api.leave, { document, client });
     };
 
     globalThis.window.addEventListener("pagehide", handler);
@@ -317,7 +311,6 @@ export function createAwarenessProvider(
     initHeartbeat();
   }, 0);
 
-
   return {
     awareness,
     document: ydoc,
@@ -346,7 +339,7 @@ export function createAwarenessProvider(
       remoteClientIds.clear();
       awareness.emit("update", [{ added: [], updated: [], removed: [] }, "remote"]);
 
-      convexClient.mutation(api.leave, { document, client }).catch(() => {});
+      convexClient.mutation(api.leave, { document, client });
 
       awareness.destroy();
     },

@@ -12,7 +12,7 @@ import {
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { Effect } from "effect";
 import { ProseError, NonRetriableError } from "$/client/errors";
-import { Cursor, createCursorLayer, type Seq } from "$/client/services/cursor";
+import { Cursor, createCursorLayer, getClientId, type Seq } from "$/client/services/cursor";
 import { createReplicateOps, type BoundReplicateOps } from "$/client/ops";
 import {
   isDoc,
@@ -46,7 +46,6 @@ enum YjsOrigin {
   Server = "server",
 }
 import type { ProseFields } from "$/shared/types";
-
 
 interface HttpError extends Error {
   status?: number;
@@ -287,10 +286,10 @@ export function convexCollectionOptions(
 
       const storedConvexClient = ctx.client;
       const storedApi = ctx.api;
-      const storedPeerId = ctx.peer;
+      const storedClientId = ctx.clientId;
 
       let awarenessProvider: ConvexAwarenessProvider | null = null;
-      if (storedConvexClient && storedApi?.sessions && storedApi?.leave && storedPeerId) {
+      if (storedConvexClient && storedApi?.sessions && storedApi?.leave && storedClientId) {
         awarenessProvider = createAwarenessProvider({
           convexClient: storedConvexClient,
           api: {
@@ -300,7 +299,7 @@ export function convexCollectionOptions(
             leave: storedApi.leave,
           },
           document,
-          client: storedPeerId,
+          client: storedClientId,
           ydoc: subdoc,
           syncReady: ctx.synced,
         });
@@ -369,23 +368,18 @@ export function convexCollectionOptions(
       return;
     }
 
-
     for (const document of documents) {
-      try {
-        const localVector = subdocManager.encodeStateVector(document);
+      const localVector = subdocManager.encodeStateVector(document);
 
-        const response = await convexClient.query(api.recovery, {
-          document,
-          vector: localVector.buffer as ArrayBuffer,
-        });
-
+      convexClient.query(api.recovery, {
+        document,
+        vector: localVector.buffer as ArrayBuffer,
+      }).then((response) => {
         if (response.diff) {
           const diff = new Uint8Array(response.diff);
           subdocManager.applyUpdate(document, diff, YjsOrigin.Server);
         }
-      }
-      catch (error) {
-      }
+      });
     }
   };
 
@@ -591,8 +585,9 @@ export function convexCollectionOptions(
 
         let subscription: (() => void) | null = null;
         const ssrDocuments = material?.documents;
-        const ssrCrdt = material?.crdt as Record<string, { bytes: ArrayBuffer; seq: number }> | undefined;
-        const ssrCursor = material?.cursor as number | undefined;
+        type CrdtRecord = Record<string, { bytes: ArrayBuffer; seq: number }>;
+        const ssrCrdt = material?.crdt as CrdtRecord | undefined;
+        const ssrCursor = material?.cursor;
         const docs: DataType[] = ssrDocuments ? [...ssrDocuments] : [];
 
         (async () => {
@@ -608,13 +603,8 @@ export function convexCollectionOptions(
             });
             await persistenceReadyPromise;
 
-            const peerId = await Effect.runPromise(
-              Effect.gen(function* () {
-                const cursorSvc = yield* Cursor;
-                return yield* cursorSvc.loadPeerId(collection);
-              }).pipe(Effect.provide(cursorLayer)),
-            );
-            updateContext(collection, { peer: peerId });
+            const clientId = getClientId(collection);
+            updateContext(collection, { clientId });
 
             ops = createReplicateOps<DataType>(params);
             resolveOptimisticReady?.();
@@ -688,8 +678,6 @@ export function convexCollectionOptions(
                   else if (itemBefore) {
                     ops.delete([itemBefore as DataType]);
                   }
-                  else {
-                  }
                 }
                 catch (error) {
                   throw new Error(`Delta application failed for ${document}: ${error}`);
@@ -701,62 +689,46 @@ export function convexCollectionOptions(
             };
 
             const handleSubscriptionUpdate = async (response: any) => {
-              try {
-                if (!response || !Array.isArray(response.changes)) {
-                  return;
+              if (!response || !Array.isArray(response.changes)) {
+                return;
+              }
+
+              const { changes, cursor: newCursor, compact } = response;
+              const syncedDocuments = new Set<string>();
+
+              for (const change of changes) {
+                const { type, bytes, document } = change;
+                if (!bytes || !document) {
+                  continue;
                 }
 
-                const { changes, cursor: newCursor, compact: compactHint } = response;
-                const syncedDocuments = new Set<string>();
+                syncedDocuments.add(document);
 
-                for (const change of changes) {
-                  const { type, bytes, document } = change;
-                  if (!bytes || !document) {
-                    continue;
-                  }
-
-                  syncedDocuments.add(document);
-
-                  try {
-                    if (type === "snapshot") {
-                      handleSnapshotChange(bytes, document);
-                    }
-                    else {
-                      handleDeltaChange(bytes, document);
-                    }
-                  }
-                  catch (changeError) {
-                  }
+                if (type === "snapshot") {
+                  handleSnapshotChange(bytes, document);
                 }
-
-                if (newCursor !== undefined) {
-                  try {
-                    const key = `cursor:${collection}`;
-                    await persistence.kv.set(key, newCursor);
-
-                    for (const document of syncedDocuments) {
-                      await convexClient.mutation(api.mark, {
-                        document: document,
-                        client: peerId,
-                        seq: newCursor,
-                      });
-                    }
-                  }
-                  catch (markError) {
-                  }
-                }
-
-                if (compactHint) {
-                  try {
-                    await convexClient.mutation(api.compact, {
-                      document: compactHint,
-                    });
-                  }
-                  catch (compactError) {
-                  }
+                else {
+                  handleDeltaChange(bytes, document);
                 }
               }
-              catch (error) {
+
+              if (newCursor !== undefined) {
+                const key = `cursor:${collection}`;
+                await persistence.kv.set(key, newCursor);
+
+                for (const document of syncedDocuments) {
+                  convexClient.mutation(api.mark, {
+                    document: document,
+                    client: clientId,
+                    seq: newCursor,
+                  });
+                }
+              }
+
+              if (compact?.documents?.length) {
+                for (const doc of compact.documents) {
+                  convexClient.mutation(api.compact, { document: doc });
+                }
               }
             };
 
@@ -771,7 +743,7 @@ export function convexCollectionOptions(
             // Note: markReady() was already called above (local-first)
             // Subscription is background replication, not blocking
           }
-          catch (error) {
+          catch {
             markReady();
           }
         })();

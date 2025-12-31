@@ -11,12 +11,28 @@ export class Cursor extends Context.Tag("Cursor")<
     readonly loadSeq: (collection: string) => Effect.Effect<Seq, IDBError>;
     readonly saveSeq: (collection: string, seq: Seq) => Effect.Effect<void, IDBWriteError>;
     readonly clearSeq: (collection: string) => Effect.Effect<void, IDBError>;
-    readonly loadPeerId: (collection: string) => Effect.Effect<string, IDBError | IDBWriteError>;
   }
 >() {}
 
-function generatePeerId(): string {
-  return crypto.randomUUID();
+function generateClientId(): number {
+  return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+}
+
+export function getClientId(collection: string): string {
+  const key = `replicate:clientId:${collection}`;
+
+  if (typeof localStorage === "undefined") {
+    return String(generateClientId());
+  }
+
+  const stored = localStorage.getItem(key);
+  if (stored) {
+    return stored;
+  }
+
+  const clientId = String(generateClientId());
+  localStorage.setItem(key, clientId);
+  return clientId;
 }
 
 export function createCursorLayer(kv: KeyValueStore) {
@@ -78,51 +94,6 @@ export function createCursorLayer(kv: KeyValueStore) {
             }),
           );
           yield* _(Effect.logDebug("Seq cleared", { collection }));
-        }),
-
-      loadPeerId: (collection: string) =>
-        Effect.gen(function* (_) {
-          const sessionKey = `replicate:peerId:${collection}`;
-
-          if (typeof sessionStorage !== "undefined") {
-            const sessionStored = sessionStorage.getItem(sessionKey);
-            if (sessionStored) {
-              yield* _(Effect.logDebug("Loaded peerId from sessionStorage", {
-                collection,
-                peerId: sessionStored,
-              }));
-              return sessionStored;
-            }
-          }
-
-          const key = `peerId:${collection}`;
-          const stored = yield* _(
-            Effect.tryPromise({
-              try: () => kv.get<string>(key),
-              catch: cause => new IDBError({ operation: "get", key, cause }),
-            }),
-          );
-
-          const peerId = stored ?? generatePeerId();
-
-          if (typeof sessionStorage !== "undefined") {
-            sessionStorage.setItem(sessionKey, peerId);
-          }
-
-          if (!stored) {
-            yield* _(
-              Effect.tryPromise({
-                try: () => kv.set(key, peerId),
-                catch: cause => new IDBWriteError({ key, value: peerId, cause }),
-              }),
-            );
-            yield* _(Effect.logDebug("Generated new peerId", { collection, peerId }));
-          }
-          else {
-            yield* _(Effect.logDebug("Loaded peerId from storage", { collection, peerId }));
-          }
-
-          return peerId;
         }),
     }),
   );

@@ -3,7 +3,6 @@ import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 import { NetworkError } from "$/client/errors";
 
-
 interface SyncApi {
   stream: FunctionReference<"query">;
   recovery: FunctionReference<"query">;
@@ -76,7 +75,6 @@ export function createSyncLayer(config: SyncConfig) {
     Sync.of({
       subscribe: (cursor, limit, onUpdate) =>
         Effect.gen(function* () {
-
           const unsubscribe = yield* Effect.try({
             try: () =>
               convexClient.onUpdate(
@@ -94,7 +92,6 @@ export function createSyncLayer(config: SyncConfig) {
 
       recover: vector =>
         Effect.gen(function* () {
-
           const response = yield* Effect.tryPromise({
             try: () => convexClient.query(api.recovery, { vector }),
             catch: cause => new NetworkError({ operation: "recovery", cause, retryable: true }),
@@ -105,12 +102,10 @@ export function createSyncLayer(config: SyncConfig) {
 
       compact: document =>
         Effect.gen(function* () {
-
           const result = yield* Effect.tryPromise({
             try: () => convexClient.mutation(api.compact, { document }),
             catch: cause => new NetworkError({ operation: "compact", cause, retryable: true }),
           });
-
 
           return result as CompactResult;
         }).pipe(Effect.retry(retryPolicy)),
@@ -121,7 +116,6 @@ export function createSyncLayer(config: SyncConfig) {
             try: () => convexClient.mutation(api.mark, { document, client, seq }),
             catch: cause => new NetworkError({ operation: "mark", cause, retryable: true }),
           });
-
         }),
     }),
   );

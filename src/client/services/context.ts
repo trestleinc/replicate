@@ -40,7 +40,7 @@ export interface CollectionContext {
   debounce: number;
   prose: ProseState;
   cleanup?: () => void;
-  peer?: string;
+  clientId?: string;
   ref?: Collection<any>;
   vector?: Uint8Array;
   synced?: Promise<void>;
@@ -64,7 +64,7 @@ type InitContextConfig = Omit<
   | "mutex"
   | "prose"
   | "cleanup"
-  | "peer"
+  | "clientId"
   | "ref"
   | "vector"
 >;
@@ -102,7 +102,7 @@ export function deleteContext(collection: string): void {
   contexts.delete(collection);
 }
 
-type UpdateableFields = "peer" | "ref" | "vector" | "cleanup";
+type UpdateableFields = "clientId" | "ref" | "vector" | "cleanup";
 
 export function updateContext(
   collection: string,

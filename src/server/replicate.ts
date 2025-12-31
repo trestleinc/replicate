@@ -470,7 +470,11 @@ export class Replicate<T extends object> {
   }
 
   createRecoveryQuery(opts?: {
-    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string, document: string) => void | Promise<void>;
+    evalRead?: (
+      ctx: GenericQueryCtx<GenericDataModel>,
+      collection: string,
+      document: string,
+    ) => void | Promise<void>;
   }) {
     const component = this.component;
     const collection = this.collectionName;

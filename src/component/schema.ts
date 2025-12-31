@@ -40,7 +40,6 @@ export default defineSchema({
       head: v.any(),
       field: v.optional(v.string()),
     })),
-    active: v.optional(v.number()),
     timeout: v.optional(v.id("_scheduled_functions")),
   })
     .index("by_collection", ["collection"])

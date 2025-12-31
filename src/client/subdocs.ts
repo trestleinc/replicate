@@ -2,7 +2,6 @@ import * as Y from "yjs";
 import type { PersistenceProvider } from "$/client/persistence/types";
 import { fragmentToJSON } from "$/client/merge";
 
-
 export type SubdocPersistenceFactory = (document: string, subdoc: Y.Doc) => PersistenceProvider;
 
 export interface SubdocManager {
@@ -141,7 +140,6 @@ export function createSubdocManager(collection: string): SubdocManager {
 
       const delta = Y.encodeStateAsUpdateV2(subdoc, beforeVector);
 
-
       return delta;
     },
 
@@ -197,12 +195,12 @@ export function createSubdocManager(collection: string): SubdocManager {
     },
 
     destroy(): void {
-      for (const [_, provider] of subdocPersistence) {
+      for (const provider of subdocPersistence.values()) {
         provider.destroy();
       }
       subdocPersistence.clear();
 
-      for (const [_, subdoc] of loadedSubdocs) {
+      for (const subdoc of loadedSubdocs.values()) {
         subdoc.destroy();
       }
       loadedSubdocs.clear();

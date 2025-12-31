@@ -7,7 +7,8 @@ import { OperationType } from "$/shared/types";
 
 export { OperationType };
 
-const DEFAULT_SIZE_THRESHOLD = 5_000_000;
+// Delta count threshold matching y-indexeddb's PREFERRED_TRIM_SIZE
+const DEFAULT_DELTA_COUNT_THRESHOLD = 500;
 
 async function getNextSeq(ctx: any, collection: string): Promise<number> {
   const latest = await ctx.db
@@ -154,7 +155,6 @@ export const mark = mutation({
     if (args.profile !== undefined) updates.profile = args.profile;
     if (args.cursor !== undefined) {
       updates.cursor = args.cursor;
-      updates.active = now;
     }
 
     if (existing) {
@@ -172,7 +172,6 @@ export const mark = mutation({
         user: args.user,
         profile: args.profile,
         cursor: args.cursor,
-        active: args.cursor ? now : undefined,
         timeout,
       });
     }
@@ -356,11 +355,13 @@ export const stream = query({
     ),
     cursor: v.number(),
     more: v.boolean(),
-    compact: v.optional(v.string()),
+    compact: v.optional(v.object({
+      documents: v.array(v.string()),
+    })),
   }),
   handler: async (ctx, args) => {
     const limit = args.limit ?? 100;
-    const threshold = args.threshold ?? DEFAULT_SIZE_THRESHOLD;
+    const threshold = args.threshold ?? DEFAULT_DELTA_COUNT_THRESHOLD;
 
     const documents = await ctx.db
       .query("documents")
@@ -380,22 +381,21 @@ export const stream = query({
 
       const newCursor = documents[documents.length - 1]?.seq ?? args.cursor;
 
-      let compactHint: string | undefined;
       const allDocs = await ctx.db
         .query("documents")
         .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
         .collect();
 
-      const sizeByDoc = new Map<string, number>();
+      const countByDoc = new Map<string, number>();
       for (const doc of allDocs) {
-        const current = sizeByDoc.get(doc.document) ?? 0;
-        sizeByDoc.set(doc.document, current + doc.bytes.byteLength);
+        const current = countByDoc.get(doc.document) ?? 0;
+        countByDoc.set(doc.document, current + 1);
       }
 
-      for (const [docId, size] of sizeByDoc) {
-        if (size > threshold) {
-          compactHint = docId;
-          break;
+      const documentsNeedingCompaction: string[] = [];
+      for (const [docId, count] of countByDoc) {
+        if (count >= threshold) {
+          documentsNeedingCompaction.push(docId);
         }
       }
 
@@ -403,7 +403,9 @@ export const stream = query({
         changes,
         cursor: newCursor,
         more: documents.length === limit,
-        compact: compactHint,
+        compact: documentsNeedingCompaction.length > 0
+          ? { documents: documentsNeedingCompaction }
+          : undefined,
       };
     }
 
@@ -694,7 +696,6 @@ export const leave = mutation({
       await ctx.db.patch(existing._id, {
         connected: false,
         cursor: undefined,
-        active: undefined,
         timeout: undefined,
       });
     }
