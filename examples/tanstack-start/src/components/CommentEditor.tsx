@@ -1,12 +1,37 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Effect, Fiber } from "effect";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import type { EditorBinding } from "@trestleinc/replicate/client";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+
+const DEFAULT_COLORS = [
+  "#F87171",
+  "#FB923C",
+  "#FBBF24",
+  "#A3E635",
+  "#34D399",
+  "#22D3EE",
+  "#60A5FA",
+  "#A78BFA",
+  "#F472B6",
+];
+
+function getRandomColor(): string {
+  return DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)];
+}
+
+function getRandomName(): string {
+  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
+  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  return `${adj} ${noun}`;
+}
 
 interface CommentEditorProps {
   commentId: string;
@@ -59,6 +84,12 @@ export function CommentEditor({ commentId, collection }: CommentEditorProps) {
 }
 
 function CommentEditorView({ binding }: { binding: EditorBinding }) {
+  // Stable user identity for collaboration cursors
+  const user = useMemo(() => ({
+    name: getRandomName(),
+    color: getRandomColor(),
+  }), []);
+
   const editor = useEditor(
     {
       extensions: [
@@ -67,6 +98,10 @@ function CommentEditorView({ binding }: { binding: EditorBinding }) {
         }),
         Collaboration.configure({
           fragment: binding.fragment,
+        }),
+        CollaborationCaret.configure({
+          provider: binding.provider,
+          user,
         }),
         Placeholder.configure({
           placeholder: "Write a comment...",
@@ -78,7 +113,7 @@ function CommentEditorView({ binding }: { binding: EditorBinding }) {
         },
       },
     },
-    [binding.fragment],
+    [binding.fragment, binding.provider],
   );
 
   return <EditorContent editor={editor} />;

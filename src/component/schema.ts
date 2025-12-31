@@ -36,8 +36,8 @@ export default defineSchema({
       avatar: v.optional(v.string()),
     })),
     cursor: v.optional(v.object({
-      anchor: v.number(),
-      head: v.number(),
+      anchor: v.any(),
+      head: v.any(),
       field: v.optional(v.string()),
     })),
     active: v.optional(v.number()),

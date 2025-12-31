@@ -290,8 +290,8 @@ export class Replicate<T extends object> {
           avatar: v.optional(v.string()),
         })),
         cursor: v.optional(v.object({
-          anchor: v.number(),
-          head: v.number(),
+          anchor: v.any(),
+          head: v.any(),
           field: v.optional(v.string()),
         })),
         interval: v.optional(v.number()),
@@ -328,6 +328,8 @@ export class Replicate<T extends object> {
     return queryGeneric({
       args: {
         document: v.string(),
+        connected: v.optional(v.boolean()),
+        exclude: v.optional(v.string()),
         group: v.optional(v.boolean()),
       },
       returns: v.array(v.object({
@@ -335,6 +337,11 @@ export class Replicate<T extends object> {
         document: v.string(),
         user: v.optional(v.string()),
         profile: v.optional(v.any()),
+        cursor: v.optional(v.object({
+          anchor: v.any(),
+          head: v.any(),
+          field: v.optional(v.string()),
+        })),
         seen: v.number(),
       })),
       handler: async (ctx, args) => {
@@ -345,6 +352,8 @@ export class Replicate<T extends object> {
         return await ctx.runQuery(component.mutations.sessions, {
           collection,
           document: args.document,
+          connected: args.connected,
+          exclude: args.exclude,
           group: args.group,
         });
       },
@@ -367,8 +376,8 @@ export class Replicate<T extends object> {
         user: v.optional(v.string()),
         profile: v.optional(v.any()),
         cursor: v.object({
-          anchor: v.number(),
-          head: v.number(),
+          anchor: v.any(),
+          head: v.any(),
           field: v.optional(v.string()),
         }),
       })),

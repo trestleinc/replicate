@@ -7,13 +7,6 @@ export {
 
 export { type Seq } from "$/client/services/cursor";
 
-export {
-  type CursorPosition,
-  type ClientCursor,
-  type UserProfile,
-  createPresence,
-} from "$/client/services/presence";
-
 import {
   NetworkError,
   IDBError,

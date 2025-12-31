@@ -3,16 +3,26 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { dev } from '$app/environment';
+	import { dev, browser } from '$app/environment';
 	import { setConvexClientContext } from 'convex-svelte';
 	import { ConvexClient } from 'convex/browser';
 	import { PUBLIC_CONVEX_URL } from '$env/static/public';
+	import { configure, getConsoleSink } from '@logtape/logtape';
 	import PersistenceGate from '$lib/components/PersistenceGate.svelte';
 
 	let { children } = $props();
 
-	onMount(() => {
+	if (browser) {
 		setConvexClientContext(new ConvexClient(PUBLIC_CONVEX_URL));
+	}
+
+	onMount(async () => {
+		await configure({
+			sinks: { console: getConsoleSink() },
+			loggers: [
+				{ category: ["replicate"], lowestLevel: "debug", sinks: ["console"] },
+			],
+		});
 
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');

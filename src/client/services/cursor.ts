@@ -82,6 +82,19 @@ export function createCursorLayer(kv: KeyValueStore) {
 
       loadPeerId: (collection: string) =>
         Effect.gen(function* (_) {
+          const sessionKey = `replicate:peerId:${collection}`;
+
+          if (typeof sessionStorage !== "undefined") {
+            const sessionStored = sessionStorage.getItem(sessionKey);
+            if (sessionStored) {
+              yield* _(Effect.logDebug("Loaded peerId from sessionStorage", {
+                collection,
+                peerId: sessionStored,
+              }));
+              return sessionStored;
+            }
+          }
+
           const key = `peerId:${collection}`;
           const stored = yield* _(
             Effect.tryPromise({
@@ -90,20 +103,26 @@ export function createCursorLayer(kv: KeyValueStore) {
             }),
           );
 
-          if (stored) {
-            yield* _(Effect.logDebug("Loaded peerId from storage", { collection, peerId: stored }));
-            return stored;
+          const peerId = stored ?? generatePeerId();
+
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(sessionKey, peerId);
           }
 
-          const newPeerId = generatePeerId();
-          yield* _(
-            Effect.tryPromise({
-              try: () => kv.set(key, newPeerId),
-              catch: cause => new IDBWriteError({ key, value: newPeerId, cause }),
-            }),
-          );
-          yield* _(Effect.logDebug("Generated new peerId", { collection, peerId: newPeerId }));
-          return newPeerId;
+          if (!stored) {
+            yield* _(
+              Effect.tryPromise({
+                try: () => kv.set(key, peerId),
+                catch: cause => new IDBWriteError({ key, value: peerId, cause }),
+              }),
+            );
+            yield* _(Effect.logDebug("Generated new peerId", { collection, peerId }));
+          }
+          else {
+            yield* _(Effect.logDebug("Loaded peerId from storage", { collection, peerId }));
+          }
+
+          return peerId;
         }),
     }),
   );

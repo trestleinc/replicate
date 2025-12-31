@@ -1,4 +1,3 @@
-import * as Y from "yjs";
 import { createMutex } from "lib0/mutex";
 import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
@@ -20,11 +19,6 @@ interface ConvexCollectionApi {
   leave?: FunctionReference<"mutation">;
 }
 
-interface UndoConfig {
-  captureTimeout: number;
-  trackedOrigins: Set<unknown>;
-}
-
 export interface ProseState {
   applyingFromServer: Map<string, boolean>;
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>;
@@ -37,20 +31,18 @@ export interface ProseState {
 
 export interface CollectionContext {
   collection: string;
-  subdocManager: SubdocManager;
-  convexClient: ConvexClient;
+  subdocs: SubdocManager;
+  client: ConvexClient;
   api: ConvexCollectionApi;
   persistence: Persistence;
-  proseFields: Set<string>;
+  fields: Set<string>;
   mutex: ReturnType<typeof createMutex>;
-  undoConfig: UndoConfig;
-  debounceMs: number;
-  proseState: ProseState;
-  fragmentUndoManagers: Map<string, Y.UndoManager>;
+  debounce: number;
+  prose: ProseState;
   cleanup?: () => void;
-  peerId?: string;
-  collectionRef?: Collection<any>;
-  serverStateVector?: Uint8Array;
+  peer?: string;
+  ref?: Collection<any>;
+  vector?: Uint8Array;
 }
 
 const contexts = new Map<string, CollectionContext>();
@@ -68,12 +60,11 @@ export function hasContext(collection: string): boolean {
 type InitContextConfig = Omit<
   CollectionContext,
   | "mutex"
-  | "proseState"
-  | "fragmentUndoManagers"
+  | "prose"
   | "cleanup"
-  | "peerId"
-  | "collectionRef"
-  | "serverStateVector"
+  | "peer"
+  | "ref"
+  | "vector"
 >;
 
 function createProseState(): ProseState {
@@ -92,8 +83,7 @@ export function initContext(config: InitContextConfig): CollectionContext {
   const ctx: CollectionContext = {
     ...config,
     mutex: createMutex(),
-    proseState: createProseState(),
-    fragmentUndoManagers: new Map(),
+    prose: createProseState(),
   };
   contexts.set(config.collection, ctx);
   return ctx;
@@ -103,7 +93,7 @@ export function deleteContext(collection: string): void {
   contexts.delete(collection);
 }
 
-type UpdateableFields = "peerId" | "collectionRef" | "serverStateVector" | "cleanup";
+type UpdateableFields = "peer" | "ref" | "vector" | "cleanup";
 
 export function updateContext(
   collection: string,

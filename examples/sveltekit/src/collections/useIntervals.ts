@@ -5,7 +5,7 @@ import { api } from "$convex/_generated/api";
 import { intervalSchema } from "$lib/types";
 
 export const intervals = collection.create({
-  persistence: async () => persistence.memory(),
+  persistence: async () => persistence.indexeddb("intervals"),
   config: () => ({
     schema: intervalSchema,
     convexClient: new ConvexClient(PUBLIC_CONVEX_URL),

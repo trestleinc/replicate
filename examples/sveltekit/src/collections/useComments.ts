@@ -5,7 +5,7 @@ import { api } from "$convex/_generated/api";
 import { commentSchema } from "$lib/types";
 
 export const comments = collection.create({
-  persistence: async () => persistence.memory(),
+  persistence: async () => persistence.indexeddb("comments"),
   config: () => ({
     schema: commentSchema,
     convexClient: new ConvexClient(PUBLIC_CONVEX_URL),

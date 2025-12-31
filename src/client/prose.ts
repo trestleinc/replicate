@@ -22,7 +22,7 @@ const DEFAULT_DEBOUNCE_MS = 1000;
 
 function getProseState(collection: string): ProseState | null {
   if (!hasContext(collection)) return null;
-  return getContext(collection).proseState;
+  return getContext(collection).prose;
 }
 
 export function isApplyingFromServer(collection: string, document: string): boolean {

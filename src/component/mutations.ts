@@ -106,8 +106,8 @@ export const mark = mutation({
       avatar: v.optional(v.string()),
     })),
     cursor: v.optional(v.object({
-      anchor: v.number(),
-      head: v.number(),
+      anchor: v.any(),
+      head: v.any(),
       field: v.optional(v.string()),
     })),
     interval: v.optional(v.number()),
@@ -589,6 +589,8 @@ export const sessions = query({
   args: {
     collection: v.string(),
     document: v.string(),
+    connected: v.optional(v.boolean()),
+    exclude: v.optional(v.string()),
     group: v.optional(v.boolean()),
   },
   returns: v.array(v.object({
@@ -596,24 +598,37 @@ export const sessions = query({
     document: v.string(),
     user: v.optional(v.string()),
     profile: v.optional(v.any()),
+    cursor: v.optional(v.object({
+      anchor: v.any(),
+      head: v.any(),
+      field: v.optional(v.string()),
+    })),
     seen: v.number(),
   })),
   handler: async (ctx, args) => {
-    const records = await ctx.db
+    let query = ctx.db
       .query("sessions")
       .withIndex("by_document", (q: any) =>
         q.eq("collection", args.collection)
           .eq("document", args.document),
-      )
-      .collect();
+      );
 
-    let results = records.map((p: any) => ({
-      client: p.client,
-      document: p.document,
-      user: p.user,
-      profile: p.profile,
-      seen: p.seen,
-    }));
+    if (args.connected !== undefined) {
+      query = query.filter((q: any) => q.eq(q.field("connected"), args.connected));
+    }
+
+    const records = await query.collect();
+
+    let results = records
+      .filter((p: any) => !args.exclude || p.client !== args.exclude)
+      .map((p: any) => ({
+        client: p.client,
+        document: p.document,
+        user: p.user,
+        profile: p.profile,
+        cursor: p.cursor,
+        seen: p.seen,
+      }));
 
     if (args.group) {
       const byUser = new Map<string, typeof results[0]>();
@@ -642,8 +657,8 @@ export const cursors = query({
     user: v.optional(v.string()),
     profile: v.optional(v.any()),
     cursor: v.object({
-      anchor: v.number(),
-      head: v.number(),
+      anchor: v.any(),
+      head: v.any(),
       field: v.optional(v.string()),
     }),
   })),

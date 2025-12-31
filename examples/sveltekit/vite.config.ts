@@ -9,6 +9,6 @@ export default defineConfig({
     alias: {
       $convex: path.resolve("./src/convex"),
     },
-    dedupe: ["yjs", "lib0"],
+    dedupe: ["yjs", "lib0", "y-protocols"],
   },
 });

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import type { Editor } from "@tiptap/core";
-  import type { EditorBinding, ClientCursor } from "@trestleinc/replicate/client";
+  import type { EditorBinding } from "@trestleinc/replicate/client";
   import type { Interval, StatusValue, PriorityValue } from "$lib/types";
   import { Status, Priority, StatusLabels, PriorityLabels } from "$lib/types";
   import { intervals } from "$collections/useIntervals";
@@ -30,7 +30,15 @@
   let binding = $state<EditorBinding | null>(null);
   let error = $state<string | null>(null);
   let isLoading = $state(true);
-  let remoteCursors = $state<Map<string, ClientCursor>>(new Map());
+
+  // Remote users from awareness
+  interface RemoteUser {
+    clientId: number;
+    name: string;
+    color: string;
+    avatar?: string;
+  }
+  let remoteUsers = $state<RemoteUser[]>([]);
 
   let isEditingTitle = $state(false);
   let editingTitle = $state("");
@@ -38,26 +46,61 @@
 
   const title = $derived(isEditingTitle ? editingTitle : interval.title);
 
+  // Warm hex collaboration colors matching the design system
+  const DEFAULT_COLORS = [
+    "#9F5944",   // Rust
+    "#A9704D",   // Terracotta
+    "#B08650",   // Amber
+    "#8A7D3F",   // Gold
+    "#6E7644",   // Olive
+    "#8C4A42",   // Sienna
+    "#9E7656",   // Copper
+    "#9A5240",   // Brick
+    "#987C4A",   // Bronze
+  ];
+  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
+  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
+
+  const localUser = {
+    name: `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`,
+    color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
+  };
+
   $effect(() => {
     if (isEditingTitle) {
       titleInputRef?.focus();
     }
   });
 
-// Subscribe to cursor changes from other users
+  // Subscribe to awareness changes for remote user avatars
   $effect(() => {
-    const cursor = binding?.cursor;
-    if (!cursor) return;
+    const awareness = binding?.provider?.awareness;
+    if (!awareness) return;
 
-    const handleChange = () => {
-      remoteCursors = new Map(cursor.others());
+    const updateRemoteUsers = () => {
+      const states = awareness.getStates();
+      const localClientId = awareness.clientID;
+      const users: RemoteUser[] = [];
+
+      states.forEach((state, clientId) => {
+        if (clientId !== localClientId && state.user) {
+          users.push({
+            clientId,
+            name: state.user.name ?? "Anonymous",
+            color: state.user.color ?? "#6366f1",
+            avatar: state.user.avatar,
+          });
+        }
+      });
+
+      remoteUsers = users;
     };
 
-    cursor.on("change", handleChange);
-    handleChange();
+    awareness.on("update", updateRemoteUsers);
+    updateRemoteUsers();
 
     return () => {
-      cursor.off("change", handleChange);
+      awareness.off("update", updateRemoteUsers);
     };
   });
 
@@ -67,11 +110,13 @@
         import("@tiptap/core"),
         import("@tiptap/starter-kit"),
         import("@tiptap/extension-collaboration"),
+        import("@tiptap/extension-collaboration-caret"),
         import("@tiptap/extension-placeholder"),
       ]).then(([
         { Editor },
         { default: StarterKit },
         { default: Collaboration },
+        { default: CollaborationCaret },
         { default: Placeholder },
       ]) => {
         if (!editorElement || !binding) return;
@@ -79,9 +124,13 @@
         editor = new Editor({
           element: editorElement,
           extensions: [
-            StarterKit.configure({}),
+            StarterKit.configure({ undoRedo: false }),
             Collaboration.configure({
               fragment: binding.fragment,
+            }),
+            CollaborationCaret.configure({
+              provider: binding.provider,
+              user: localUser,
             }),
             Placeholder.configure({
               placeholder: "Start writing...",
@@ -92,14 +141,6 @@
               class: "tiptap-editor prose",
             },
           },
-          onSelectionUpdate: ({ editor: e }) => {
-            const { from, to } = e.state.selection;
-            binding?.cursor?.update({ anchor: from, head: to });
-          },
-          onCreate: ({ editor: e }) => {
-            const { from, to } = e.state.selection;
-            binding?.cursor?.update({ anchor: from, head: to });
-          },
         });
       });
     }
@@ -109,6 +150,7 @@
     void intervalId;
 
     return () => {
+      binding?.destroy();
       if (editor) {
         editor.destroy();
         editor = null;
@@ -129,14 +171,6 @@
     catch (err) {
       error = err instanceof Error ? err.message : "Failed to load editor";
       isLoading = false;
-    }
-  });
-
-  onDestroy(() => {
-    binding?.destroy();
-    if (editor) {
-      editor.destroy();
-      editor = null;
     }
   });
 
@@ -249,37 +283,30 @@
           </DropdownMenu.Root>
         </div>
 
-        {#if remoteCursors.size > 0}
+        {#if remoteUsers.length > 0}
           <Tooltip.Provider>
-            <div
-              class="flex -space-x-2"
-              aria-label="Active collaborators"
-            >
-              {#each [...remoteCursors.values()] as cursor (cursor.client)}
-                <Tooltip.Root>
-                  <Tooltip.Trigger>
-                    <Avatar.Root
-                      class="size-7 ring-2 ring-background"
-                      style="--avatar-color: {cursor.profile?.color ?? '#6366f1'}"
-                    >
-                      {#if cursor.profile?.avatar}
-                        <Avatar.Image
-                          src={cursor.profile.avatar}
-                          alt={cursor.profile?.name ?? 'User'}
-                        />
-                      {/if}
-                      <Avatar.Fallback
-                        class="text-xs text-white"
-                        style="background-color: {cursor.profile?.color ?? '#6366f1'}"
-                      >
-                        {(cursor.profile?.name ?? 'A').charAt(0).toUpperCase()}
-                      </Avatar.Fallback>
-                    </Avatar.Root>
-                  </Tooltip.Trigger>
-                  <Tooltip.Content>
-                    <p>{cursor.profile?.name ?? 'Anonymous'}</p>
-                  </Tooltip.Content>
-                </Tooltip.Root>
+            <div class="flex gap-1.5" aria-label="Active collaborators">
+              {#each remoteUsers as user, i (user.clientId)}
+                <div class="avatar-presence-enter" style="animation-delay: {i * 50}ms">
+                  <Tooltip.Root>
+                    <Tooltip.Trigger>
+                      <Avatar.Root class="size-7 ring-1 ring-border transition-transform hover:scale-105">
+                        {#if user.avatar}
+                          <Avatar.Image src={user.avatar} alt={user.name} />
+                        {/if}
+                        <Avatar.Fallback
+                          class="text-xs font-medium text-white"
+                          style="background-color: {user.color}"
+                        >
+                          {user.name.charAt(0).toUpperCase()}
+                        </Avatar.Fallback>
+                      </Avatar.Root>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>
+                      <p>{user.name}</p>
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                </div>
               {/each}
             </div>
           </Tooltip.Provider>

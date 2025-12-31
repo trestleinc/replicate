@@ -63,7 +63,7 @@ export declare const components: {
         { collection: string; document: string; exclude?: string },
         Array<{
           client: string;
-          cursor: { anchor: number; field?: string; head: number };
+          cursor: { anchor: any; field?: string; head: any };
           profile?: any;
           user?: string;
         }>
@@ -104,7 +104,7 @@ export declare const components: {
         {
           client: string;
           collection: string;
-          cursor?: { anchor: number; field?: string; head: number };
+          cursor?: { anchor: any; field?: string; head: any };
           document: string;
           interval?: number;
           profile?: { avatar?: string; color?: string; name?: string };
@@ -123,9 +123,16 @@ export declare const components: {
       sessions: FunctionReference<
         "query",
         "internal",
-        { collection: string; document: string; group?: boolean },
+        {
+          collection: string;
+          connected?: boolean;
+          document: string;
+          exclude?: string;
+          group?: boolean;
+        },
         Array<{
           client: string;
+          cursor?: { anchor: any; field?: string; head: any };
           document: string;
           profile?: any;
           seen: number;

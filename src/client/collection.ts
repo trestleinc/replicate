@@ -34,10 +34,10 @@ import {
   deleteContext,
 } from "$/client/services/context";
 import {
-  createPresence,
-  type CursorPosition,
-  type ClientCursor,
-} from "$/client/services/presence";
+  createAwarenessProvider,
+  type ConvexAwarenessProvider,
+} from "$/client/services/awareness";
+import { Awareness } from "y-protocols/awareness";
 import { z } from "zod";
 
 /** Origin markers for Yjs transactions */
@@ -129,29 +129,35 @@ export interface ConvexCollectionConfig<
   api: ConvexCollectionApi;
   persistence: Persistence;
   material?: Materialized<T>;
-  undoCaptureTimeout?: number;
 }
 
-interface PresenceOps {
-  readonly get: () => CursorPosition | null;
-  readonly update: (position: Omit<CursorPosition, "field">) => void;
-  readonly others: () => Map<string, ClientCursor>;
-  readonly on: (event: "change", cb: () => void) => void;
-  readonly off: (event: "change", cb: () => void) => void;
-  readonly destroy: () => void;
-}
-
+/**
+ * Binding returned by collection.utils.prose() for collaborative editing.
+ *
+ * Compatible with TipTap's Collaboration/CollaborationCursor and BlockNote's
+ * collaboration config. The editor handles undo/redo internally via y-prosemirror.
+ */
 export interface EditorBinding {
+  /** Yjs XmlFragment for content sync */
   readonly fragment: Y.XmlFragment;
-  readonly provider: { readonly awareness: null };
-  readonly pending: boolean;
-  readonly cursor: PresenceOps;
 
+  /**
+   * Provider with Yjs Awareness for cursor/presence sync.
+   * Pass to CollaborationCursor.configure({ provider: binding.provider })
+   * or BlockNote's collaboration.provider
+   */
+  readonly provider: {
+    readonly awareness: Awareness;
+    readonly document: Y.Doc;
+  };
+
+  /** Whether there are unsaved local changes */
+  readonly pending: boolean;
+
+  /** Subscribe to pending state changes */
   onPendingChange(callback: (pending: boolean) => void): () => void;
-  undo(): void;
-  redo(): void;
-  canUndo(): boolean;
-  canRedo(): boolean;
+
+  /** Cleanup - call when unmounting editor */
   destroy(): void;
 }
 
@@ -167,35 +173,7 @@ interface ConvexCollectionUtils<T extends object> {
   prose(document: string, field: ProseFields<T>): Promise<EditorBinding>;
 }
 
-const DEFAULT_UNDO_CAPTURE_TIMEOUT = 500;
 const DEFAULT_DEBOUNCE_MS = 1000;
-
-function getOrCreateFragmentUndoManager(
-  collection: string,
-  document: string,
-  field: string,
-  fragment: Y.XmlFragment,
-): Y.UndoManager {
-  const key = `${document}:${field}`;
-  const ctx = hasContext(collection) ? getContext(collection) : null;
-  if (!ctx) {
-    return new Y.UndoManager([fragment], {
-      captureTimeout: DEFAULT_UNDO_CAPTURE_TIMEOUT,
-      trackedOrigins: new Set([YjsOrigin.Fragment]),
-    });
-  }
-
-  let um = ctx.fragmentUndoManagers.get(key);
-  if (um) return um;
-
-  um = new Y.UndoManager([fragment], {
-    captureTimeout: ctx.undoConfig.captureTimeout,
-    trackedOrigins: new Set([YjsOrigin.Fragment]),
-  });
-
-  ctx.fragmentUndoManagers.set(key, um);
-  return um;
-}
 
 export function convexCollectionOptions<
   TSchema extends z.ZodObject<z.ZodRawShape>,
@@ -221,7 +199,6 @@ export function convexCollectionOptions(
     material,
     convexClient,
     api,
-    undoCaptureTimeout = 500,
     persistence,
   } = config;
 
@@ -285,7 +262,7 @@ export function convexCollectionOptions(
         });
       }
 
-      const fragment = ctx.subdocManager.getFragment(document, fieldStr);
+      const fragment = ctx.subdocs.getFragment(document, fieldStr);
       if (!fragment) {
         throw new ProseError({
           document,
@@ -294,53 +271,54 @@ export function convexCollectionOptions(
         });
       }
 
-      const subdoc = ctx.subdocManager.get(document);
-      const collectionRef = ctx.collectionRef;
-      if (collectionRef && subdoc) {
+      const subdoc = ctx.subdocs.get(document);
+      if (!subdoc) {
+        throw new ProseError({
+          document,
+          field: fieldStr,
+          collection,
+        });
+      }
+
+      const collectionRef = ctx.ref;
+      if (collectionRef) {
         prose.observeFragment({
           collection,
           document,
           field: fieldStr,
           fragment,
           ydoc: subdoc,
-          ymap: ctx.subdocManager.getFields(document)!,
+          ymap: ctx.subdocs.getFields(document)!,
           collectionRef,
-          debounceMs: ctx.debounceMs,
+          debounceMs: ctx.debounce,
         });
       }
 
-      const undoManager = getOrCreateFragmentUndoManager(
-        collection,
-        document,
-        fieldStr,
-        fragment,
-      );
-
-      const storedConvexClient = ctx.convexClient;
+      const storedConvexClient = ctx.client;
       const storedApi = ctx.api;
-      const storedPeerId = ctx.peerId;
+      const storedPeerId = ctx.peer;
 
-      let presence: PresenceOps | null = null;
-      if (storedConvexClient && storedApi?.cursors && storedApi?.leave && storedPeerId) {
-        presence = createPresence({
+      let awarenessProvider: ConvexAwarenessProvider | null = null;
+      if (storedConvexClient && storedApi?.sessions && storedApi?.leave && storedPeerId) {
+        awarenessProvider = createAwarenessProvider({
           convexClient: storedConvexClient,
           api: {
             mark: storedApi.mark,
-            cursors: storedApi.cursors,
+            cursors: storedApi.cursors!,
+            sessions: storedApi.sessions,
             leave: storedApi.leave,
           },
-          collection,
-          document: document,
+          document,
           client: storedPeerId,
-          field: fieldStr,
-          subdocManager,
+          ydoc: subdoc,
         });
       }
 
       const binding: EditorBinding = {
         fragment,
-        provider: { awareness: null },
-        cursor: presence!,
+        provider: awarenessProvider
+          ? { awareness: awarenessProvider.awareness, document: subdoc }
+          : { awareness: new Awareness(subdoc), document: subdoc },
 
         get pending() {
           return prose.isPending(collection, document);
@@ -350,24 +328,8 @@ export function convexCollectionOptions(
           return prose.subscribePending(collection, document, callback);
         },
 
-        undo() {
-          undoManager.undo();
-        },
-
-        redo() {
-          undoManager.redo();
-        },
-
-        canUndo() {
-          return undoManager.canUndo();
-        },
-
-        canRedo() {
-          return undoManager.canRedo();
-        },
-
         destroy() {
-          presence?.destroy();
+          awarenessProvider?.destroy();
         },
       };
 
@@ -380,16 +342,12 @@ export function convexCollectionOptions(
 
   initContext({
     collection,
-    subdocManager,
-    convexClient,
+    subdocs: subdocManager,
+    client: convexClient,
     api,
     persistence,
-    proseFields: proseFieldSet,
-    undoConfig: {
-      captureTimeout: undoCaptureTimeout,
-      trackedOrigins: new Set([YjsOrigin.Local]),
-    },
-    debounceMs: DEFAULT_DEBOUNCE_MS,
+    fields: proseFieldSet,
+    debounce: DEFAULT_DEBOUNCE_MS,
   });
 
   // Bound replicate operations - set during sync initialization
@@ -427,7 +385,7 @@ export function convexCollectionOptions(
       });
 
       if (response.vector) {
-        updateContext(collection, { serverStateVector: new Uint8Array(response.vector) });
+        updateContext(collection, { vector: new Uint8Array(response.vector) });
       }
 
       const cursor = response.cursor ?? 0;
@@ -638,7 +596,7 @@ export function convexCollectionOptions(
       sync: (params: any) => {
         const { markReady, collection: collectionInstance } = params;
 
-        updateContext(collection, { collectionRef: collectionInstance });
+        updateContext(collection, { ref: collectionInstance });
 
         const ctx = getContext(collection);
         if (ctx.cleanup) {
@@ -668,6 +626,14 @@ export function convexCollectionOptions(
             const docCount = subdocManager.documents().length;
             logger.info("Persistence ready", { collection, subdocCount: docCount });
 
+            const peerId = await Effect.runPromise(
+              Effect.gen(function* () {
+                const cursorSvc = yield* Cursor;
+                return yield* cursorSvc.loadPeerId(collection);
+              }).pipe(Effect.provide(cursorLayer)),
+            );
+            updateContext(collection, { peer: peerId });
+
             ops = createReplicateOps<DataType>(params);
             resolveOptimisticReady?.();
 
@@ -691,15 +657,6 @@ export function convexCollectionOptions(
               ops.replace([]);
               logger.info("No data, cleared TanStack DB", { collection });
             }
-
-            const peerId = await Effect.runPromise(
-              Effect.gen(function* () {
-                const cursorSvc = yield* Cursor;
-                return yield* cursorSvc.loadPeerId(collection);
-              }).pipe(Effect.provide(cursorLayer)),
-            );
-
-            updateContext(collection, { peerId });
 
             markReady();
             logger.info("Collection ready", { collection, subdocCount: docIds.length });
@@ -911,15 +868,6 @@ export function convexCollectionOptions(
           cleanup: () => {
             subscription?.();
             prose.cleanup(collection);
-
-            const ctx = hasContext(collection) ? getContext(collection) : null;
-            if (ctx) {
-              for (const [, um] of ctx.fragmentUndoManagers) {
-                um.destroy();
-              }
-              ctx.fragmentUndoManagers.clear();
-            }
-
             deleteContext(collection);
             docPersistence?.destroy();
             subdocManager?.destroy();

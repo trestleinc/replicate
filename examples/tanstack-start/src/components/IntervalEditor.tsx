@@ -1,10 +1,11 @@
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Effect, Fiber } from "effect";
-import { useEffect, useState, useRef } from "react";
-import type { ClientCursor, EditorBinding } from "@trestleinc/replicate/client";
+import { useEffect, useState, useRef, useMemo } from "react";
+import type { EditorBinding } from "@trestleinc/replicate/client";
 
 import {
   Status,
@@ -25,6 +26,30 @@ import {
   DropdownMenuRadioItem,
 } from "./ui/dropdown-menu";
 
+const DEFAULT_COLORS = [
+  "#F87171",
+  "#FB923C",
+  "#FBBF24",
+  "#A3E635",
+  "#34D399",
+  "#22D3EE",
+  "#60A5FA",
+  "#A78BFA",
+  "#F472B6",
+];
+
+function getRandomColor(): string {
+  return DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)];
+}
+
+function getRandomName(): string {
+  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
+  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  return `${adj} ${noun}`;
+}
+
 interface IntervalEditorProps {
   intervalId: string;
   collection: {
@@ -40,7 +65,6 @@ interface IntervalEditorProps {
 export function IntervalEditor({ intervalId, collection, interval, onPropertyUpdate }: IntervalEditorProps) {
   const [binding, setBinding] = useState<EditorBinding | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [remoteCursors, setRemoteCursors] = useState<Map<string, ClientCursor>>(new Map());
 
   // Get editor binding using Effect-TS for proper cancellation
   useEffect(() => {
@@ -74,21 +98,6 @@ export function IntervalEditor({ intervalId, collection, interval, onPropertyUpd
     };
   }, [collection, intervalId]);
 
-  useEffect(() => {
-    if (!binding?.cursor) return;
-
-    const handleChange = () => {
-      setRemoteCursors(new Map(binding.cursor.others()));
-    };
-
-    binding.cursor.on("change", handleChange);
-    handleChange();
-
-    return () => {
-      binding.cursor.off("change", handleChange);
-    };
-  }, [binding]);
-
   if (error) {
     return (
       <div className="editor-loading" aria-live="polite">
@@ -117,7 +126,6 @@ export function IntervalEditor({ intervalId, collection, interval, onPropertyUpd
       collection={collection}
       intervalId={intervalId}
       onPropertyUpdate={onPropertyUpdate}
-      remoteCursors={remoteCursors}
     />
   );
 }
@@ -130,7 +138,6 @@ interface IntervalEditorViewProps {
   };
   intervalId: string;
   onPropertyUpdate?: (updates: Partial<Pick<Interval, "status" | "priority">>) => void;
-  remoteCursors: Map<string, ClientCursor>;
 }
 
 function IntervalEditorView({
@@ -139,11 +146,16 @@ function IntervalEditorView({
   collection,
   intervalId,
   onPropertyUpdate,
-  remoteCursors,
 }: IntervalEditorViewProps) {
   const [title, setTitle] = useState(interval.title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Stable user identity for collaboration cursors
+  const user = useMemo(() => ({
+    name: getRandomName(),
+    color: getRandomColor(),
+  }), []);
 
   const editor = useEditor(
     {
@@ -153,6 +165,10 @@ function IntervalEditorView({
         }),
         Collaboration.configure({
           fragment: binding.fragment,
+        }),
+        CollaborationCaret.configure({
+          provider: binding.provider,
+          user,
         }),
         Placeholder.configure({
           placeholder: "Write your essay here...",
@@ -164,7 +180,7 @@ function IntervalEditorView({
         },
       },
     },
-    [binding.fragment],
+    [binding.fragment, binding.provider],
   );
 
   useEffect(() => {
@@ -273,66 +289,9 @@ function IntervalEditorView({
         </div>
       )}
 
-      {remoteCursors.size > 0 && (
-        <div className="flex items-center gap-2 mb-4">
-          {Array.from(remoteCursors.values()).map((cursor) => (
-            <CursorIndicator key={cursor.client} cursor={cursor} />
-          ))}
-        </div>
-      )}
-
       <div className="min-h-[200px]">
         <EditorContent editor={editor} />
       </div>
-    </div>
-  );
-}
-
-const DEFAULT_COLORS = [
-  "#F87171",
-  "#FB923C",
-  "#FBBF24",
-  "#A3E635",
-  "#34D399",
-  "#22D3EE",
-  "#60A5FA",
-  "#A78BFA",
-  "#F472B6",
-];
-
-function getColorForClient(clientId: string): string {
-  let hash = 0;
-  for (let i = 0; i < clientId.length; i++) {
-    hash = ((hash << 5) - hash) + clientId.charCodeAt(i);
-    hash |= 0;
-  }
-  return DEFAULT_COLORS[Math.abs(hash) % DEFAULT_COLORS.length];
-}
-
-interface CursorIndicatorProps {
-  cursor: ClientCursor;
-}
-
-function CursorIndicator({ cursor }: CursorIndicatorProps) {
-  const color = cursor.profile?.color || getColorForClient(cursor.client);
-  const name = cursor.profile?.name || cursor.user || "Anonymous";
-  const initial = name.charAt(0).toUpperCase();
-
-  return (
-    <div
-      className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium"
-      style={{ backgroundColor: `${color}20`, color }}
-      title={name}
-    >
-      <div
-        className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
-        style={{ backgroundColor: color }}
-      >
-        {cursor.profile?.avatar
-          ? <img src={cursor.profile.avatar} alt={name} className="w-5 h-5 rounded-full object-cover" />
-          : initial}
-      </div>
-      <span className="max-w-[80px] truncate">{name}</span>
     </div>
   );
 }

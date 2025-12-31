@@ -19,6 +19,26 @@
   let error = $state<string | null>(null);
   let isLoading = $state(true);
 
+  // Warm hex collaboration colors matching the design system
+  const DEFAULT_COLORS = [
+    "#9F5944",   // Rust
+    "#A9704D",   // Terracotta
+    "#B08650",   // Amber
+    "#8A7D3F",   // Gold
+    "#6E7644",   // Olive
+    "#8C4A42",   // Sienna
+    "#9E7656",   // Copper
+    "#9A5240",   // Brick
+    "#987C4A",   // Bronze
+  ];
+  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
+  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
+
+  const localUser = {
+    name: `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`,
+    color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
+  };
+
   // Initialize editor when binding is ready (browser only)
   $effect(() => {
     if (browser && binding && editorElement && !editor) {
@@ -26,12 +46,14 @@
         import("@tiptap/core"),
         import("@tiptap/starter-kit"),
         import("@tiptap/extension-collaboration"),
+        import("@tiptap/extension-collaboration-caret"),
         import("@tiptap/extension-placeholder"),
       ]).then(
         ([
           { Editor },
           { default: StarterKit },
           { default: Collaboration },
+          { default: CollaborationCaret },
           { default: Placeholder },
         ]) => {
           if (!editorElement || !binding) return;
@@ -39,11 +61,13 @@
           editor = new Editor({
             element: editorElement,
             extensions: [
-              StarterKit.configure({
-                // Disable history - Yjs handles undo/redo
-              }),
+              StarterKit.configure({ undoRedo: false }),
               Collaboration.configure({
                 fragment: binding.fragment,
+              }),
+              CollaborationCaret.configure({
+                provider: binding.provider,
+                user: localUser,
               }),
               Placeholder.configure({
                 placeholder: "Write a comment...",

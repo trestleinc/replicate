@@ -53,7 +53,7 @@ const config = defineConfig({
     }),
   ],
   resolve: {
-    dedupe: ["yjs"],
+    dedupe: ["yjs", "lib0", "y-protocols"],
   },
 });
 
