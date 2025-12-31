@@ -49,7 +49,9 @@ export class Replicate<T extends object> {
         ),
         cursor: v.number(),
         more: v.boolean(),
-        compact: v.optional(v.string()),
+        compact: v.optional(v.object({
+          documents: v.array(v.string()),
+        })),
       }),
       handler: async (ctx, args) => {
         if (opts?.evalRead) {

@@ -57,11 +57,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         null,
         Name
       >;
-      getInitialState: FunctionReference<
+      getDocumentState: FunctionReference<
         "query",
         "internal",
-        { collection: string },
-        { bytes: ArrayBuffer; cursor: number } | null,
+        { collection: string; document: string },
+        { bytes: ArrayBuffer; seq: number } | null,
         Name
       >;
       insertDocument: FunctionReference<
@@ -98,8 +98,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       recovery: FunctionReference<
         "query",
         "internal",
-        { collection: string; vector: ArrayBuffer },
-        { cursor: number; diff?: ArrayBuffer; vector: ArrayBuffer },
+        { collection: string; document: string; vector: ArrayBuffer },
+        { diff?: ArrayBuffer; vector: ArrayBuffer },
         Name
       >;
       sessions: FunctionReference<
@@ -138,7 +138,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             seq: number;
             type: string;
           }>;
-          compact?: string;
+          compact?: { documents: Array<string> };
           cursor: number;
           more: boolean;
         },
