@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0-preview.0] - 2025-12-31
+
+### Added
+
+- **Presence via Yjs Awareness** - Real-time presence tracking using the standard Yjs Awareness protocol
+- **Session tracking** - Per-document session management with `sessions` query
+- **Cursor tracking** - Collaborative cursor positions with `cursors` query  
+- **`leave` mutation** - Explicit disconnect for clean session cleanup
+- **Heartbeat cleanup** - Automatic removal of stale presence data
+- **`pagehide` handler** - Reliable cleanup on tab close/navigation
+
+### Changed
+
+- **Migration V2 architecture** - Consolidated module-level state into `CollectionContext`
+- **Per-document recovery** - Refactored SSR and recovery to per-document architecture
+- **Normalized schema** - Aligned naming conventions and Effect.ts service patterns
+- **Optimized SvelteKit example** - Added TanStack Table with virtual scrolling
+
+### Fixed
+
+- **Persistence race condition** - Documents no longer show as "Untitled" during init
+- **Stream response types** - Aligned `replicate.ts` types with component
+- **Sync coordination** - Proper presence cleanup on page unload
+
 ## [1.1.2] - 2025-12-28
 
 ### Added
