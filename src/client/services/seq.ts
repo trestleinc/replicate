@@ -2,44 +2,22 @@ import { Effect, Context, Layer } from "effect";
 import { IDBError, IDBWriteError } from "$/client/errors";
 import type { KeyValueStore } from "$/client/persistence/types";
 
-/** Sync sequence number for cursor-based replication */
 export type Seq = number;
 
-export class Cursor extends Context.Tag("Cursor")<
-  Cursor,
+export class SeqService extends Context.Tag("SeqService")<
+  SeqService,
   {
-    readonly loadSeq: (collection: string) => Effect.Effect<Seq, IDBError>;
-    readonly saveSeq: (collection: string, seq: Seq) => Effect.Effect<void, IDBWriteError>;
-    readonly clearSeq: (collection: string) => Effect.Effect<void, IDBError>;
+    readonly load: (collection: string) => Effect.Effect<Seq, IDBError>;
+    readonly save: (collection: string, seq: Seq) => Effect.Effect<void, IDBWriteError>;
+    readonly clear: (collection: string) => Effect.Effect<void, IDBError>;
   }
 >() {}
 
-function generateClientId(): number {
-  return Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-}
-
-export function getClientId(collection: string): string {
-  const key = `replicate:clientId:${collection}`;
-
-  if (typeof localStorage === "undefined") {
-    return String(generateClientId());
-  }
-
-  const stored = localStorage.getItem(key);
-  if (stored) {
-    return stored;
-  }
-
-  const clientId = String(generateClientId());
-  localStorage.setItem(key, clientId);
-  return clientId;
-}
-
-export function createCursorLayer(kv: KeyValueStore) {
+export function createSeqLayer(kv: KeyValueStore) {
   return Layer.succeed(
-    Cursor,
-    Cursor.of({
-      loadSeq: (collection: string) =>
+    SeqService,
+    SeqService.of({
+      load: (collection: string) =>
         Effect.gen(function* (_) {
           const key = `cursor:${collection}`;
           const stored = yield* _(
@@ -67,7 +45,7 @@ export function createCursorLayer(kv: KeyValueStore) {
           return 0;
         }),
 
-      saveSeq: (collection: string, seq: Seq) =>
+      save: (collection: string, seq: Seq) =>
         Effect.gen(function* (_) {
           const key = `cursor:${collection}`;
           yield* _(
@@ -84,7 +62,7 @@ export function createCursorLayer(kv: KeyValueStore) {
           );
         }),
 
-      clearSeq: (collection: string) =>
+      clear: (collection: string) =>
         Effect.gen(function* (_) {
           const key = `cursor:${collection}`;
           yield* _(

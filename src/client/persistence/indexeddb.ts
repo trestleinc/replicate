@@ -12,15 +12,10 @@ function openDatabase(dbName: string): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(UPDATES_STORE)) {
-        db.createObjectStore(UPDATES_STORE, { autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(SNAPSHOTS_STORE)) {
-        db.createObjectStore(SNAPSHOTS_STORE);
-      }
-      if (!db.objectStoreNames.contains(KV_STORE)) {
-        db.createObjectStore(KV_STORE);
-      }
+      db.createObjectStore(SNAPSHOTS_STORE);
+      db.createObjectStore(KV_STORE);
+      const updatesStore = db.createObjectStore(UPDATES_STORE, { autoIncrement: true });
+      updatesStore.createIndex("by_collection", "collection", { unique: false });
     };
   });
 }
@@ -91,12 +86,13 @@ class IDBPersistenceProvider implements PersistenceProvider {
         }
 
         const updatesStore = tx.objectStore(UPDATES_STORE);
-        const updatesRequest = updatesStore.getAll();
+        const index = updatesStore.index("by_collection");
+        const updatesRequest = index.getAll(this.collection);
 
         updatesRequest.onsuccess = () => {
-          const updates = updatesRequest.result as Uint8Array[];
-          for (const update of updates) {
-            Y.applyUpdate(this.ydoc, update, "idb");
+          const records = updatesRequest.result as { collection: string; data: Uint8Array }[];
+          for (const record of records) {
+            Y.applyUpdate(this.ydoc, record.data, "idb");
           }
           resolve();
         };
@@ -114,7 +110,7 @@ class IDBPersistenceProvider implements PersistenceProvider {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(UPDATES_STORE, "readwrite");
       const store = tx.objectStore(UPDATES_STORE);
-      const request = store.add(update);
+      const request = store.add({ collection: this.collection, data: update });
       request.onerror = () => reject(request.error ?? new Error("IndexedDB save update failed"));
       request.onsuccess = () => resolve();
     });

@@ -25,7 +25,7 @@ export interface SubdocManager {
   delete(document: string): void;
   unload(document: string): void;
   documents(): string[];
-  enablePersistence(factory: SubdocPersistenceFactory): void;
+  enablePersistence(factory: SubdocPersistenceFactory): Promise<void>[];
   destroy(): void;
 }
 
@@ -83,12 +83,8 @@ export function createSubdocManager(collection: string): SubdocManager {
       let subdoc = subdocsMap.get(document);
 
       if (!subdoc) {
-        subdoc = new Y.Doc({ guid });
+        subdoc = new Y.Doc({ guid, autoLoad: true });
         subdocsMap.set(document, subdoc);
-      }
-
-      if (!subdoc.isLoaded) {
-        subdoc.load();
       }
 
       return subdoc;
@@ -183,15 +179,19 @@ export function createSubdocManager(collection: string): SubdocManager {
       return Array.from(subdocsMap.keys());
     },
 
-    enablePersistence(factory: SubdocPersistenceFactory): void {
+    enablePersistence(factory: SubdocPersistenceFactory): Promise<void>[] {
+      const promises: Promise<void>[] = [];
+
       for (const [document, subdoc] of subdocsMap.entries()) {
         if (!subdocPersistence.has(document)) {
           const provider = factory(document, subdoc);
           subdocPersistence.set(document, provider);
+          promises.push(provider.whenSynced);
         }
       }
 
       persistenceFactory = factory;
+      return promises;
     },
 
     destroy(): void {

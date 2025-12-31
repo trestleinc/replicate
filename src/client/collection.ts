@@ -12,7 +12,8 @@ import {
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { Effect } from "effect";
 import { ProseError, NonRetriableError } from "$/client/errors";
-import { Cursor, createCursorLayer, getClientId, type Seq } from "$/client/services/cursor";
+import { SeqService, createSeqLayer, type Seq } from "$/client/services/seq";
+import { getClientId } from "$/client/services/session";
 import { createReplicateOps, type BoundReplicateOps } from "$/client/ops";
 import {
   isDoc,
@@ -346,7 +347,7 @@ export function convexCollectionOptions(
   let ops: BoundReplicateOps<DataType> = null as any;
 
   // Create services layer with the persistence KV store
-  const cursorLayer = createCursorLayer(persistence.kv);
+  const seqLayer = createSeqLayer(persistence.kv);
 
   let resolvePersistenceReady: (() => void) | undefined;
   const persistenceReadyPromise = new Promise<void>((resolve) => {
@@ -593,15 +594,14 @@ export function convexCollectionOptions(
         (async () => {
           try {
             docPersistence = persistence.createDocPersistence(collection, subdocManager.rootDoc);
+            await docPersistence.whenSynced;
 
-            subdocManager.enablePersistence((document, subdoc) => {
+            const subdocPromises = subdocManager.enablePersistence((document, subdoc) => {
               return persistence.createDocPersistence(`${collection}:${document}`, subdoc);
             });
+            await Promise.all(subdocPromises);
 
-            docPersistence.whenSynced.then(() => {
-              resolvePersistenceReady?.();
-            });
-            await persistenceReadyPromise;
+            resolvePersistenceReady?.();
 
             const clientId = getClientId(collection);
             updateContext(collection, { clientId });
@@ -632,9 +632,9 @@ export function convexCollectionOptions(
 
             const persistedCursor = await Effect.runPromise(
               Effect.gen(function* () {
-                const cursorSvc = yield* Cursor;
-                return yield* cursorSvc.loadSeq(collection);
-              }).pipe(Effect.provide(cursorLayer)),
+                const seqSvc = yield* SeqService;
+                return yield* seqSvc.load(collection);
+              }).pipe(Effect.provide(seqLayer)),
             );
             const cursor = ssrCursor ?? persistedCursor;
             const mux = getContext(collection).mutex;

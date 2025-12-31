@@ -80,11 +80,11 @@ export declare const components: {
         { client: string; collection: string; document: string },
         null
       >;
-      getInitialState: FunctionReference<
+      getDocumentState: FunctionReference<
         "query",
         "internal",
-        { collection: string },
-        { bytes: ArrayBuffer; cursor: number } | null
+        { collection: string; document: string },
+        { bytes: ArrayBuffer; seq: number } | null
       >;
       insertDocument: FunctionReference<
         "mutation",
@@ -117,8 +117,8 @@ export declare const components: {
       recovery: FunctionReference<
         "query",
         "internal",
-        { collection: string; vector: ArrayBuffer },
-        { cursor: number; diff?: ArrayBuffer; vector: ArrayBuffer }
+        { collection: string; document: string; vector: ArrayBuffer },
+        { diff?: ArrayBuffer; vector: ArrayBuffer }
       >;
       sessions: FunctionReference<
         "query",
@@ -142,12 +142,7 @@ export declare const components: {
       stream: FunctionReference<
         "query",
         "internal",
-        {
-          collection: string;
-          cursor: number;
-          limit?: number;
-          threshold?: number;
-        },
+        { collection: string; limit?: number; seq: number; threshold?: number },
         {
           changes: Array<{
             bytes: ArrayBuffer;
@@ -155,9 +150,9 @@ export declare const components: {
             seq: number;
             type: string;
           }>;
-          compact?: string;
-          cursor: number;
+          compact?: { documents: Array<string> };
           more: boolean;
+          seq: number;
         }
       >;
       updateDocument: FunctionReference<
