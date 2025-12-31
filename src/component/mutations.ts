@@ -452,109 +452,108 @@ export const stream = query({
   },
 });
 
-export const getInitialState = query({
+export const recovery = query({
   args: {
     collection: v.string(),
+    document: v.string(),
+    vector: v.bytes(),
+  },
+  returns: v.object({
+    diff: v.optional(v.bytes()),
+    vector: v.bytes(),
+  }),
+  handler: async (ctx, args) => {
+    const logger = getLogger(["recovery"]);
+
+    const snapshot = await ctx.db
+      .query("snapshots")
+      .withIndex("by_document", (q: any) =>
+        q.eq("collection", args.collection).eq("document", args.document),
+      )
+      .first();
+
+    const deltas = await ctx.db
+      .query("documents")
+      .withIndex("by_document", (q: any) =>
+        q.eq("collection", args.collection).eq("document", args.document),
+      )
+      .collect();
+
+    if (!snapshot && deltas.length === 0) {
+      const emptyDoc = new Y.Doc();
+      const emptyVector = Y.encodeStateVector(emptyDoc);
+      emptyDoc.destroy();
+      return {
+        vector: emptyVector.buffer as ArrayBuffer,
+      };
+    }
+
+    const updates: Uint8Array[] = [];
+
+    if (snapshot) {
+      updates.push(new Uint8Array(snapshot.bytes));
+    }
+
+    for (const delta of deltas) {
+      updates.push(new Uint8Array(delta.bytes));
+    }
+
+    const merged = Y.mergeUpdatesV2(updates);
+    const clientVector = new Uint8Array(args.vector);
+    const diff = Y.diffUpdateV2(merged, clientVector);
+    const serverVector = Y.encodeStateVectorFromUpdateV2(merged);
+
+    logger.debug("Recovery sync computed", {
+      collection: args.collection,
+      document: args.document,
+      hasSnapshot: !!snapshot,
+      deltaCount: deltas.length,
+      diffSize: diff.byteLength,
+      hasDiff: diff.byteLength > 0,
+    });
+
+    return {
+      diff: diff.byteLength > 0 ? (diff.buffer as ArrayBuffer) : undefined,
+      vector: serverVector.buffer as ArrayBuffer,
+    };
+  },
+});
+
+export const getDocumentState = query({
+  args: {
+    collection: v.string(),
+    document: v.string(),
   },
   returns: v.union(
     v.object({
       bytes: v.bytes(),
-      cursor: v.number(),
+      seq: v.number(),
     }),
     v.null(),
   ),
   handler: async (ctx, args) => {
-    const logger = getLogger(["ssr"]);
-
-    const snapshots = await ctx.db
+    const snapshot = await ctx.db
       .query("snapshots")
-      .withIndex("by_document", (q: any) => q.eq("collection", args.collection))
-      .collect();
+      .withIndex("by_document", (q: any) =>
+        q.eq("collection", args.collection).eq("document", args.document),
+      )
+      .first();
 
     const deltas = await ctx.db
       .query("documents")
-      .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
+      .withIndex("by_document", (q: any) =>
+        q.eq("collection", args.collection).eq("document", args.document),
+      )
       .collect();
 
-    if (snapshots.length === 0 && deltas.length === 0) {
-      logger.info("No initial state available - collection is empty", {
-        collection: args.collection,
-      });
+    if (!snapshot && deltas.length === 0) {
       return null;
     }
 
     const updates: Uint8Array[] = [];
     let latestSeq = 0;
 
-    for (const snapshot of snapshots) {
-      updates.push(new Uint8Array(snapshot.bytes));
-      latestSeq = Math.max(latestSeq, snapshot.seq);
-    }
-
-    const sorted = deltas.sort((a: any, b: any) => a.seq - b.seq);
-    for (const delta of sorted) {
-      updates.push(new Uint8Array(delta.bytes));
-      latestSeq = Math.max(latestSeq, delta.seq);
-    }
-
-    logger.info("Reconstructing initial state", {
-      collection: args.collection,
-      snapshotCount: snapshots.length,
-      deltaCount: deltas.length,
-    });
-
-    const merged = Y.mergeUpdatesV2(updates);
-
-    logger.info("Initial state reconstructed", {
-      collection: args.collection,
-      originalSize: updates.reduce((sum, u) => sum + u.byteLength, 0),
-      mergedSize: merged.byteLength,
-    });
-
-    return {
-      bytes: merged.buffer as ArrayBuffer,
-      cursor: latestSeq,
-    };
-  },
-});
-
-export const recovery = query({
-  args: {
-    collection: v.string(),
-    vector: v.bytes(),
-  },
-  returns: v.object({
-    diff: v.optional(v.bytes()),
-    vector: v.bytes(),
-    cursor: v.number(),
-  }),
-  handler: async (ctx, args) => {
-    const logger = getLogger(["recovery"]);
-
-    const snapshots = await ctx.db
-      .query("snapshots")
-      .withIndex("by_document", (q: any) => q.eq("collection", args.collection))
-      .collect();
-
-    const deltas = await ctx.db
-      .query("documents")
-      .withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
-      .collect();
-
-    if (snapshots.length === 0 && deltas.length === 0) {
-      const emptyDoc = new Y.Doc();
-      const emptyVector = Y.encodeStateVector(emptyDoc);
-      emptyDoc.destroy();
-      return {
-        vector: emptyVector.buffer as ArrayBuffer,
-        cursor: 0,
-      };
-    }
-
-    const updates: Uint8Array[] = [];
-    let latestSeq = 0;
-
-    for (const snapshot of snapshots) {
+    if (snapshot) {
       updates.push(new Uint8Array(snapshot.bytes));
       latestSeq = Math.max(latestSeq, snapshot.seq);
     }
@@ -565,22 +564,10 @@ export const recovery = query({
     }
 
     const merged = Y.mergeUpdatesV2(updates);
-    const clientVector = new Uint8Array(args.vector);
-    const diff = Y.diffUpdateV2(merged, clientVector);
-    const serverVector = Y.encodeStateVectorFromUpdateV2(merged);
-
-    logger.info("Recovery sync computed", {
-      collection: args.collection,
-      snapshotCount: snapshots.length,
-      deltaCount: deltas.length,
-      diffSize: diff.byteLength,
-      hasDiff: diff.byteLength > 0,
-    });
 
     return {
-      diff: diff.byteLength > 0 ? (diff.buffer as ArrayBuffer) : undefined,
-      vector: serverVector.buffer as ArrayBuffer,
-      cursor: latestSeq,
+      bytes: merged.buffer as ArrayBuffer,
+      seq: latestSeq,
     };
   },
 });

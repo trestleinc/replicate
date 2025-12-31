@@ -83,9 +83,12 @@ export class Replicate<T extends object> {
       args: {},
       returns: v.object({
         documents: v.any(),
-        cursor: v.optional(v.number()),
         count: v.number(),
-        bytes: v.optional(v.bytes()),
+        crdt: v.optional(v.record(v.string(), v.object({
+          bytes: v.bytes(),
+          seq: v.number(),
+        }))),
+        cursor: v.optional(v.number()),
       }),
       handler: async (ctx) => {
         if (opts?.evalRead) {
@@ -98,24 +101,35 @@ export class Replicate<T extends object> {
 
         const response: {
           documents: T[];
-          cursor?: number;
           count: number;
-          bytes?: ArrayBuffer;
+          crdt?: Record<string, { bytes: ArrayBuffer; seq: number }>;
+          cursor?: number;
         } = {
           documents: docs,
           count: docs.length,
         };
 
-        if (opts?.includeCRDTState) {
-          const state = await ctx.runQuery(component.mutations.getInitialState, {
-            collection,
-          });
+        if (opts?.includeCRDTState && docs.length > 0) {
+          const crdt: Record<string, { bytes: ArrayBuffer; seq: number }> = {};
+          let maxSeq = 0;
 
-          if (state) {
-            response.bytes = state.bytes;
-            response.cursor = state.cursor;
+          for (const doc of docs) {
+            const docId = (doc as { id: string }).id;
+            const state = await ctx.runQuery(component.mutations.getDocumentState, {
+              collection,
+              document: docId,
+            });
+
+            if (state) {
+              crdt[docId] = { bytes: state.bytes, seq: state.seq };
+              maxSeq = Math.max(maxSeq, state.seq);
+            }
           }
+
+          response.crdt = crdt;
+          response.cursor = maxSeq;
         }
+
         return response;
       },
     });
@@ -456,27 +470,28 @@ export class Replicate<T extends object> {
   }
 
   createRecoveryQuery(opts?: {
-    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+    evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string, document: string) => void | Promise<void>;
   }) {
     const component = this.component;
     const collection = this.collectionName;
 
     return queryGeneric({
       args: {
+        document: v.string(),
         vector: v.bytes(),
       },
       returns: v.object({
         diff: v.optional(v.bytes()),
         vector: v.bytes(),
-        cursor: v.number(),
       }),
       handler: async (ctx, args) => {
         if (opts?.evalRead) {
-          await opts.evalRead(ctx, collection);
+          await opts.evalRead(ctx, collection, args.document);
         }
 
         return await ctx.runQuery(component.mutations.recovery, {
           collection,
+          document: args.document,
           vector: args.vector,
         });
       },

@@ -101,7 +101,7 @@ export interface Materialized<T> {
   documents: readonly T[];
   cursor?: Seq;
   count?: number;
-  bytes?: ArrayBuffer;
+  crdt?: Record<string, { bytes: ArrayBuffer; seq: number }>;
 }
 
 /** API object from replicate() */
@@ -367,36 +367,55 @@ export function convexCollectionOptions(
     resolveOptimisticReady = resolve;
   });
 
-  const recover = async (): Promise<Seq> => {
+  const recover = async (): Promise<void> => {
     if (!api.recovery) {
       logger.debug("No recovery API configured", { collection });
-      return 0;
+      return;
     }
 
-    try {
-      const localStateVector = Y.encodeStateVector(subdocManager.rootDoc);
-      logger.debug("Starting recovery", {
-        collection,
-        localVectorSize: localStateVector.byteLength,
-      });
+    const documents = subdocManager.documents();
+    if (documents.length === 0) {
+      logger.debug("No documents to recover", { collection });
+      return;
+    }
 
-      const response = await convexClient.query(api.recovery, {
-        vector: localStateVector.buffer as ArrayBuffer,
-      });
+    logger.debug("Starting per-document recovery", {
+      collection,
+      documentCount: documents.length,
+    });
 
-      if (response.vector) {
-        updateContext(collection, { vector: new Uint8Array(response.vector) });
+    for (const document of documents) {
+      try {
+        const localVector = subdocManager.encodeStateVector(document);
+
+        const response = await convexClient.query(api.recovery, {
+          document,
+          vector: localVector.buffer as ArrayBuffer,
+        });
+
+        if (response.diff) {
+          const diff = new Uint8Array(response.diff);
+          subdocManager.applyUpdate(document, diff, YjsOrigin.Server);
+          logger.debug("Applied recovery diff", {
+            collection,
+            document,
+            diffSize: diff.byteLength,
+          });
+        }
       }
+      catch (error) {
+        logger.warn("Recovery failed for document", {
+          collection,
+          document,
+          error: String(error),
+        });
+      }
+    }
 
-      const cursor = response.cursor ?? 0;
-      await persistence.kv.set(`cursor:${collection}`, cursor);
-      logger.info("Recovery complete", { collection, cursor });
-      return cursor;
-    }
-    catch (error) {
-      logger.error("Recovery failed", { collection, error: String(error) });
-      return 0;
-    }
+    logger.info("Per-document recovery complete", {
+      collection,
+      documentCount: documents.length,
+    });
   };
 
   const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
@@ -606,8 +625,8 @@ export function convexCollectionOptions(
 
         let subscription: (() => void) | null = null;
         const ssrDocuments = material?.documents;
-        const ssrCursor = material?.cursor;
-        const ssrBytes = material?.bytes;
+        const ssrCrdt = material?.crdt as Record<string, { bytes: ArrayBuffer; seq: number }> | undefined;
+        const ssrCursor = material?.cursor as number | undefined;
         const docs: DataType[] = ssrDocuments ? [...ssrDocuments] : [];
 
         (async () => {
@@ -637,12 +656,18 @@ export function convexCollectionOptions(
             ops = createReplicateOps<DataType>(params);
             resolveOptimisticReady?.();
 
-            if (ssrBytes) {
-              const update = new Uint8Array(ssrBytes);
-              Y.applyUpdateV2(subdocManager.rootDoc, update, YjsOrigin.Server);
+            if (ssrCrdt) {
+              for (const [docId, state] of Object.entries(ssrCrdt)) {
+                const update = new Uint8Array(state.bytes);
+                subdocManager.applyUpdate(docId, update, YjsOrigin.Server);
+              }
+              logger.info("Applied SSR CRDT state", {
+                collection,
+                documentCount: Object.keys(ssrCrdt).length,
+              });
             }
 
-            const recoveryCursor = await recover();
+            await recover();
 
             const docIds = subdocManager.documents();
             if (docIds.length > 0) {
@@ -661,13 +686,19 @@ export function convexCollectionOptions(
             markReady();
             logger.info("Collection ready", { collection, subdocCount: docIds.length });
 
-            const cursor = ssrCursor ?? (docIds.length > 0 ? recoveryCursor : 0);
+            const persistedCursor = await Effect.runPromise(
+              Effect.gen(function* () {
+                const cursorSvc = yield* Cursor;
+                return yield* cursorSvc.loadSeq(collection);
+              }).pipe(Effect.provide(cursorLayer)),
+            );
+            const cursor = ssrCursor ?? persistedCursor;
 
             logger.info("Starting subscription", {
               collection,
               cursor,
               peerId,
-              source: ssrCursor !== undefined ? "SSR" : docIds.length > 0 ? "recovery" : "fresh",
+              source: ssrCursor !== undefined ? "SSR" : persistedCursor > 0 ? "persisted" : "fresh",
             });
 
             const mux = getContext(collection).mutex;
