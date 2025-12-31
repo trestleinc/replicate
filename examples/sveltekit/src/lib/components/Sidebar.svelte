@@ -4,11 +4,11 @@
   import { Plus, Search, SlidersHorizontal } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
-  import { ScrollArea } from "$lib/components/ui/scroll-area";
   import StatusIcon from "./StatusIcon.svelte";
   import StarIcon from "./StarIcon.svelte";
   import { intervals as intervalsCollection } from "$collections/useIntervals";
   import { prose } from "@trestleinc/replicate/client";
+  import { createVirtualizer } from "$lib/components/ui/data-table";
   import type { Interval } from "$lib/types";
 
   interface Props {
@@ -33,6 +33,30 @@
   );
 
   const activeId = $derived(page.params.id);
+
+  const ROW_HEIGHT = 36;
+  const OVERSCAN = 10;
+
+  let containerRef: HTMLDivElement | undefined = $state();
+
+  // Create virtualizer once (stable instance) - don't use $derived
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: 0,
+    getScrollElement: () => null,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+  });
+
+  // Update options reactively when intervals or container change
+  $effect(() => {
+    $virtualizer.setOptions({
+      count: sortedIntervals.length,
+      getScrollElement: () => containerRef ?? null,
+    });
+  });
+
+  const virtualRows = $derived($virtualizer.getVirtualItems());
+  const totalSize = $derived($virtualizer.getTotalSize());
 
   function createInterval() {
     const id = crypto.randomUUID();
@@ -75,7 +99,6 @@
 <aside
   class="hidden md:flex w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] h-dvh flex-col bg-sidebar overflow-hidden"
 >
-  <!-- Header -->
   <div class="flex items-center justify-between px-3 py-3 border-b border-sidebar-border">
     <a
       href="/intervals"
@@ -100,7 +123,6 @@
     </div>
   </div>
 
-  <!-- New Interval Button -->
   <div class="p-2">
     <Button variant="outline" class="w-full justify-start gap-2" onclick={createInterval}>
       <Plus class="w-4 h-4" />
@@ -108,27 +130,27 @@
     </Button>
   </div>
 
-  <!-- Intervals List -->
-  <ScrollArea class="flex-1">
-    <nav class="p-1">
-      {#if intervalsQuery.isLoading}
-        <div class="space-y-2 p-2">
-          <div class="h-8 w-full bg-muted animate-pulse rounded"></div>
-          <div class="h-8 w-3/4 bg-muted animate-pulse rounded"></div>
-          <div class="h-8 w-4/5 bg-muted animate-pulse rounded"></div>
-        </div>
-      {:else if sortedIntervals.length === 0}
-        <div
-          class="flex flex-col items-center justify-center py-8 px-3 text-muted-foreground text-center text-sm"
-        >
-          <StatusIcon status="backlog" size={24} class="mb-2 opacity-30" />
-          <p class="m-0">No intervals yet</p>
-          <p class="m-0 text-xs opacity-60">Create your first interval</p>
-        </div>
-      {:else}
-        <ul class="list-none m-0 p-0 flex flex-col">
-          {#each sortedIntervals as interval (interval.id)}
-            <li>
+  <div bind:this={containerRef} class="flex-1 overflow-auto">
+    {#if intervalsQuery.isLoading}
+      <div class="space-y-2 p-2">
+        <div class="h-8 w-full bg-muted animate-pulse rounded"></div>
+        <div class="h-8 w-3/4 bg-muted animate-pulse rounded"></div>
+        <div class="h-8 w-4/5 bg-muted animate-pulse rounded"></div>
+      </div>
+    {:else if sortedIntervals.length === 0}
+      <div class="flex flex-col items-center justify-center py-8 px-3 text-muted-foreground text-center text-sm">
+        <StatusIcon status="backlog" size={24} class="mb-2 opacity-30" />
+        <p class="m-0">No intervals yet</p>
+        <p class="m-0 text-xs opacity-60">Create your first interval</p>
+      </div>
+    {:else}
+      <nav class="p-1">
+        <ul class="list-none m-0 p-0" style="height: {totalSize}px; position: relative;">
+          {#each virtualRows as virtualRow (virtualRow.key)}
+            {@const interval = sortedIntervals[virtualRow.index]}
+            <li
+              style="position: absolute; top: 0; left: 0; width: 100%; height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
+            >
               {#if editingId === interval.id}
                 <div class="flex items-center gap-2 px-3 py-2 bg-muted">
                   <StatusIcon status={interval.status} size={14} class="shrink-0" />
@@ -143,10 +165,9 @@
               {:else}
                 <a
                   href="/intervals/{interval.id}"
-                  class="group flex items-center gap-2 px-3 py-2 text-sm no-underline transition-colors {activeId
-                    === interval.id
-                    ? "bg-muted text-foreground border-l-2 border-sidebar-accent"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground border-l-2 border-transparent"}"
+                  class="group flex items-center gap-2 px-3 py-2 text-sm no-underline transition-colors {activeId === interval.id
+                    ? 'bg-muted text-foreground border-l-2 border-sidebar-accent'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground border-l-2 border-transparent'}"
                 >
                   <StatusIcon status={interval.status} size={14} class="shrink-0" />
                   <button
@@ -161,7 +182,7 @@
             </li>
           {/each}
         </ul>
-      {/if}
-    </nav>
-  </ScrollArea>
+      </nav>
+    {/if}
+  </div>
 </aside>

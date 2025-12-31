@@ -48,6 +48,8 @@
 		"@fontsource-variable/nunito-sans": "^5.2.7",
 		"@tanstack/db": "^0.5.15",
 		"@tanstack/svelte-db": "^0.1.58",
+		"@tanstack/svelte-virtual": "^3.13.14",
+		"@tanstack/table-core": "^8.21.3",
 		"@tiptap/core": "^3.14.0",
 		"@tiptap/extension-collaboration": "^3.14.0",
 		"@tiptap/extension-collaboration-caret": "^3.14.0",
@@ -64,6 +66,8 @@
 	},
 	"overrides": {
 		"yjs": "^13.6.28",
-		"lib0": "^0.2.114"
+		"lib0": "^0.2.114",
+		"@tanstack/db": "^0.5.15",
+		"@tanstack/svelte-db": "^0.1.58"
 	}
 }
