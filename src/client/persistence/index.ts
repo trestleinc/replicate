@@ -5,6 +5,7 @@ import { createBrowserSqlitePersistence } from "./sqlite/browser.js";
 import { createNativeSqlitePersistence } from "./sqlite/native.js";
 import { createIndexedDBPersistence } from "./indexeddb.js";
 import { createCustomPersistence } from "./custom.js";
+import { createPGlitePersistence } from "./pglite.js";
 
 export const persistence = {
   memory: memoryPersistence,
@@ -12,6 +13,7 @@ export const persistence = {
     browser: createBrowserSqlitePersistence,
     native: createNativeSqlitePersistence,
   },
+  pglite: createPGlitePersistence,
   indexeddb: createIndexedDBPersistence,
   custom: createCustomPersistence,
 } as const;
