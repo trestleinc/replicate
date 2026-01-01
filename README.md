@@ -13,7 +13,7 @@ Replicate provides a dual-storage architecture for building offline-capable appl
 sequenceDiagram
     participant UI as React Component
     participant Collection as TanStack DB Collection
-    participant Actor as Document Actor
+    participant Sync as Document Actor
     participant Yjs as Yjs CRDT
     participant Storage as Local Storage<br/>(PGlite/SQLite)
     participant Convex as Convex Backend
@@ -25,11 +25,11 @@ sequenceDiagram
     Yjs->>Storage: Persist locally
     Collection-->>UI: Re-render (optimistic)
 
-    Note over Collection,Actor: Effect.ts Actor Model
-    Collection->>Actor: Queue.offer(LocalChange)
-    Actor->>Actor: Debounce (200ms default)
-    Actor->>Actor: Queue.takeAll (batch changes)
-    Actor->>Convex: Send CRDT delta
+    Note over Collection,Sync: Effect.ts Actor Model
+    Collection->>Sync: Queue.offer(LocalChange)
+    Sync->>Sync: Debounce (200ms default)
+    Sync->>Sync: Queue.takeAll (batch changes)
+    Sync->>Convex: Send CRDT delta
 
     Note over Convex,Table: Server processing
     Convex->>Convex: Append to event log
@@ -37,8 +37,8 @@ sequenceDiagram
 
     Note over Convex,UI: Real-time updates
     Table-->>Collection: stream subscription
-    Collection->>Actor: Queue.offer(ExternalUpdate)
-    Actor->>Actor: Update state vector
+    Collection->>Sync: Queue.offer(ExternalUpdate)
+    Sync->>Sync: Update state vector
     Collection-->>UI: Re-render with server state
 ```
 
