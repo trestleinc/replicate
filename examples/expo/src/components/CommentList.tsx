@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { useLiveQuery } from "@tanstack/react-db";
-import { prose } from "@trestleinc/replicate/client";
 import { comments as commentsLazy } from "@/collections/useComments";
 import { generateId } from "@/lib/utils";
-import type { Comment } from "@/types/interval";
 
 interface CommentListProps {
   intervalId: string;
@@ -27,13 +25,10 @@ export function CommentList({ intervalId }: CommentListProps) {
     commentsCollection.insert({
       id,
       intervalId,
-      body: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-      },
+      body: text,
       createdAt: now,
       updatedAt: now,
-    } as Comment);
+    });
   };
 
   return (
@@ -58,7 +53,7 @@ export function CommentList({ intervalId }: CommentListProps) {
 }
 
 interface CommentItemProps {
-  comment: Comment;
+  comment: { id: string; body: string; createdAt: number };
 }
 
 function CommentItem({ comment }: CommentItemProps) {
@@ -67,11 +62,9 @@ function CommentItem({ comment }: CommentItemProps) {
     day: "numeric",
   });
 
-  const bodyText = prose.extract(comment.body);
-
   return (
     <View style={styles.commentRow}>
-      <Text style={styles.commentText}>{bodyText}</Text>
+      <Text style={styles.commentText}>{comment.body}</Text>
       <Text style={styles.commentDate}>{date}</Text>
     </View>
   );

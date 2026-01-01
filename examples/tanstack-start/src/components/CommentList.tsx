@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { comments as commentsLazy } from "../collections/useComments";
 import { CommentEditor, NewCommentInput } from "./CommentEditor";
-import type { Comment } from "../types/interval";
 
 interface CommentListProps {
   intervalId: string;
@@ -25,13 +24,17 @@ export function CommentList({ intervalId }: CommentListProps) {
     commentsCollection.insert({
       id,
       intervalId,
-      body: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-      },
+      body: text,
       createdAt: now,
       updatedAt: now,
-    } as Comment);
+    });
+  };
+
+  const handleUpdateComment = (id: string, body: string) => {
+    commentsCollection.update(id, (draft) => {
+      draft.body = body;
+      draft.updatedAt = Date.now();
+    });
   };
 
   return (
@@ -49,7 +52,7 @@ export function CommentList({ intervalId }: CommentListProps) {
           : (
               <div>
                 {filteredComments.map(comment => (
-                  <CommentItem key={comment.id} comment={comment} collection={commentsCollection} />
+                  <CommentItem key={comment.id} comment={comment} onUpdate={handleUpdateComment} />
                 ))}
               </div>
             )}
@@ -60,11 +63,11 @@ export function CommentList({ intervalId }: CommentListProps) {
 }
 
 interface CommentItemProps {
-  comment: Comment;
-  collection: ReturnType<typeof commentsLazy.get>;
+  comment: { id: string; body: string; createdAt: number };
+  onUpdate: (id: string, body: string) => void;
 }
 
-function CommentItem({ comment, collection }: CommentItemProps) {
+function CommentItem({ comment, onUpdate }: CommentItemProps) {
   const date = new Date(comment.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -73,7 +76,7 @@ function CommentItem({ comment, collection }: CommentItemProps) {
   return (
     <div className="flex items-start gap-2 pl-3 border-l-2 border-primary/20 mb-2">
       <div className="flex-1 min-w-0">
-        <CommentEditor commentId={comment.id} collection={collection} />
+        <CommentEditor commentId={comment.id} body={comment.body} onUpdate={onUpdate} />
       </div>
       <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{date}</span>
     </div>

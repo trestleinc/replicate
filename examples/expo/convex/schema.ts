@@ -26,7 +26,7 @@ export default defineSchema({
     {
       id: v.string(),
       intervalId: v.string(),
-      body: schema.prose(),
+      body: v.string(),
       createdAt: v.number(),
       updatedAt: v.number(),
     },

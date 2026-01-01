@@ -2,9 +2,8 @@
   import { useLiveQuery } from "@tanstack/svelte-db";
   import { comments as commentsLazy } from "$collections/useComments";
   import CommentEditor from "./CommentEditor.svelte";
-  import { Textarea } from "$lib/components/ui/textarea";
+  import { Input } from "$lib/components/ui/input";
   import { Button } from "$lib/components/ui/button";
-  import type { Comment } from "$lib/types";
 
   interface Props {
     intervalId: string;
@@ -32,13 +31,10 @@
     commentsCollection.insert({
       id,
       intervalId,
-      body: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text: newCommentText.trim() }] }],
-      },
+      body: newCommentText.trim(),
       createdAt: now,
       updatedAt: now,
-    } as Comment);
+    });
 
     newCommentText = "";
   }
@@ -66,7 +62,7 @@
       {#each filteredComments as comment (comment.id)}
         <div class="flex items-start gap-2 pl-3 border-l-2 border-primary/20 mb-2">
           <div class="flex-1 min-w-0">
-            <CommentEditor commentId={comment.id} />
+            <CommentEditor commentId={comment.id} body={comment.body} />
           </div>
           <span class="text-[10px] text-muted-foreground shrink-0 mt-0.5">{formatDate(comment.createdAt)}</span>
         </div>
@@ -74,11 +70,11 @@
     </div>
   {/if}
 
-  <form onsubmit={handleSubmit} class="mt-4 flex items-end gap-2">
-    <Textarea
+  <form onsubmit={handleSubmit} class="mt-4 flex items-center gap-2">
+    <Input
       bind:value={newCommentText}
       placeholder="Add a comment..."
-      class="min-h-0 resize-none text-sm"
+      class="h-7 text-sm"
     />
     <Button type="submit" size="sm" disabled={!newCommentText.trim()}>Post</Button>
   </form>

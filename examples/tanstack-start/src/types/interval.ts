@@ -50,7 +50,7 @@ export const intervalSchema = z.object({
 export const commentSchema = z.object({
   id: z.string(),
   intervalId: z.string(),
-  body: prose(),
+  body: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
