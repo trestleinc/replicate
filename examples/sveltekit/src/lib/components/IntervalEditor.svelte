@@ -46,26 +46,6 @@
 
   const title = $derived(isEditingTitle ? editingTitle : interval.title);
 
-  // Warm hex collaboration colors matching the design system
-  const DEFAULT_COLORS = [
-    "#9F5944",   // Rust
-    "#A9704D",   // Terracotta
-    "#B08650",   // Amber
-    "#8A7D3F",   // Gold
-    "#6E7644",   // Olive
-    "#8C4A42",   // Sienna
-    "#9E7656",   // Copper
-    "#9A5240",   // Brick
-    "#987C4A",   // Bronze
-  ];
-  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
-  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
-
-  const localUser = {
-    name: `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`,
-    color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
-  };
-
   $effect(() => {
     if (isEditingTitle) {
       titleInputRef?.focus();
@@ -130,7 +110,6 @@
             }),
             CollaborationCaret.configure({
               provider: binding.provider,
-              user: localUser,
             }),
             Placeholder.configure({
               placeholder: "Start writing...",

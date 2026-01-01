@@ -36,6 +36,7 @@ import {
 import {
   createAwarenessProvider,
   type ConvexAwarenessProvider,
+  type UserIdentity,
 } from "$/client/services/awareness";
 import { Awareness } from "y-protocols/awareness";
 import { z } from "zod";
@@ -152,16 +153,12 @@ export interface EditorBinding {
   destroy(): void;
 }
 
-/** Utilities exposed on collection.utils */
+export interface ProseOptions {
+  user?: UserIdentity;
+}
+
 interface ConvexCollectionUtils<T extends object> {
-  /**
-   * Get an editor binding for a prose field.
-   * Waits for Y.Doc to be ready (IndexedDB loaded) before returning.
-   * @param document - The document ID
-   * @param field - The prose field name (must be in `prose` config)
-   * @returns Promise resolving to EditorBinding
-   */
-  prose(document: string, field: ProseFields<T>): Promise<EditorBinding>;
+  prose(document: string, field: ProseFields<T>, options?: ProseOptions): Promise<EditorBinding>;
 }
 
 const DEFAULT_DEBOUNCE_MS = 1000;
@@ -208,7 +205,11 @@ export function convexCollectionOptions(
   const proseFieldSet = new Set<string>(proseFields);
 
   const utils: ConvexCollectionUtils<DataType> = {
-    async prose(document: string, field: ProseFields<DataType>): Promise<EditorBinding> {
+    async prose(
+      document: string,
+      field: ProseFields<DataType>,
+      options?: ProseOptions,
+    ): Promise<EditorBinding> {
       const fieldStr = field;
 
       if (!proseFieldSet.has(fieldStr)) {
@@ -303,6 +304,7 @@ export function convexCollectionOptions(
           client: storedClientId,
           ydoc: subdoc,
           syncReady: ctx.synced,
+          user: options?.user,
         });
       }
 

@@ -124,7 +124,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={handleConfirmDelete} class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+			<AlertDialog.Action onclick={handleConfirmDelete} class="bg-transparent border border-destructive text-destructive hover:bg-destructive/10">
 				Delete
 			</AlertDialog.Action>
 		</AlertDialog.Footer>

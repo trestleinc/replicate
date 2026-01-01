@@ -13,6 +13,12 @@ interface AwarenessApi {
   leave: FunctionReference<"mutation">;
 }
 
+export interface UserIdentity {
+  name?: string;
+  color?: string;
+  avatar?: string;
+}
+
 export interface ConvexAwarenessConfig {
   convexClient: ConvexClient;
   api: AwarenessApi;
@@ -21,6 +27,7 @@ export interface ConvexAwarenessConfig {
   ydoc: Y.Doc;
   interval?: number;
   syncReady?: Promise<void>;
+  user?: UserIdentity;
 }
 
 export interface ConvexAwarenessProvider {
@@ -47,9 +54,15 @@ export function createAwarenessProvider(
     ydoc,
     interval = DEFAULT_HEARTBEAT_INTERVAL,
     syncReady,
+    user,
   } = config;
 
   const awareness = new Awareness(ydoc);
+
+  if (user) {
+    awareness.setLocalStateField("user", user);
+  }
+
   let destroyed = false;
   let visible = true;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -110,13 +123,14 @@ export function createAwarenessProvider(
       | { name?: string; color?: string; [key: string]: unknown }
       | undefined;
     if (user) {
-      return {
-        profile: {
-          name: user.name,
-          color: user.color,
-          avatar: user.avatar as string | undefined,
-        },
-      };
+      const profile: { name?: string; color?: string; avatar?: string } = {};
+      if (typeof user.name === "string") profile.name = user.name;
+      if (typeof user.color === "string") profile.color = user.color;
+      if (typeof user.avatar === "string") profile.avatar = user.avatar;
+
+      if (Object.keys(profile).length > 0) {
+        return { profile };
+      }
     }
 
     return {};
@@ -201,8 +215,8 @@ export function createAwarenessProvider(
 
           const remoteState: Record<string, unknown> = {
             user: {
-              name: remote.profile?.name ?? remote.user ?? "Anonymous",
-              color: remote.profile?.color ?? getColorForClient(remote.client),
+              name: remote.profile?.name ?? remote.user ?? getStableAnonName(remote.client),
+              color: remote.profile?.color ?? getStableAnonColor(remote.client),
               avatar: remote.profile?.avatar,
               clientId: remote.client,
             },
@@ -346,28 +360,39 @@ export function createAwarenessProvider(
   };
 }
 
-/**
- * Hash a string to a positive number for use as clientId.
- */
 function hashStringToNumber(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash);
 }
 
-/**
- * Generate a color for a client based on their ID.
- */
-const DEFAULT_COLORS = [
-  "#F87171", "#FB923C", "#FBBF24", "#A3E635",
-  "#34D399", "#22D3EE", "#60A5FA", "#A78BFA", "#F472B6",
+const ANONYMOUS_ADJECTIVES = [
+  "Swift", "Bright", "Calm", "Bold", "Keen",
+  "Quick", "Warm", "Cool", "Sharp", "Gentle",
 ];
 
-function getColorForClient(clientId: string): string {
+const ANONYMOUS_NOUNS = [
+  "Fox", "Owl", "Bear", "Wolf", "Hawk",
+  "Deer", "Lynx", "Crow", "Hare", "Seal",
+];
+
+const ANONYMOUS_COLORS = [
+  "#9F5944", "#A9704D", "#B08650", "#8A7D3F", "#6E7644",
+  "#8C4A42", "#9E7656", "#9A5240", "#987C4A", "#7A8B6E",
+];
+
+function getStableAnonName(clientId: string): string {
   const hash = hashStringToNumber(clientId);
-  return DEFAULT_COLORS[hash % DEFAULT_COLORS.length];
+  const adj = ANONYMOUS_ADJECTIVES[hash % ANONYMOUS_ADJECTIVES.length];
+  const noun = ANONYMOUS_NOUNS[(hash >> 4) % ANONYMOUS_NOUNS.length];
+  return `${adj} ${noun}`;
+}
+
+function getStableAnonColor(clientId: string): string {
+  const hash = hashStringToNumber(clientId);
+  return ANONYMOUS_COLORS[(hash >> 8) % ANONYMOUS_COLORS.length];
 }

@@ -4,7 +4,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Effect, Fiber } from "effect";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { EditorBinding } from "@trestleinc/replicate/client";
 
 import {
@@ -25,30 +25,6 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from "./ui/dropdown-menu";
-
-const DEFAULT_COLORS = [
-  "#F87171",
-  "#FB923C",
-  "#FBBF24",
-  "#A3E635",
-  "#34D399",
-  "#22D3EE",
-  "#60A5FA",
-  "#A78BFA",
-  "#F472B6",
-];
-
-function getRandomColor(): string {
-  return DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)];
-}
-
-function getRandomName(): string {
-  const adjectives = ["Swift", "Bright", "Calm", "Bold", "Keen"];
-  const nouns = ["Fox", "Owl", "Bear", "Wolf", "Hawk"];
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const noun = nouns[Math.floor(Math.random() * nouns.length)];
-  return `${adj} ${noun}`;
-}
 
 interface IntervalEditorProps {
   intervalId: string;
@@ -151,12 +127,6 @@ function IntervalEditorView({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Stable user identity for collaboration cursors
-  const user = useMemo(() => ({
-    name: getRandomName(),
-    color: getRandomColor(),
-  }), []);
-
   const editor = useEditor(
     {
       extensions: [
@@ -168,7 +138,6 @@ function IntervalEditorView({
         }),
         CollaborationCaret.configure({
           provider: binding.provider,
-          user,
         }),
         Placeholder.configure({
           placeholder: "Write your essay here...",

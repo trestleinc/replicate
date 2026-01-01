@@ -3,7 +3,10 @@ export {
   type EditorBinding,
   type ConvexCollection,
   type Materialized,
+  type ProseOptions,
 } from "$/client/collection";
+
+export { type UserIdentity } from "$/client/services/awareness";
 
 export { type Seq } from "$/client/services/seq";
 
