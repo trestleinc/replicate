@@ -6,30 +6,28 @@ const distClient = resolve(import.meta.dirname, "../.output/public");
 const srcSw = resolve(import.meta.dirname, "../src/sw.ts");
 
 async function generateServiceWorker() {
-  // Check if .output/public exists
   if (!existsSync(distClient)) {
-    console.error("Error: .output/public does not exist. Run `bun run build` first.");
+    console.error("Error: .output/public does not exist. Run `vite build` first.");
     process.exit(1);
   }
 
-  // Use Bun to transpile TypeScript to JavaScript
   console.log("Transpiling service worker...");
   const transpiled = await Bun.build({
     entrypoints: [srcSw],
     format: "esm",
     target: "browser",
-    minify: false,
+    minify: true,
   });
 
   if (!transpiled.success) {
-    console.error("Failed to transpile service worker:", transpiled.logs);
+    console.error("Failed to transpile service worker:");
+    for (const log of transpiled.logs) {
+      console.error(log);
+    }
     process.exit(1);
   }
 
-  // Get the transpiled content
   const swJsContent = await transpiled.outputs[0].text();
-
-  // Write temporary JS file for workbox to inject into
   const tempSwPath = resolve(distClient, "sw-src.js");
   writeFileSync(tempSwPath, swJsContent);
 
@@ -40,14 +38,11 @@ async function generateServiceWorker() {
       swSrc: tempSwPath,
       swDest: resolve(distClient, "sw.js"),
       globDirectory: distClient,
-      globPatterns: ["**/*.{js,css,ico,png,svg,woff2}"],
-      // Don't precache these files
+      globPatterns: ["**/*.{js,css,ico,png,svg,woff2,webmanifest}"],
       globIgnores: ["sw-src.js", "sw.js"],
-      // Increase file size limit for larger bundles
-      maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+      maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
     });
 
-    // Clean up temp file
     unlinkSync(tempSwPath);
 
     if (warnings.length > 0) {
@@ -55,13 +50,16 @@ async function generateServiceWorker() {
     }
 
     console.log(
-      `✓ Service worker generated with ${count} files, totaling ${(size / 1024).toFixed(1)} KB`,
+      `Service worker generated with ${count} files, totaling ${(size / 1024).toFixed(1)} KB`,
     );
   }
   catch (error) {
+    if (existsSync(tempSwPath)) {
+      unlinkSync(tempSwPath);
+    }
     console.error("Error generating service worker:", error);
     process.exit(1);
   }
 }
 
-generateServiceWorker();
+void generateServiceWorker();

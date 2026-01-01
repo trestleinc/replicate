@@ -1,16 +1,19 @@
+/// <reference lib="webworker" />
+
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 import { registerRoute, NavigationRoute } from "workbox-routing";
 import { NetworkFirst, CacheFirst } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 
-declare let self: ServiceWorkerGlobalScope;
+declare const self: ServiceWorkerGlobalScope;
 
-// Precache static assets (injected by vite-plugin-pwa)
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-// Navigation requests: NetworkFirst with offline fallback
-// Caches SSR-rendered HTML pages for offline access
+const ONE_DAY = 24 * 60 * 60;
+const ONE_WEEK = 7 * ONE_DAY;
+const ONE_MONTH = 30 * ONE_DAY;
+
 registerRoute(
   new NavigationRoute(
     new NetworkFirst({
@@ -19,15 +22,13 @@ registerRoute(
       plugins: [
         new ExpirationPlugin({
           maxEntries: 50,
-          maxAgeSeconds: 24 * 60 * 60, // 24 hours
+          maxAgeSeconds: ONE_DAY,
         }),
       ],
     }),
   ),
 );
 
-// Convex API: NetworkFirst with timeout
-// Falls back to cached responses when offline
 registerRoute(
   ({ url }) => url.hostname.includes(".convex.cloud"),
   new NetworkFirst({
@@ -36,13 +37,12 @@ registerRoute(
     plugins: [
       new ExpirationPlugin({
         maxEntries: 100,
-        maxAgeSeconds: 24 * 60 * 60, // 24 hours
+        maxAgeSeconds: ONE_DAY,
       }),
     ],
   }),
 );
 
-// Static assets: CacheFirst for performance
 registerRoute(
   ({ request }) =>
     request.destination === "style"
@@ -53,13 +53,12 @@ registerRoute(
     plugins: [
       new ExpirationPlugin({
         maxEntries: 100,
-        maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+        maxAgeSeconds: ONE_WEEK,
       }),
     ],
   }),
 );
 
-// Images: CacheFirst
 registerRoute(
   ({ request }) => request.destination === "image",
   new CacheFirst({
@@ -67,8 +66,14 @@ registerRoute(
     plugins: [
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+        maxAgeSeconds: ONE_MONTH,
       }),
     ],
   }),
 );
+
+self.addEventListener("message", (event) => {
+  if ((event.data as { type?: string })?.type === "SKIP_WAITING") {
+    void self.skipWaiting();
+  }
+});
