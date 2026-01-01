@@ -7,12 +7,12 @@ A complete specification for the session-driven compaction system with snapshot-
 1. [Yjs Fundamentals](#1-yjs-fundamentals)
 2. [The Snapshot Breakthrough](#2-the-snapshot-breakthrough)
 3. [System Overview](#3-system-overview)
-4. [Data Model](#4-data-model)
-5. [Session Identity](#5-session-identity)
-6. [Data Flows](#6-data-flows)
-7. [Server API](#7-server-api)
-8. [Invariants & Guarantees](#8-invariants--guarantees)
-9. [Optimizations](#9-optimizations)
+4. [Client-Side Sync Architecture](#4-client-side-sync-architecture)
+5. [Data Model](#5-data-model)
+6. [Session Identity](#6-session-identity)
+7. [Data Flows](#7-data-flows)
+8. [Server API](#8-server-api)
+9. [Invariants & Guarantees](#9-invariants--guarantees)
 
 ---
 
@@ -192,36 +192,6 @@ const diff = Y.diffUpdateV2(merged, clientVector);
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### The Recovery Guarantee
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    STATELESS RECOVERY                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Client offline for 1 year? No problem:                                  │
-│                                                                          │
-│  1. Client has local Y.Doc with their state vector                      │
-│  2. Client sends: Y.encodeStateVector(localDoc)                         │
-│  3. Server computes: diff = Y.diffUpdateV2(                             │
-│       mergedServerState,                                                │
-│       clientVector                                                      │
-│     )                                                                   │
-│  4. Server sends: diff (exactly what client is missing)                 │
-│  5. Client applies: Y.applyUpdateV2(localDoc, diff)                     │
-│  6. Client now has complete current state                               │
-│                                                                          │
-│  ════════════════════════════════════════════════════════════════════   │
-│  THE SERVER DOESN'T NEED THE CLIENT'S SESSION RECORD FOR RECOVERY       │
-│  THE CLIENT'S LOCAL STATE VECTOR TELLS US EXACTLY WHAT THEY NEED        │
-│  ════════════════════════════════════════════════════════════════════   │
-│                                                                          │
-│  Sessions are for COMPACTION DECISIONS, not for recovery.               │
-│  Recovery works regardless of whether session exists.                   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## 3. System Overview
@@ -243,149 +213,13 @@ const diff = Y.diffUpdateV2(merged, clientVector);
 │  │  State      │         │  └────┬────┘  └────┬─────┘  └───┬────┘ │    │
 │  │  Vector     │────────►│       │            │            │      │    │
 │  │             │ heartbeat       │            │            │      │    │
-│  │  localStorage│        │       └────────────┼────────────┘      │    │
-│  │  (clientID) │         │                    │                   │    │
+│  │  SQLite     │         │       └────────────┼────────────┘      │    │
+│  │  (persist)  │         │                    │                   │    │
 │  │             │         │              ┌─────┴─────┐             │    │
-│  └─────────────┘         │              │COMPACTION │             │    │
-│                          │              │  LOGIC    │             │    │
-│                          │              └───────────┘             │    │
+│  │  Effect.ts  │         │              │COMPACTION │             │    │
+│  │  Actors     │         │              │  LOGIC    │             │    │
+│  └─────────────┘         │              └───────────┘             │    │
 │                          └─────────────────────────────────────────┘    │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### The Complete Relationship Graph
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    HOW EVERYTHING CONNECTS                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                         SERVER                                   │    │
-│  │                                                                  │    │
-│  │   DOCUMENTS (deltas)         SNAPSHOTS           SESSIONS       │    │
-│  │   ┌─────────────────┐       ┌───────────┐       ┌───────────┐   │    │
-│  │   │ Individual Yjs  │       │ Merged    │       │ Client    │   │    │
-│  │   │ updates         │──────►│ state     │       │ vectors   │   │    │
-│  │   │                 │ merge │ checkpoint│       │           │   │    │
-│  │   └────────┬────────┘       └─────┬─────┘       └─────┬─────┘   │    │
-│  │            │                      │                   │         │    │
-│  │            │    ┌─────────────────┴───────────────────┘         │    │
-│  │            │    │                                               │    │
-│  │            ▼    ▼                                               │    │
-│  │   ┌─────────────────────────────────────────────────────────┐   │    │
-│  │   │                    COMPACTION                            │   │    │
-│  │   │  1. Merge deltas into snapshot                          │   │    │
-│  │   │  2. Check sessions: which deltas are safe to delete?    │   │    │
-│  │   │  3. Delete deltas all sessions have                     │   │    │
-│  │   │  4. Delete sessions caught up to snapshot               │   │    │
-│  │   └─────────────────────────────────────────────────────────┘   │    │
-│  │                                                                  │    │
-│  └──────────────────────────────┬───────────────────────────────────┘    │
-│                                 │                                        │
-│         ┌───────────────────────┼───────────────────────┐                │
-│         │                       │                       │                │
-│         ▼                       ▼                       ▼                │
-│  ┌─────────────┐         ┌─────────────┐         ┌─────────────┐        │
-│  │ MATERIALIZED│         │   STREAM    │         │  RECOVERY   │        │
-│  │   (SSR)     │         │             │         │             │        │
-│  └──────┬──────┘         └──────┬──────┘         └──────┬──────┘        │
-│         │                       │                       │                │
-│         │                       │                       │                │
-│  ┌──────┴───────────────────────┴───────────────────────┴──────┐        │
-│  │                         CLIENT                               │        │
-│  │                                                              │        │
-│  │  ┌──────────────────────────────────────────────────────┐   │        │
-│  │  │                    Y.Doc (local)                      │   │        │
-│  │  │                                                       │   │        │
-│  │  │  SQLite/IndexedDB ◄─── persist ───► State Vector     │   │        │
-│  │  │        │                                   │          │   │        │
-│  │  │        │                                   │          │   │        │
-│  │  │        ▼                                   ▼          │   │        │
-│  │  │  localStorage ◄─────────────────────► clientID       │   │        │
-│  │  └──────────────────────────────────────────────────────┘   │        │
-│  │                                                              │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    DATA FLOW BY SCENARIO                                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  SSR (First Load):                                                       │
-│  ─────────────────                                                       │
-│    Server: materialized query                                           │
-│      → Returns documents + CRDT bytes per document                      │
-│      → CRDT bytes = snapshot + deltas (merged)                          │
-│    Client: hydrate Y.Doc from CRDT bytes                                │
-│      → No recovery needed, already has full state                       │
-│                                                                          │
-│  STREAMING (Normal Sync):                                                │
-│  ────────────────────────                                                │
-│    Client: subscribe to stream(cursor)                                  │
-│      → Receives deltas since cursor                                     │
-│      → Applies to local Y.Doc                                           │
-│      → Updates cursor                                                   │
-│    Sessions: track client's vector via heartbeat                        │
-│      → Enables safe delta deletion                                      │
-│                                                                          │
-│  RECOVERY (Reconnect/Catch-up):                                          │
-│  ──────────────────────────────                                          │
-│    Client: sends local state vector                                     │
-│    Server: diff(snapshot + deltas, clientVector)                        │
-│      → Returns exactly what client is missing                           │
-│    Client: applies diff, fully synced                                   │
-│      → Works regardless of whether session exists                       │
-│                                                                          │
-│  COMPACTION (Optimization):                                              │
-│  ──────────────────────────                                              │
-│    Trigger: delta count >= 500 per document                             │
-│    Server:                                                              │
-│      1. Merge deltas into snapshot                                      │
-│      2. Check each session's vector                                     │
-│      3. Delete deltas that ALL sessions have                            │
-│      4. Delete disconnected sessions caught up to snapshot              │
-│    Result: bounded storage, streaming still works for slow clients      │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    RELATIONSHIP SUMMARY                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  DOCUMENTS (deltas)                                                      │
-│    └── merged into → SNAPSHOTS                                          │
-│    └── streamed to → CLIENT (via stream query)                          │
-│    └── deleted when → all SESSIONS have them                            │
-│                                                                          │
-│  SNAPSHOTS                                                               │
-│    └── enables → RECOVERY (diff against client vector)                  │
-│    └── enables → SSR/MATERIALIZED (initial state)                       │
-│    └── enables → safe SESSION deletion (when caught up)                 │
-│    └── enables → safe DELTA deletion (data preserved)                   │
-│                                                                          │
-│  SESSIONS                                                                │
-│    └── track → client state vectors (what they have)                    │
-│    └── enable → safe DELTA deletion (protect slow clients)              │
-│    └── provide → PRESENCE (cursors, online status)                      │
-│    └── deleted when → caught up to SNAPSHOT                             │
-│                                                                          │
-│  MATERIALIZED (SSR query)                                                │
-│    └── returns → documents + CRDT state                                 │
-│    └── CRDT state = SNAPSHOT + DELTAS merged                            │
-│    └── client hydrates → Y.Doc                                          │
-│                                                                          │
-│  RECOVERY (catch-up query)                                               │
-│    └── uses → client's LOCAL vector (not session)                       │
-│    └── computes → diff(SNAPSHOT + DELTAS, clientVector)                 │
-│    └── always works → even without session                              │
-│                                                                          │
-│  STREAM (real-time sync)                                                 │
-│    └── returns → DELTAS since cursor                                    │
-│    └── protected by → SESSIONS (deltas not deleted while needed)        │
-│    └── triggers → COMPACTION (when count >= 500)                        │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -427,114 +261,174 @@ const diff = Y.diffUpdateV2(merged, clientVector);
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why Sessions Matter
+---
+
+## 4. Client-Side Sync Architecture
+
+### Effect.ts Actor Model
+
+The client uses a **per-document actor model** for sync, built with Effect.ts primitives:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SESSIONS: NOT REQUIRED, BUT ESSENTIAL                 │
+│                    ACTOR-BASED SYNC                                      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  DATA SAFETY WITHOUT SESSIONS:                                           │
-│  ─────────────────────────────                                           │
-│  Recovery ALWAYS works via: diff(snapshot, client's LOCAL vector)       │
-│  The snapshot has all the data. Clients can always recover.             │
-│  Sessions are NOT strictly required for the data guarantee.             │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │ DocumentActor (one per prose field)                             │    │
+│  │                                                                 │    │
+│  │   Mailbox: Queue.unbounded<DocumentMessage>                     │    │
+│  │                                                                 │    │
+│  │   Messages:                                                     │    │
+│  │   - LocalChange: User edited the document                       │    │
+│  │   - ExternalUpdate: Server sent an update (already applied)     │    │
+│  │   - Shutdown: Graceful cleanup                                  │    │
+│  │                                                                 │    │
+│  │   State:                                                        │    │
+│  │   - vector: Current state vector                                │    │
+│  │   - pending: SubscriptionRef<boolean> (UI can subscribe)        │    │
+│  │   - retryCount: For exponential backoff                         │    │
+│  │                                                                 │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                          │
-│  BUT WITHOUT SESSIONS, YOU MUST CHOOSE:                                  │
-│  ──────────────────────────────────────                                  │
+│  Message Flow:                                                           │
+│  ─────────────                                                           │
 │                                                                          │
-│  Option A: Never delete deltas                                          │
-│    → Storage grows unbounded forever                                    │
-│    → Database bloat, slow queries, $$$                                  │
+│  LocalChange → Queue.offer                                               │
+│      ↓                                                                   │
+│  Wait 2ms (batch accumulation window)                                    │
+│      ↓                                                                   │
+│  Queue.takeAll (collect all pending messages)                            │
+│      ↓                                                                   │
+│  If any LocalChange in batch:                                            │
+│      → Cancel existing debounce fiber (if any)                           │
+│      → Start new debounce timer (300ms)                                  │
+│      → After debounce: encode delta, call syncFn()                       │
+│      → On success: update vector, set pending=false                      │
+│      → On failure: retry with exponential backoff                        │
 │                                                                          │
-│  Option B: Delete ALL deltas after snapshot                             │
-│    → Active streaming clients lose deltas mid-stream                    │
-│    → Every client must call recovery constantly                         │
-│    → More server load, worse latency                                    │
+│  ExternalUpdate:                                                         │
+│      → Just update stored vector (Yjs already applied)                   │
+│      → No sync needed (it's from server)                                 │
 │                                                                          │
-│  THE PRIMARY EDGE CASE (why sessions exist):                             │
-│  ───────────────────────────────────────────                             │
-│                                                                          │
-│  Sessions track the "oldest known state" in the system:                 │
-│                                                                          │
-│    Session A: vector [1-8]  ← has everything                            │
-│    Session B: vector [1-5]  ← SLOW CLIENT, still syncing                │
-│    Session C: vector [1-8]  ← has everything                            │
-│                                                                          │
-│  Without sessions, we'd delete deltas 1-8 (all in snapshot).            │
-│  Session B's stream would break - deltas 6-8 are gone!                  │
-│                                                                          │
-│  With sessions:                                                          │
-│    Safe to delete: deltas 1-5 (all sessions have them)                  │
-│    Must keep: deltas 6-8 (Session B still needs them)                   │
-│                                                                          │
-│  Session B continues streaming normally. No recovery needed.            │
-│                                                                          │
-│  ════════════════════════════════════════════════════════════════════   │
-│  THIS IS THE PRIMARY DESIGN CONSTRAINT:                                  │
-│  Protect slow/behind clients from losing deltas mid-stream              │
-│  ════════════════════════════════════════════════════════════════════   │
-│                                                                          │
-│  SESSIONS OPTIMIZE THE DATABASE:                                         │
-│  ────────────────────────────────                                        │
-│  ✓ Delete old deltas as soon as safe (not "never" or "always")          │
-│  ✓ Keep deltas that active clients need (streaming works)               │
-│  ✓ Minimize recovery calls (only when truly needed)                     │
-│  ✓ Bounded storage growth (deltas cleaned up continuously)              │
-│  ✓ Presence/cursors for free (we're tracking sessions anyway)           │
-│                                                                          │
-│  ════════════════════════════════════════════════════════════════════   │
-│  SESSIONS = Massive database optimization + presence UI                  │
-│  Without them: unbounded storage OR constant recovery calls              │
-│  ════════════════════════════════════════════════════════════════════   │
+│  Shutdown:                                                               │
+│      → Interrupt debounce fiber                                          │
+│      → Signal done via Deferred                                          │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### The Cascading Delete
+### Why Actor Model?
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    CASCADING DELETE LOGIC                                │
+│                    WHY ACTORS?                                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  During compaction:                                                      │
+│  Problem: Fast user typing + server updates                              │
+│  ─────────────────────────────────────────────                           │
+│  - User types 10 characters in 100ms                                    │
+│  - Each keystroke triggers Y.Doc update                                 │
+│  - Meanwhile server sends updates from other users                      │
+│  - Need to avoid:                                                       │
+│    - Race conditions                                                    │
+│    - Duplicate syncs                                                    │
+│    - Lost updates                                                       │
+│    - Overloading server                                                 │
 │                                                                          │
-│  STEP 1: Create/Update Snapshot                                          │
-│  ─────────────────────────────────                                       │
-│    merged = Y.mergeUpdatesV2(snapshot.bytes, ...deltas.bytes)           │
-│    snapshot.vector = Y.encodeStateVectorFromUpdateV2(merged)            │
+│  Solution: Per-document actors                                           │
+│  ──────────────────────────────                                          │
+│  - One actor per prose field (document)                                 │
+│  - Messages processed sequentially (no races)                           │
+│  - Queue.takeAll batches rapid changes                                  │
+│  - Debounce prevents server spam                                        │
+│  - SubscriptionRef for reactive UI                                      │
 │                                                                          │
-│  STEP 2: Delete Caught-Up Sessions                                       │
-│  ──────────────────────────────────                                      │
-│    for each session where connected = false:                            │
-│      diff = Y.diffUpdateV2(snapshot.bytes, session.vector)              │
-│      if diff.byteLength <= 2:  // Empty diff = caught up                │
-│        DELETE session                                                   │
-│      // Session with no vector can also be deleted (full recovery)      │
+│  Benefits:                                                               │
+│  ─────────                                                               │
+│  ✓ No concurrent sync for same document                                 │
+│  ✓ Rapid edits batched into single sync                                 │
+│  ✓ Server updates don't block local edits                               │
+│  ✓ Clean shutdown via Deferred                                          │
+│  ✓ Automatic retry with backoff                                         │
+│  ✓ UI can show "syncing" state reactively                               │
 │                                                                          │
-│  STEP 3: Delete Deltas (if safe)                                         │
-│  ────────────────────────────────                                        │
-│    canDelete = true                                                     │
-│    for each remaining session:  // Connected AND not-caught-up          │
-│      diff = Y.diffUpdateV2(merged, session.vector)                      │
-│      if diff.byteLength > 2:                                            │
-│        canDelete = false  // This session still needs deltas            │
-│        break                                                            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### ActorManager
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    ActorManager                                          │
+├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│    if canDelete:                                                        │
-│      DELETE all deltas                                                  │
+│  Purpose: Manage lifecycle of per-document actors                        │
 │                                                                          │
-│  ════════════════════════════════════════════════════════════════════   │
-│  NEVER delete based on time. ALWAYS delete based on state vectors.      │
-│  ════════════════════════════════════════════════════════════════════   │
+│  State: HashMap<documentId, ManagedActor>                                │
+│                                                                          │
+│  Operations:                                                             │
+│  ───────────                                                             │
+│  register(documentId, ydoc, syncFn)                                      │
+│      → Create actor if not exists                                        │
+│      → Return existing actor if already registered                       │
+│                                                                          │
+│  get(documentId)                                                         │
+│      → Return actor or null                                              │
+│                                                                          │
+│  onLocalChange(documentId)                                               │
+│      → Send LocalChange message to actor                                 │
+│                                                                          │
+│  onServerUpdate(documentId)                                              │
+│      → Send ExternalUpdate message to actor                              │
+│                                                                          │
+│  unregister(documentId)                                                  │
+│      → Shutdown actor, close scope                                       │
+│                                                                          │
+│  destroy()                                                               │
+│      → Shutdown all actors                                               │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Runtime Modes
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    ReplicateRuntime                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Two modes:                                                              │
+│                                                                          │
+│  1. Per-Collection (default)                                             │
+│     ─────────────────────────                                            │
+│     - Each collection gets its own runtime                              │
+│     - Separate ActorManager per collection                              │
+│     - Cleanup when collection is destroyed                              │
+│                                                                          │
+│  2. Singleton (for PGlite)                                               │
+│     ──────────────────────                                               │
+│     - Shared runtime across collections                                 │
+│     - Reference counting for cleanup                                    │
+│     - Use when persistence is shared (PGlite once() mode)               │
+│                                                                          │
+│  Usage:                                                                  │
+│                                                                          │
+│  // Per-collection (default)                                            │
+│  const runtime = yield* createRuntime({ kv });                          │
+│                                                                          │
+│  // Singleton                                                           │
+│  const runtime = yield* createRuntime({ kv, singleton: true });         │
+│                                                                          │
+│  // Execute effects                                                     │
+│  await runWithRuntime(runtime, actorManager.onLocalChange(docId));      │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Data Model
+## 5. Data Model
 
 ### Current Schema
 
@@ -613,7 +507,7 @@ export default defineSchema({
 
 ---
 
-## 5. Session Identity
+## 6. Session Identity
 
 ### Persisting Y.Doc.clientID
 
@@ -647,55 +541,14 @@ export default defineSchema({
 │  - Yjs warning about duplicate clientIDs applies to DIFFERENT Y.Docs   │
 │  - Shared storage means same Y.Doc = same clientID is SAFE              │
 │                                                                          │
-│  Benefits:                                                               │
-│  ─────────                                                               │
-│  - Same session across page refresh                                     │
-│  - Same session across tabs                                             │
-│  - No duplicate sessions                                                │
-│  - Accurate user count                                                  │
-│  - No race conditions (localStorage is synchronous)                     │
-│                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Implementation
-
-```typescript
-// Client-side: Load or create clientID
-const getClientID = (collection: string): number => {
-  const key = `replicate:clientId:${collection}`;
-  
-  // localStorage is synchronous - no race condition
-  let stored = localStorage.getItem(key);
-  
-  if (stored) {
-    return Number(stored);
-  }
-  
-  // Generate new clientID (same algorithm as Yjs)
-  const clientID = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-  localStorage.setItem(key, String(clientID));
-  
-  return clientID;
-};
-
-// Use when creating Y.Doc
-const clientID = getClientID(collection);
-const doc = new Y.Doc({ clientID });
-
-// Heartbeat sends string version
-convexClient.mutation(api.mark, {
-  client: String(clientID),  // Convex doesn't support bigint, use string
-  vector: Y.encodeStateVector(doc).buffer,
-  // ...
-});
 ```
 
 ---
 
-## 6. Data Flows
+## 7. Data Flows
 
-### Flow 1: Write Path
+### Flow 1: Write Path (with Actor)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -704,28 +557,36 @@ convexClient.mutation(api.mark, {
 │                                                                          │
 │  CLIENT                              SERVER                              │
 │                                                                          │
-│  1. User edits Y.Doc                                                     │
+│  1. User edits prose field                                               │
 │     │                                                                    │
 │     ▼                                                                    │
 │  2. Y.Doc fires 'update' event                                          │
-│     update = Uint8Array (Yjs binary)                                    │
 │     │                                                                    │
 │     ▼                                                                    │
-│  3. Send to server ─────────────────►  4. Insert into documents table   │
-│     mutation(update, {                    INSERT INTO documents          │
-│       document,                           (collection, document,         │
-│       bytes: update,                       bytes, seq)                   │
-│     })                                                                   │
+│  3. prose.ts captures update                                             │
+│     │                                                                    │
+│     ▼                                                                    │
+│  4. actorManager.onLocalChange(documentId)                               │
+│     │                                                                    │
+│     ▼                                                                    │
+│  5. Actor receives LocalChange                                           │
+│     │                                                                    │
+│     ▼                                                                    │
+│  6. Debounce (300ms, batching)                                           │
+│     │                                                                    │
+│     ▼                                                                    │
+│  7. Encode delta, call syncFn ────────►  8. Insert into documents table  │
+│                                              INSERT INTO documents        │
+│                                              (collection, document,       │
+│                                               bytes, seq)                │
 │                                                                          │
-│                                        5. Return { seq }                │
-│     │                                       │                            │
-│     ▼                                       │                            │
-│  6. Update local cursor ◄────────────────────┘                           │
+│                                          9. Return { seq }               │
+│  10. Update vector, pending=false ◄──────────┘                           │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Flow 2: Read Path (Streaming)
+### Flow 2: Read Path (Server Update)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -740,18 +601,23 @@ convexClient.mutation(api.mark, {
 │     │                               2. Query: SELECT * FROM documents   │
 │     │                                  WHERE seq > cursor                │
 │     │                                                                    │
-│     │                               3. Check delta count per document   │
-│     │                                  Collect all with count >= 500    │
-│     │                                       │                            │
-│  4. Receive ◄────────────────────────────────┘                           │
-│     { changes, cursor, compaction?: { documents: string[] } }           │
+│  3. Receive changes ◄────────────────────┘                               │
 │     │                                                                    │
 │     ▼                                                                    │
-│  5. Apply each update                                                    │
-│     Y.applyUpdateV2(doc, change.bytes)                                  │
+│  4. collection.ts applies Y.applyUpdate                                  │
 │     │                                                                    │
 │     ▼                                                                    │
-│  6. If compact hint → trigger compaction                                │
+│  5. ops.upsert/insert/delete to TanStack DB                              │
+│     │                                                                    │
+│     ▼                                                                    │
+│  6. actorManager.onServerUpdate(documentId)                              │
+│     │                                                                    │
+│     ▼                                                                    │
+│  7. Actor receives ExternalUpdate                                        │
+│     │                                                                    │
+│     ▼                                                                    │
+│  8. Update stored vector (bookkeeping only)                              │
+│     (Yjs update already applied in step 4)                              │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -807,136 +673,9 @@ convexClient.mutation(api.mark, {
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Compaction Trigger
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    COMPACTION TRIGGER                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Threshold: 500 deltas per document (matches y-indexeddb)               │
-│                                                                          │
-│  Why delta COUNT, not size:                                              │
-│  ──────────────────────────                                              │
-│  - Each delta has fixed CRDT overhead (metadata, clock, clientID)       │
-│  - 10,000 tiny deltas is worse than 100 large deltas                   │
-│  - Count measures CRDT complexity, size measures content                │
-│  - y-indexeddb uses PREFERRED_TRIM_SIZE = 500                          │
-│                                                                          │
-│  Trigger flow:                                                           │
-│  ─────────────                                                           │
-│  1. Stream query counts deltas per document                             │
-│  2. Collect all documents with count >= 500                             │
-│  3. Return compaction: { documents: [...] }                             │
-│  4. Client compacts each document (can parallelize)                     │
-│  5. Compact merges deltas → cleans up sessions/deltas                   │
-│                                                                          │
-│  Configuration:                                                          │
-│  ──────────────                                                          │
-│  const DELTA_COUNT_THRESHOLD = 500;  // Configurable per-collection     │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Flow 4: Recovery
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    RECOVERY FLOW                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  CLIENT                              SERVER                              │
-│                                                                          │
-│  1. Client has local Y.Doc                                               │
-│     (persisted in SQLite/IndexedDB)                                     │
-│     │                                                                    │
-│     ▼                                                                    │
-│  2. Encode state vector                                                  │
-│     vector = Y.encodeStateVector(doc)                                   │
-│     │                                                                    │
-│     ▼                                                                    │
-│  3. Request recovery ───────────────►  4. Load server state             │
-│     query(recovery, {                     snapshot + deltas             │
-│       document,                           │                             │
-│       vector                              ▼                             │
-│     })                                 5. Merge                         │
-│                                           merged = Y.mergeUpdatesV2(...)│
-│                                           │                             │
-│                                           ▼                             │
-│                                        6. Compute diff                  │
-│                                           diff = Y.diffUpdateV2(        │
-│                                             merged,                     │
-│                                             clientVector                │
-│                                           )                             │
-│                                           │                             │
-│  7. Receive diff ◄─────────────────────────┘                            │
-│     │                                                                    │
-│     ▼                                                                    │
-│  8. Apply diff                                                           │
-│     Y.applyUpdateV2(doc, diff)                                          │
-│     │                                                                    │
-│     ▼                                                                    │
-│  9. Resume streaming                                                     │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Flow 5: Session Lifecycle
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    SESSION LIFECYCLE                                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ CONNECT                                                         │    │
-│  │                                                                 │    │
-│  │   clientID loaded from localStorage (or generated)              │    │
-│  │   Client calls mark() with state vector                         │    │
-│  │   → Session created/updated, connected: true                    │    │
-│  │   → Watchdog scheduled (heartbeat × 2.5)                        │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                          │                                               │
-│                          ▼                                               │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ HEARTBEAT (every 10s)                                           │    │
-│  │                                                                 │    │
-│  │   Client sends: mark({                                          │    │
-│  │     client: clientID,                                           │    │
-│  │     vector: Y.encodeStateVector(doc),                           │    │
-│  │     cursor: position,                                           │    │
-│  │   })                                                            │    │
-│  │                                                                 │    │
-│  │   Server: updates session.vector, reschedules watchdog          │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                          │                                               │
-│          ┌───────────────┼───────────────┐                              │
-│          ▼               ▼               ▼                              │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                     │
-│  │  LEAVE       │ │   CRASH      │ │  TIMEOUT     │                     │
-│  │  (pagehide)  │ │              │ │  (watchdog)  │                     │
-│  ├──────────────┤ ├──────────────┤ ├──────────────┤                     │
-│  │ connected:   │ │ Watchdog     │ │ Watchdog     │                     │
-│  │   false      │ │ fires →      │ │ fires →      │                     │
-│  │ cursor:      │ │ connected:   │ │ connected:   │                     │
-│  │   cleared    │ │   false      │ │   false      │                     │
-│  └──────────────┘ └──────────────┘ └──────────────┘                     │
-│          │               │               │                              │
-│          └───────────────┼───────────────┘                              │
-│                          ▼                                               │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ DISCONNECTED                                                    │    │
-│  │                                                                 │    │
-│  │   Session preserved with vector (for compaction decisions)      │    │
-│  │   Deleted during compaction when caught up to snapshot          │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
 ---
 
-## 7. Server API
+## 8. Server API
 
 ### Mutations
 
@@ -957,23 +696,6 @@ export const mark = mutation({
   handler: async (ctx, args) => {
     // Upsert session with latest vector
     // Reschedule watchdog
-  },
-});
-
-// disconnect - Called by watchdog
-export const disconnect = mutation({
-  args: { collection, document, client },
-  handler: async (ctx, args) => {
-    // Set connected: false, clear cursor
-    // Keep vector for compaction decisions
-  },
-});
-
-// leave - Called by client on pagehide
-export const leave = mutation({
-  args: { collection, document, client },
-  handler: async (ctx, args) => {
-    // Same as disconnect but triggered by client
   },
 });
 
@@ -1020,7 +742,7 @@ export const sessions = query({
 
 ---
 
-## 8. Invariants & Guarantees
+## 9. Invariants & Guarantees
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1057,82 +779,15 @@ export const sessions = query({
 │    - In the snapshot (compacted)                                        │
 │  Clients can always recover full state.                                 │
 │                                                                          │
+│  INVARIANT 6: Sequential Message Processing                              │
+│  ─────────────────────────────────────────────                           │
+│  Each DocumentActor processes messages sequentially.                    │
+│  No race conditions for same document.                                  │
+│  Queue.takeAll ensures batch consistency.                               │
+│                                                                          │
 │  ════════════════════════════════════════════════════════════════════   │
 │  NEVER delete based on time. ALWAYS delete based on state vectors.      │
 │  ════════════════════════════════════════════════════════════════════   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 9. Optimizations
-
-### Implemented
-
-| Optimization | Description |
-|--------------|-------------|
-| **Session-based delta management** | Track oldest state → delete only safe deltas → bounded storage |
-| **Persisted clientID** | localStorage (sync), same across refresh/tabs |
-| **Demand-driven compaction** | Triggered by delta count (500), matching y-indexeddb |
-| **Server-side merging** | Y.mergeUpdatesV2 without Y.Doc instantiation |
-| **State vector tracking** | Sessions report vector for safe deletion decisions |
-| **Cascading delete** | Sessions deleted when caught up to snapshot |
-| **Watchdog disconnect** | Scheduled function marks sessions disconnected |
-| **Graceful leave** | pagehide handler clears cursor immediately |
-| **WebSocket streaming** | Real-time sync via Convex subscriptions |
-
-### To Consider
-
-| Optimization | Description |
-|--------------|-------------|
-| **Visibility-based cursor** | Clear cursor on tab hidden |
-| **Cursor throttling** | Debounce rapid cursor updates |
-| **User-level grouping** | Group sessions by user field |
-
-### Anti-Patterns (AVOID)
-
-| Anti-Pattern | Why It's Wrong |
-|--------------|----------------|
-| **Time-based deletion** | Time is not a measure of data safety |
-| **Delete sessions by age** | Might have unsynced state |
-| **Delete deltas by age** | Clients might still need them |
-| **Skip vector checks** | Only vectors tell us what's safe |
-
----
-
-## Summary
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    KEY INSIGHTS                                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  1. State vectors are the source of truth                                │
-│     - They tell us exactly what each client has                         │
-│     - Comparison determines what's safe to delete                       │
-│                                                                          │
-│  2. Snapshots guarantee recovery                                         │
-│     - Recovery = diff(snapshot, client's LOCAL vector)                  │
-│     - Always works, regardless of sessions                              │
-│                                                                          │
-│  3. Sessions enable efficient delta management                           │
-│     - Track "oldest known state" in the system                          │
-│     - Delete deltas that ALL sessions have (safe)                       │
-│     - Keep deltas that some sessions need (streaming)                   │
-│     - Without sessions: unbounded storage OR constant recovery          │
-│                                                                          │
-│  4. Sessions deleted when snapshot covers them                           │
-│     - snapshot.vector >= session.vector → safe to delete                │
-│     - Client can recover from snapshot if they reconnect                │
-│                                                                          │
-│  5. ClientID persisted when storage is shared                            │
-│     - Shared SQLite/localStorage = same logical client                  │
-│     - Same client = same clientID = same session                        │
-│                                                                          │
-│  6. NEVER use time for deletion decisions                                │
-│     - Only state vectors determine data safety                          │
-│     - Disconnected for 1 year? Still safe if caught up to snapshot      │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

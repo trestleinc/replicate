@@ -173,7 +173,7 @@ Create a collection definition using `collection.create()`. This is SSR-safe bec
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
-import initSqlJs from 'sql.js';
+import { PGlite } from '@electric-sql/pglite';
 import { z } from 'zod';
 
 // Define your Zod schema (required)
@@ -189,8 +189,8 @@ export type Task = z.infer<typeof taskSchema>;
 export const tasks = collection.create({
   // Async factory - only called in browser during init()
   persistence: async () => {
-    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-    return persistence.sqlite.browser(SQL, 'tasks');
+    const db = new PGlite('idb://tasks');
+    return persistence.pglite(db, 'tasks');
   },
   // Sync factory - only called in browser during init()
   config: () => ({
@@ -526,10 +526,10 @@ export const {
 
 ### Rich Text / Prose Fields
 
-For collaborative rich text editing, use the `schema.prose()` validator and `prose.extract()` function:
+For collaborative rich text editing, use `schema.prose()` on both server and client:
 
 ```typescript
-// convex/schema.ts
+// convex/schema.ts (server)
 import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
@@ -541,9 +541,9 @@ export default defineSchema({
 });
 
 // Client: Extract plain text for search
-import { prose } from '@trestleinc/replicate/client';
+import { schema } from '@trestleinc/replicate/client';
 
-const plainText = prose.extract(notebook.content);
+const plainText = schema.prose.extract(notebook.content);
 
 // Client: Get editor binding for ProseMirror/TipTap
 const binding = await collection.utils.prose(notebookId, 'content');
@@ -556,17 +556,38 @@ Choose the right storage backend for your platform. Persistence is configured in
 ```typescript
 import { collection, persistence } from '@trestleinc/replicate/client';
 
-// Browser SQLite: Uses sql.js WASM with OPFS persistence
+// Browser: PGlite (PostgreSQL in browser via IndexedDB)
 export const tasks = collection.create({
   persistence: async () => {
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-    return persistence.sqlite.browser(SQL, 'my-app-db');
+    const { PGlite } = await import('@electric-sql/pglite');
+    const db = new PGlite('idb://my-app-db');
+    return persistence.pglite(db, 'tasks');
   },
   config: () => ({ /* ... */ }),
 });
 
-// React Native SQLite: Uses op-sqlite (native SQLite)
+// Browser: PGlite singleton (shared across multiple collections)
+// Use persistence.pglite.once() when you want one database for all collections
+import { persistence } from '@trestleinc/replicate/client';
+import { PGlite } from '@electric-sql/pglite';
+
+// Create shared PGlite factory (module level)
+const pglite = async () => {
+  const db = new PGlite('idb://my-app-db');
+  return persistence.pglite.once(db, 'my-app');
+};
+
+export const tasks = collection.create({
+  persistence: pglite,  // Shared instance
+  config: () => ({ /* ... */ }),
+});
+
+export const comments = collection.create({
+  persistence: pglite,  // Same shared instance
+  config: () => ({ /* ... */ }),
+});
+
+// React Native: Native SQLite (op-sqlite)
 export const tasks = collection.create({
   persistence: async () => {
     const { open } = await import('@op-engineering/op-sqlite');
@@ -589,7 +610,9 @@ export const tasks = collection.create({
 });
 ```
 
-**SQLite Browser** - Uses sql.js (SQLite compiled to WASM) with OPFS persistence. You initialize sql.js yourself and pass the SQL object.
+**PGlite** - PostgreSQL compiled to WASM, stored in IndexedDB. Full SQL support with reactive queries. Recommended for web apps.
+
+**PGlite Singleton** - Use `persistence.pglite.once()` when multiple collections should share one database. Reference counted for proper cleanup.
 
 **SQLite Native** - Uses op-sqlite for React Native. You create the database and pass it.
 
@@ -666,18 +689,18 @@ Creates a lazy-initialized collection with deferred persistence and config resol
 ```typescript
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
-import initSqlJs from 'sql.js';
+import { PGlite } from '@electric-sql/pglite';
 
 export const tasks = collection.create({
   persistence: async () => {
-    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-    return persistence.sqlite.browser(SQL, 'tasks');
+    const db = new PGlite('idb://tasks');
+    return persistence.pglite(db, 'tasks');
   },
   config: () => ({
     schema: taskSchema,
+    getKey: (task) => task.id,
     convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
-    getKey: (task) => task.id,
   }),
 });
 
@@ -726,8 +749,8 @@ interface CollectionConfig<T> {
 ```typescript
 export const tasks = collection.create({
   persistence: async () => {
-    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-    return persistence.sqlite.browser(SQL, 'tasks');
+    const db = new PGlite('idb://tasks');
+    return persistence.pglite(db, 'tasks');
   },
   config: () => ({
     schema: taskSchema,
@@ -738,7 +761,7 @@ export const tasks = collection.create({
 });
 ```
 
-#### `prose.extract(proseJson)`
+#### `schema.prose.extract(proseJson)`
 
 Extract plain text from ProseMirror JSON.
 
@@ -749,9 +772,9 @@ Extract plain text from ProseMirror JSON.
 
 **Example:**
 ```typescript
-import { prose } from '@trestleinc/replicate/client';
+import { schema } from '@trestleinc/replicate/client';
 
-const plainText = prose.extract(task.content);
+const plainText = schema.prose.extract(task.content);
 ```
 
 #### Persistence Providers
@@ -760,13 +783,16 @@ const plainText = prose.extract(task.content);
 import { persistence, type StorageAdapter } from '@trestleinc/replicate/client';
 
 // Persistence providers (use in collection.create persistence factory)
-persistence.sqlite.browser(SQL, name)  // Browser: sql.js WASM + OPFS
+persistence.pglite(db, name)           // Browser: PGlite (PostgreSQL in IndexedDB)
+persistence.pglite.once(db, name)      // Browser: PGlite singleton (shared across collections)
 persistence.sqlite.native(db, name)    // React Native: op-sqlite
 persistence.memory()                   // Testing: in-memory (no persistence)
 persistence.custom(adapter)            // Custom: your StorageAdapter implementation
 ```
 
-**`persistence.sqlite.browser(SQL, name)`** - Browser SQLite using sql.js WASM. You initialize sql.js and pass the SQL object.
+**`persistence.pglite(db, name)`** - Browser persistence using PGlite (PostgreSQL compiled to WASM, stored in IndexedDB).
+
+**`persistence.pglite.once(db, name)`** - Singleton PGlite instance for sharing across multiple collections. Reference counted for cleanup.
 
 **`persistence.sqlite.native(db, name)`** - React Native SQLite using op-sqlite. You create the database and pass it.
 
@@ -925,7 +951,7 @@ content: schema.prose()  // Validates ProseMirror JSON structure
 import type { ProseValue } from '@trestleinc/replicate/shared';
 
 // ProseValue - branded type for prose fields in Zod schemas
-// Use the prose() helper from client to create fields of this type
+// Use schema.prose() from client to create Zod fields of this type
 ```
 
 ## React Native
@@ -966,11 +992,11 @@ A full-featured offline-first issue tracker built with Replicate, demonstrating 
 - [`examples/expo/`](./examples/expo/) - Expo (React Native, mobile)
 
 **Web features demonstrated:**
-- Offline-first with SQLite persistence (sql.js + OPFS)
+- Offline-first with PGlite persistence (PostgreSQL in IndexedDB)
 - Rich text editing with TipTap + Yjs collaboration
 - PWA with custom service worker
 - Real-time sync across devices
-- Search with client-side text extraction (`prose.extract()`)
+- Search with client-side text extraction (`schema.prose.extract()`)
 
 **Mobile features demonstrated (Expo):**
 - Native SQLite persistence (op-sqlite)

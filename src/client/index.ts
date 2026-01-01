@@ -33,6 +33,11 @@ export const errors = {
 import { extract } from "$/client/merge";
 import { prose as proseSchema } from "$/client/prose";
 
-export const prose = Object.assign(proseSchema, { extract });
+export const schema = {
+  prose: Object.assign(proseSchema, {
+    extract,
+    empty: proseSchema.empty,
+  }),
+} as const;
 
 export { persistence, type StorageAdapter, type Persistence } from "$/client/persistence/index";

@@ -7,7 +7,7 @@
   import StatusIcon from "./StatusIcon.svelte";
   import StarIcon from "./StarIcon.svelte";
   import { intervals as intervalsCollection } from "$collections/useIntervals";
-  import { prose } from "@trestleinc/replicate/client";
+  import { schema } from "@trestleinc/replicate/client";
   import type { Interval } from "$lib/types";
 
   interface Props {
@@ -39,7 +39,7 @@
     collection.insert({
       id,
       title: "New Interval",
-      description: prose.empty(),
+      description: schema.prose.empty(),
       status: "backlog",
       priority: "none",
       createdAt: now,

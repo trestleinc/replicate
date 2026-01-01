@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { prose } from "@trestleinc/replicate/client";
+import { schema } from "@trestleinc/replicate/client";
 import { useIntervalsContext } from "../contexts/IntervalsContext";
 import { Status, Priority, type Interval } from "../types/interval";
 
@@ -15,7 +15,7 @@ export function useCreateInterval() {
     collection.insert({
       id,
       title: "Untitled",
-      description: prose.empty(),
+      description: schema.prose.empty(),
       status: Status.BACKLOG,
       priority: Priority.NONE,
       createdAt: now,

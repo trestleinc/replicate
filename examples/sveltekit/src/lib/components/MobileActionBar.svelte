@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 	import { intervals } from '$collections/useIntervals';
-	import { prose } from '@trestleinc/replicate/client';
+	import { schema } from '@trestleinc/replicate/client';
 
 	type Props = {
 		onsearchopen: () => void;
@@ -22,7 +22,7 @@
 		collection.insert({
 			id,
 			title: 'New Interval',
-			description: prose.empty(),
+			description: schema.prose.empty(),
 			status: 'backlog',
 			priority: 'none',
 			createdAt: now,

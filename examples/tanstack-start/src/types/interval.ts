@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prose } from "@trestleinc/replicate/client";
+import { schema } from "@trestleinc/replicate/client";
 
 export const Status = {
   BACKLOG: "backlog",
@@ -40,7 +40,7 @@ export const PriorityLabels: Record<PriorityValue, string> = {
 export const intervalSchema = z.object({
   id: z.string(),
   title: z.string(),
-  description: prose(),
+  description: schema.prose(),
   status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]),
   priority: z.enum(["none", "low", "medium", "high", "urgent"]),
   createdAt: z.number(),

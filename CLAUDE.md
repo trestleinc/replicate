@@ -27,11 +27,12 @@ Single package with exports:
 bun run build        # Build with tsdown (outputs to dist/)
 bun run clean        # Remove dist/
 
-# Publishing
-bun run prepublish   # Runs build (which includes linting)
+# Linting
+bun run lint         # Check for lint errors
+bun run lint:fix     # Auto-fix lint errors
 ```
 
-**Note:** Build uses tsdown which includes TypeScript type checking. Linting runs separately via `bun run lint`.
+**Note:** Build uses tsdown which includes TypeScript type checking. Always run `bun run lint:fix` before committing.
 
 ## Architecture
 
@@ -40,25 +41,22 @@ bun run prepublish   # Runs build (which includes linting)
 src/
 ├── client/                  # Client-side (browser)
 │   ├── index.ts             # Public exports
-│   ├── collection.ts        # TanStack DB + Yjs integration, utils.prose()
-│   ├── replicate.ts         # Replicate helpers for TanStack DB
-│   ├── merge.ts             # Yjs CRDT merge operations, extract()
-│   ├── errors.ts            # Effect TaggedErrors + NonRetriableError
+│   ├── collection.ts        # TanStack DB + Yjs integration
+│   ├── ops.ts               # Replicate helpers for TanStack DB
+│   ├── merge.ts             # Yjs CRDT merge operations
+│   ├── prose.ts             # Rich text field binding
+│   ├── subdocs.ts           # Yjs subdoc management
+│   ├── errors.ts            # Error classes
 │   ├── logger.ts            # LogTape logger
 │   ├── persistence/         # Swappable storage backends
-│   │   ├── types.ts         # Persistence, PersistenceProvider, KeyValueStore
-│   │   ├── indexeddb.ts     # Browser: y-indexeddb + browser-level
-│   │   ├── sqlite.ts        # Universal: y-leveldb + sqlite-level (browser + RN)
-│   │   ├── sqlite-level.ts  # abstract-level implementation for SQLite
-│   │   ├── adapters/
-│   │   │   ├── sqljs.ts     # Browser: sql.js WASM adapter with OPFS
-│   │   │   └── opsqlite.ts  # React Native: op-sqlite native adapter
-│   │   └── memory.ts        # Testing: in-memory (no persistence)
-│   └── services/            # Core services (Effect-based)
-│       ├── context.ts       # CollectionContext for consolidated state
-│       ├── cursor.ts        # Cursor/Seq tracking in persistence KV
-│       ├── presence.ts      # Real-time cursor presence
-│       └── sync.ts          # Sync subscription and recovery (Phase 2)
+│   │   ├── types.ts         # Persistence, KeyValueStore interfaces
+│   │   ├── sqlite/          # SQLite backends
+│   │   │   ├── browser.ts   # sql.js WASM + OPFS
+│   │   │   └── native.ts    # op-sqlite (React Native)
+│   │   ├── pglite.ts        # PGlite persistence
+│   │   ├── memory.ts        # Testing: in-memory
+│   │   └── custom.ts        # Custom adapter wrapper
+│   └── services/            # Effect.ts services (see below)
 ├── server/                  # Server-side (Convex functions)
 │   ├── index.ts             # Public exports
 │   ├── collection.ts        # replicate() factory
@@ -66,17 +64,89 @@ src/
 │   └── replicate.ts         # Replicate class (storage operations)
 ├── component/               # Internal Convex component
 │   ├── convex.config.ts     # Component config
-│   ├── schema.ts            # Event log schema (documents, snapshots, sessions)
-│   ├── mutations.ts         # Component API (stream, insert, update, etc.)
-│   └── logger.ts            # Component logging
-├── shared/                  # Shared types (all environments)
-│   ├── index.ts             # Re-exports types.ts
-│   └── types.ts             # ProseFields, XmlFragmentJSON, OperationType
-├── test/                    # Test files
-│   ├── e2e/                 # End-to-end tests
-│   ├── integration/         # Integration tests
-│   └── unit/                # Unit tests
-└── env.d.ts                 # Environment type declarations
+│   ├── schema.ts            # Event log schema
+│   └── mutations.ts         # Component API
+└── shared/                  # Shared types
+    └── types.ts             # ProseFields, XmlFragmentJSON, OperationType
+```
+
+### Effect.ts Actor-Based Sync Architecture
+
+The sync system uses a **per-document actor model** built with Effect.ts primitives. This replaced the previous centralized sync engine with semaphores.
+
+#### Services (`src/client/services/`)
+
+```
+services/
+├── actor.ts      # DocumentActor - per-document sync actor
+├── manager.ts    # ActorManager - manages actor lifecycle
+├── runtime.ts    # ReplicateRuntime - Effect runtime factory
+├── errors.ts     # Effect TaggedError types
+├── engine.ts     # Re-exports (barrel file)
+├── context.ts    # CollectionContext - consolidated state
+├── seq.ts        # SeqService - cursor/sequence tracking
+├── session.ts    # Session management helpers
+└── awareness.ts  # Yjs awareness/presence
+```
+
+#### Actor Model Design
+
+**DocumentActor** (`actor.ts`):
+- One actor per document (prose field)
+- Uses `Queue.unbounded` as mailbox for messages
+- Message types: `LocalChange`, `ExternalUpdate`, `Shutdown`
+- `Queue.takeAll` batches rapid local changes into single sync
+- `SubscriptionRef` for reactive pending state (UI can subscribe)
+- `Schedule.exponential` with jitter for retry on failure
+
+```typescript
+// Message flow
+LocalChange → debounce (300ms) → batch with takeAll → sync → update vector
+ExternalUpdate → update stored vector (Yjs already applied by collection.ts)
+Shutdown → interrupt debounce fiber → signal done
+```
+
+**ActorManager** (`manager.ts`):
+- Manages per-document actors with `HashMap<string, ManagedActor>`
+- Methods: `register`, `get`, `onLocalChange`, `onServerUpdate`, `unregister`, `destroy`
+- Each actor has its own `Scope` for resource cleanup
+
+**ReplicateRuntime** (`runtime.ts`):
+- Creates Effect runtime with `ActorManager` and `SeqService`
+- Two modes:
+  - **Per-collection** (default): Each collection gets its own runtime
+  - **Singleton**: Shared runtime with reference counting (for PGlite)
+- `runWithRuntime` helper for executing effects
+
+#### Error Types (`errors.ts`)
+
+```typescript
+SyncError                  // Sync failed for document
+DocumentNotRegisteredError // Document not registered with actor
+ActorShutdownError         // Actor was shut down
+ActorManagerError          // ActorManager operation failed
+```
+
+#### Data Flow
+
+```
+Client edit
+    → Y.Doc update event
+    → prose.ts captures delta
+    → actorManager.onLocalChange(documentId)
+    → actor.send({ _tag: "LocalChange" })
+    → debounce timer starts
+    → (more edits batch via Queue.takeAll)
+    → debounce expires
+    → performSync (encode delta, call Convex mutation)
+    → update stored vector
+    → set pending=false
+
+Server update (via stream subscription)
+    → collection.ts applies Y.applyUpdate to subdoc
+    → ops.upsert/insert/delete to TanStack DB
+    → actorManager.onServerUpdate(documentId)
+    → actor updates stored vector (bookkeeping only)
 ```
 
 ### Core Concepts
@@ -86,18 +156,10 @@ src/
 - Main table: Materialized documents (read model)
 - Similar to CQRS pattern
 
-**Client Services (Effect-based):**
-- Services in `src/client/services/` use Effect for dependency injection
-- `Cursor` - manages sync sequence numbers (Seq) in persistence KV
-- `Context` - consolidated CollectionContext for module state
-- `Presence` - real-time cursor position sharing
-
-**Data Flow:**
-```
-Client edit -> merge.ts (encode delta) -> collection.ts -> TanStack DB sync
-    -> Convex mutation -> Component (append delta) + Main table (upsert)
-    -> Subscription -> Other clients
-```
+**CollectionContext** (`context.ts`):
+- Consolidated state for each collection
+- Replaces multiple module-level Maps
+- Contains: subdocManager, convexClient, api, peerId, persistence, proseFields, mutex, runtime, actorManager
 
 ## Public API Surface
 
@@ -106,58 +168,33 @@ Client edit -> merge.ts (encode delta) -> collection.ts -> TanStack DB sync
 // Main entry point
 collection.create()           // Create lazy-initialized collection (SSR-safe)
 
-// Persistence providers (nested object)
-persistence.indexeddb()              // Browser: IndexedDB (default)
-persistence.sqlite.browser(SQL, name) // Browser: sql.js WASM + OPFS
-persistence.sqlite.native(db, name)   // React Native: op-sqlite
-persistence.memory()                  // Testing: in-memory
-persistence.custom(adapter)           // Custom storage adapter
+// Persistence providers
+persistence.pglite()          // Browser: PGlite (PostgreSQL in IndexedDB)
+persistence.pglite.once()     // PGlite singleton (shared across collections)
+persistence.sqlite.native()   // React Native: op-sqlite
+persistence.memory()          // Testing: in-memory
+persistence.custom()          // Custom storage adapter
 
-// Prose utilities
-prose()                      // Zod schema for prose fields
-prose.extract()              // Extract plain text from ProseMirror JSON
-prose.empty()                // Create empty prose value
+// Schema helpers (matches server API)
+schema.prose()                // Zod schema for prose fields
+schema.prose.extract()        // Extract plain text from ProseMirror JSON
+schema.prose.empty()          // Create empty prose value
 ```
 
 ### Server (`@trestleinc/replicate/server`)
 ```typescript
-replicate()             // Factory to create bound replicate function
+replicate()                   // Factory to create bound replicate function
 
-// Schema helpers (nested object)
-schema.table()          // Define replicated table schema (injects version/timestamp fields)
-schema.prose()          // Validator for ProseMirror-compatible JSON
-
-// Type exports
-ReplicateConfig         // Configuration type for replicate
-ReplicationFields       // Type for version + timestamp fields
+// Schema helpers
+schema.table()                // Define replicated table schema
+schema.prose()                // Validator for ProseMirror JSON
 ```
 
 ### Shared (`@trestleinc/replicate/shared`)
 ```typescript
-// Types (safe for any environment)
-ProseFields<T>      // Extract prose field names from document type
-XmlFragmentJSON     // ProseMirror-compatible JSON structure
-XmlNodeJSON         // ProseMirror node structure
-FragmentValue       // Marker for fragment fields
-OperationType       // Enum: Delta | Snapshot
-```
-
-### replicate() Return Value
-```typescript
-const {
-  stream,      // Real-time CRDT stream query
-  material,    // SSR-friendly query for hydration
-  insert,      // Dual-storage insert mutation (auto-compacts when threshold exceeded)
-  update,      // Dual-storage update mutation (auto-compacts when threshold exceeded)
-  remove,      // Dual-storage delete mutation (auto-compacts when threshold exceeded)
-  versions: {
-    create,    // Create a version
-    list,      // List versions for a document
-    get,       // Get a specific version
-    restore,   // Restore a document to a version
-    remove,    // Delete a version
-  }
-} = replicate<T>({ collection: 'tasks' });
+ProseFields<T>                // Extract prose field names from document type
+XmlFragmentJSON               // ProseMirror-compatible JSON structure
+OperationType                 // Enum: Delta | Snapshot
 ```
 
 ## Key Patterns
@@ -180,7 +217,6 @@ export const { stream, material, insert, update, remove, versions } =
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
 
-// Create lazy-initialized collection (SSR-safe)
 export const tasks = collection.create({
   persistence: async () => {
     const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
@@ -198,54 +234,44 @@ export const tasks = collection.create({
 await tasks.init();
 const collection = tasks.get();
 
-// Access utils methods
+// Prose binding for rich text
 const binding = await collection.utils.prose(id, 'content');
 ```
 
-### Schema: schema.table() Helper
+### Actor Registration (Internal)
+
 ```typescript
-import { schema } from '@trestleinc/replicate/server';
+// prose.ts registers actor when binding is created
+const actor = await runWithRuntime(
+  ctx.runtime!,
+  ctx.actorManager!.register(document, ydoc, syncFn)
+);
 
-// Automatically injects version and timestamp fields
-tasks: schema.table({
-  id: v.string(),
-  text: v.string(),
-  content: schema.prose(),  // optional: ProseMirror-compatible rich text
-}, (t) => t.index('by_id', ['id']))
+// Pending state subscription for UI
+const stream = SubscriptionRef.changes(actor.pending);
+await runWithRuntime(
+  ctx.runtime!,
+  Stream.runForEach(stream, (pending) =>
+    Effect.sync(() => callback(pending))
+  )
+);
 ```
-
-### Text Extraction
-```typescript
-import { prose } from '@trestleinc/replicate/client';
-
-// Extract plain text from ProseMirror JSON
-const plainText = prose.extract(task.content);
-```
-
-## Technology Stack
-
-- **TypeScript** (strict mode)
-- **Effect** for service architecture and dependency injection
-- **Yjs** for CRDTs (conflict-free replicated data types)
-- **Convex** for backend (cloud database + functions)
-- **TanStack DB** for reactive state management
-- **tsdown** for building (with TypeScript type checking)
-- **ESLint** for linting (runs separately via `bun run lint`)
-- **LogTape** for logging (avoid console.*)
 
 ## Naming Conventions
 
 - **Public API**: Single-word function names, nested under noun objects (`replicate()`, `schema.table()`, `prose.extract()`)
-- **Service files**: lowercase, no suffix (`checkpoint.ts`, not `CheckpointService.ts`)
-- **Service exports**: PascalCase, no "Service" suffix (`Checkpoint`, `CheckpointLive`)
-- **Error classes**: Short names with "Error" suffix (`ProseError`, not `ProseFieldNotFoundError`)
-- **Use "replicate"**: not "sync" throughout the codebase
+- **Service files**: lowercase, no suffix (`actor.ts`, not `ActorService.ts`)
+- **Effect services**: PascalCase class extending Context.Tag (`ActorManagerService`)
+- **Error classes**: Short names with "Error" suffix (`SyncError`, `ActorShutdownError`)
+- **Use "replicate"**: not "sync" for public API
 
 ## Important Notes
 
-- **Effect-based services** - Client services use Effect for DI; understand Effect basics
+- **Effect.ts services** - Sync uses Effect for structured concurrency and resource management
+- **Actor model** - One actor per document handles sync; messages processed sequentially (no races)
 - **Hard deletes** - Documents physically removed from main table, history kept in component
-- **Linting runs separately** - ESLint runs via `bun run lint` (not during build)
 - **LogTape logging** - Use LogTape, not console.*
 - **Import types** - Use `import type` for type-only imports
 - **bun for commands** - Use `bun run` not `pnpm run` for all commands
+- **Queue.takeAll batching** - Rapid local changes coalesced into single sync
+- **ExternalUpdate is bookkeeping** - Yjs update already applied by collection.ts; actor just updates vector
