@@ -13,8 +13,9 @@ Replicate provides a dual-storage architecture for building offline-capable appl
 sequenceDiagram
     participant UI as React Component
     participant Collection as TanStack DB Collection
+    participant Actor as Document Actor
     participant Yjs as Yjs CRDT
-    participant Storage as Local Storage<br/>(SQLite)
+    participant Storage as Local Storage<br/>(PGlite/SQLite)
     participant Convex as Convex Backend
     participant Table as Main Table
 
@@ -24,13 +25,20 @@ sequenceDiagram
     Yjs->>Storage: Persist locally
     Collection-->>UI: Re-render (optimistic)
 
-    Note over Collection,Convex: Sync layer
-    Collection->>Convex: Send CRDT delta
+    Note over Collection,Actor: Effect.ts Actor Model
+    Collection->>Actor: Queue.offer(LocalChange)
+    Actor->>Actor: Debounce (200ms default)
+    Actor->>Actor: Queue.takeAll (batch changes)
+    Actor->>Convex: Send CRDT delta
+
+    Note over Convex,Table: Server processing
     Convex->>Convex: Append to event log
     Convex->>Table: Update materialized doc
 
     Note over Convex,UI: Real-time updates
     Table-->>Collection: stream subscription
+    Collection->>Actor: Queue.offer(ExternalUpdate)
+    Actor->>Actor: Update state vector
     Collection-->>UI: Re-render with server state
 ```
 
@@ -40,9 +48,12 @@ sequenceDiagram
 graph TB
     subgraph Client
         TDB[TanStack DB]
+        Actor[Document Actors<br/>Effect.ts]
         Yjs[Yjs CRDT]
-        Local[(SQLite)]
+        Local[(PGlite/SQLite)]
         TDB <--> Yjs
+        TDB --> Actor
+        Actor --> Yjs
         Yjs <--> Local
     end
 
@@ -52,7 +63,7 @@ graph TB
         Component --> Main
     end
 
-    Yjs -->|insert/update/remove| Component
+    Actor -->|batched sync| Component
     Main -->|stream subscription| TDB
 ```
 
@@ -60,6 +71,40 @@ graph TB
 - **Event Log (Component)**: Append-only CRDT deltas for conflict resolution and history
 - **Main Table**: Materialized current state for efficient queries and indexes
 - Similar to CQRS: event log = write model, main table = read model
+
+### Actor-Based Sync Engine
+
+Replicate uses Effect.ts per-document actors for efficient sync management:
+
+```mermaid
+graph LR
+    subgraph "Per-Document Actor"
+        Queue[Effect Queue]
+        Debounce[Debounce Timer<br/>200ms default]
+        Batch[Queue.takeAll<br/>Batch Changes]
+        Sync[Sync to Server]
+        Queue --> Debounce
+        Debounce --> Batch
+        Batch --> Sync
+    end
+
+    Local[Local Change] --> Queue
+    Server[Server Update] --> Queue
+```
+
+**How it works:**
+- Each document gets its own actor with an Effect.ts `Queue` for message batching
+- Local changes are debounced (configurable, default 200ms) before syncing
+- `Queue.takeAll` batches rapid changes into a single sync operation
+- Server updates trigger immediate state vector updates (no debounce)
+- Actors are managed by `ActorManager` using Effect.ts `HashMap` for O(1) lookup
+- Graceful shutdown via `Deferred` ensures pending syncs complete
+
+**Benefits:**
+- Reduced network traffic through intelligent batching
+- Per-document isolation prevents one slow sync from blocking others
+- Exponential backoff with jitter for retry resilience
+- Clean resource management via Effect.ts `Scope`
 
 ## Installation
 
@@ -171,7 +216,6 @@ Create a collection definition using `collection.create()`. This is SSR-safe bec
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
-import { PGlite } from '@electric-sql/pglite';
 import { z } from 'zod';
 
 // Define your Zod schema (required)
@@ -187,8 +231,9 @@ export type Task = z.infer<typeof taskSchema>;
 export const tasks = collection.create({
   // Async factory - only called in browser during init()
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
-    return persistence.pglite(db, 'tasks');
+    return persistence.pglite(db);
   },
   // Sync factory - only called in browser during init()
   config: () => ({
@@ -629,7 +674,7 @@ export const tasks = collection.create({
   persistence: async () => {
     const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://my-app-db');
-    return persistence.pglite(db, 'tasks');
+    return persistence.pglite(db);
   },
   config: () => ({ /* ... */ }),
 });
@@ -637,13 +682,13 @@ export const tasks = collection.create({
 // Browser: PGlite singleton (shared across multiple collections)
 // Use persistence.pglite.once() when you want one database for all collections
 import { persistence } from '@trestleinc/replicate/client';
-import { PGlite } from '@electric-sql/pglite';
 
 // Create shared PGlite factory (module level)
-const pglite = async () => {
-  const db = new PGlite('idb://my-app-db');
-  return persistence.pglite.once(db, 'my-app');
-};
+// persistence.pglite.once() takes a factory function and memoizes the result
+const pglite = persistence.pglite.once(async () => {
+  const { PGlite } = await import('@electric-sql/pglite');
+  return new PGlite('idb://my-app-db');
+});
 
 export const tasks = collection.create({
   persistence: pglite,  // Shared instance
@@ -660,7 +705,7 @@ export const tasks = collection.create({
   persistence: async () => {
     const { open } = await import('@op-engineering/op-sqlite');
     const db = open({ name: 'my-app-db' });
-    return persistence.sqlite.native(db, 'my-app-db');
+    return persistence.sqlite(db, 'my-app-db');
   },
   config: () => ({ /* ... */ }),
 });
@@ -678,11 +723,11 @@ export const tasks = collection.create({
 });
 ```
 
-**PGlite** - PostgreSQL compiled to WASM, stored in IndexedDB. Full SQL support with reactive queries. Recommended for web apps.
+**PGlite** - PostgreSQL compiled to WASM, stored in IndexedDB. Full SQL support. Recommended for web apps.
 
-**PGlite Singleton** - Use `persistence.pglite.once()` when multiple collections should share one database. Reference counted for proper cleanup.
+**PGlite Singleton** - Use `persistence.pglite.once(factory)` when multiple collections should share one database. Takes a factory function that creates the PGlite instance, memoizes the result.
 
-**SQLite Native** - Uses op-sqlite for React Native. You create the database and pass it.
+**SQLite Native** - Uses op-sqlite for React Native. Pass the opened database instance.
 
 **Memory** - No persistence, useful for testing.
 
@@ -757,12 +802,12 @@ Creates a lazy-initialized collection with deferred persistence and config resol
 ```typescript
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
-import { PGlite } from '@electric-sql/pglite';
 
 export const tasks = collection.create({
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
-    return persistence.pglite(db, 'tasks');
+    return persistence.pglite(db);
   },
   config: () => ({
     schema: taskSchema,
@@ -817,8 +862,9 @@ interface CollectionConfig<T> {
 ```typescript
 export const tasks = collection.create({
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
-    return persistence.pglite(db, 'tasks');
+    return persistence.pglite(db);
   },
   config: () => ({
     schema: taskSchema,
@@ -851,18 +897,18 @@ const plainText = schema.prose.extract(task.content);
 import { persistence, type StorageAdapter } from '@trestleinc/replicate/client';
 
 // Persistence providers (use in collection.create persistence factory)
-persistence.pglite(db, name)           // Browser: PGlite (PostgreSQL in IndexedDB)
-persistence.pglite.once(db, name)      // Browser: PGlite singleton (shared across collections)
-persistence.sqlite.native(db, name)    // React Native: op-sqlite
+persistence.pglite(pg)                 // Browser: PGlite (PostgreSQL in IndexedDB)
+persistence.pglite.once(factory)       // Browser: PGlite singleton (shared across collections)
+persistence.sqlite(db, name)           // React Native: op-sqlite
 persistence.memory()                   // Testing: in-memory (no persistence)
 persistence.custom(adapter)            // Custom: your StorageAdapter implementation
 ```
 
-**`persistence.pglite(db, name)`** - Browser persistence using PGlite (PostgreSQL compiled to WASM, stored in IndexedDB).
+**`persistence.pglite(pg)`** - Browser persistence using PGlite (PostgreSQL compiled to WASM, stored in IndexedDB). Pass an initialized PGlite instance.
 
-**`persistence.pglite.once(db, name)`** - Singleton PGlite instance for sharing across multiple collections. Reference counted for cleanup.
+**`persistence.pglite.once(factory)`** - Singleton factory for sharing one PGlite instance across multiple collections. Takes a factory function `() => Promise<PGlite>` and memoizes the result.
 
-**`persistence.sqlite.native(db, name)`** - React Native SQLite using op-sqlite. You create the database and pass it.
+**`persistence.sqlite(db, name)`** - React Native SQLite using op-sqlite. Pass the opened database and a name for the persistence layer.
 
 **`persistence.memory()`** - In-memory, no persistence. Useful for testing.
 

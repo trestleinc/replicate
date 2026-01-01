@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0-preview.3] - 2026-01-01
+
+### Added
+
+- **Configurable debounce for prose fields** - `collection.utils.prose(id, field, { debounceMs })` option
+
+### Changed
+
+- **Effect.ts per-document actor model** - Replaced sync engine with Queue-based batching, SubscriptionRef for reactive pending state, and Schedule.exponential retry with jitter
+- **`schema.prose` API** - Changed client API from `prose` to `schema.prose` for consistency with server-side API
+- **TanStack Table with shadcn UI** - Refactored examples to use TanStack Table with shadcn components
+- **Native service worker** - Replaced vite-plugin-pwa with native SW registration in TanStack Start example
+
+### Fixed
+
+- **Avatar/presence bug** - Separated sync tracking from presence; `mark` mutation no longer incorrectly sets `connected: true` for all synced documents
+- **Prose fragment initialization** - Wait for actor system before observing Yjs fragments
+
+## [1.2.0-preview.2] - 2026-01-01
+
+### Added
+
+- **PGlite persistence** - `persistence.pglite(db, name)` for PostgreSQL in browser via IndexedDB
+- **PGlite singleton mode** - `persistence.pglite.once(db, name)` for sharing one database across multiple collections
+- **`exists` field in stream** - Enables cross-client sync awareness
+
+### Changed
+
+- **Simplified persistence API** - Removed redundant providers; migrated browser SQLite to `@sqlite.org/sqlite-wasm`
+- **Migrated examples to PGlite** - Both TanStack Start and SvelteKit examples now use PGlite
+- **Comment body as plain string** - Converted from prose to plain string in examples
+
+### Fixed
+
+- **Stable anonymous identity** - Prevents duplicate presence entries on reconnect
+
 ## [1.2.0-preview.0] - 2025-12-31
 
 ### Added
@@ -21,8 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration V2 architecture** - Consolidated module-level state into `CollectionContext`
 - **Per-document recovery** - Refactored SSR and recovery to per-document architecture
 - **Normalized schema** - Aligned naming conventions and Effect.ts service patterns
-- **Optimized SvelteKit example** - Added TanStack Table with virtual scrolling
-- **Separated sync from presence** - `mark` mutation now only handles sync tracking (vector, seq); presence uses dedicated `presence` mutation
 
 ### Removed
 
@@ -31,7 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Avatar/presence bug** - Fixed `mark` mutation incorrectly setting `connected: true` for all synced documents, which caused wrong avatars to appear on refresh
 - **Persistence race condition** - Documents no longer show as "Untitled" during init
 - **Stream response types** - Aligned `replicate.ts` types with component
 - **Presence race conditions** - Rewrote awareness.ts with atomic state machine (`idle → joining → active → leaving → destroyed`) to handle visibility changes, destroy during throttle, and overlapping heartbeats
