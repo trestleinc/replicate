@@ -1,11 +1,13 @@
 <script lang="ts">
   import { useLiveQuery } from "@tanstack/svelte-db";
   import { getFilterContext } from "$lib/contexts/filters.svelte";
-  import IntervalRow from "$lib/components/IntervalRow.svelte";
   import IntervalListSkeleton from "$lib/components/IntervalListSkeleton.svelte";
   import { intervals as intervalsLazy } from "$collections/useIntervals";
+  import * as Table from "$lib/components/ui/table/index.js";
   import {
     createSvelteTable,
+    FlexRender,
+    renderComponent,
     getCoreRowModel,
     getFilteredRowModel,
     getSortedRowModel,
@@ -14,6 +16,10 @@
     type ColumnFiltersState,
   } from "$lib/components/ui/data-table";
   import type { Interval } from "$lib/types";
+  import StatusCell from "./StatusCell.svelte";
+  import PriorityCell from "./PriorityCell.svelte";
+  import ActionsCell from "./ActionsCell.svelte";
+  import TitleCell from "./TitleCell.svelte";
 
   const collection = intervalsLazy.get();
   const intervalsQuery = useLiveQuery(collection);
@@ -35,12 +41,29 @@
     columnFilters = newFilters;
   });
 
-  const columns: ColumnDef<Interval, unknown>[] = [
-    { accessorKey: "id" },
-    { accessorKey: "status", filterFn: "equals" },
-    { accessorKey: "title" },
-    { accessorKey: "priority", filterFn: "equals" },
-    { accessorKey: "updatedAt" },
+  const columns: ColumnDef<Interval>[] = [
+    {
+      accessorKey: "status",
+      filterFn: "equals",
+      cell: ({ row }) => renderComponent(StatusCell, { interval: row.original }),
+    },
+    {
+      accessorKey: "title",
+      cell: ({ row }) => renderComponent(TitleCell, { interval: row.original }),
+    },
+    {
+      accessorKey: "priority",
+      filterFn: "equals",
+      cell: ({ row }) => renderComponent(PriorityCell, { interval: row.original }),
+    },
+    {
+      accessorKey: "updatedAt",
+      enableHiding: true,
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => renderComponent(ActionsCell, { interval: row.original }),
+    },
   ];
 
   const table = createSvelteTable<Interval>({
@@ -49,6 +72,7 @@
     state: {
       get sorting() { return sorting; },
       get columnFilters() { return columnFilters; },
+      get columnVisibility() { return { updatedAt: false }; },
     },
     onSortingChange: (updater) => {
       sorting = typeof updater === "function" ? updater(sorting) : updater;
@@ -74,8 +98,8 @@
         <p class="m-0">No intervals yet</p>
         <p class="text-xs opacity-60 mt-1">
           Press
-          <kbd class="inline-block px-1.5 py-0.5 mx-0.5 font-mono text-[0.6875rem] bg-background border border-border rounded-sm">&#x2325;</kbd>
-          <kbd class="inline-block px-1.5 py-0.5 mx-0.5 font-mono text-[0.6875rem] bg-background border border-border rounded-sm">N</kbd>
+          <kbd class="kbd-key">&#x2325;</kbd>
+          <kbd class="kbd-key">N</kbd>
           to create your first interval
         </p>
       {:else}
@@ -84,10 +108,19 @@
     </div>
   {:else}
     <div class="flex-1 overflow-auto">
-      {#each rows as row (row.id)}
-        {@const interval = row.original as Interval}
-        <IntervalRow {interval} />
-      {/each}
+      <Table.Root>
+        <Table.Body>
+          {#each rows as row (row.id)}
+            <Table.Row class="group">
+              {#each row.getVisibleCells() as cell (cell.id)}
+                <Table.Cell class={cell.column.id === "title" ? "w-full" : "w-8 p-2"}>
+                  <FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+                </Table.Cell>
+              {/each}
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
     </div>
   {/if}
 </div>

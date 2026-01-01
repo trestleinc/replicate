@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Search, Plus, Trash2 } from "lucide-react";
-import { prose } from "@trestleinc/replicate/client";
+import { schema } from "@trestleinc/replicate/client";
 import { useIntervalsContext } from "../contexts/IntervalsContext";
 import { useCreateInterval } from "../hooks/useCreateInterval";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,7 +52,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     () =>
       (intervals).map(i => ({
         ...i,
-        textContent: prose.extract(i.description).toLowerCase(),
+        textContent: schema.prose.extract(i.description).toLowerCase(),
       })),
     [intervals],
   );
@@ -233,7 +233,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
                           variant="ghost"
                           size="icon-xs"
                           onClick={e => handleDeleteClick(e, interval.id)}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           title="Delete interval"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
