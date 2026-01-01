@@ -38,7 +38,9 @@ export function ReloadPrompt() {
           }
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        // Service worker registration failed - ignore silently
+      });
 
     const handleControllerChange = () => {
       window.location.reload();
