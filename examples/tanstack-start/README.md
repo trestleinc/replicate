@@ -8,7 +8,7 @@ A Linear-style issue tracker with offline-first sync, built as a reference imple
 
 This app showcases real-world Replicate patterns beyond the basics:
 
-- **SQLite persistence** (sql.js + OPFS) instead of default IndexedDB
+- **PGlite persistence** (PostgreSQL in browser via IndexedDB) with reactive queries
 - **Rich text editing** with TipTap + Yjs collaborative fragments
 - **PWA with offline support** via custom Workbox service worker
 - **Multiple collections** (intervals + comments) with separate persistence
@@ -28,7 +28,7 @@ bun run dev
 
 | Pattern | File |
 |---------|------|
-| SQLite Persistence Setup | [`src/collections/useIntervals.ts`](src/collections/useIntervals.ts) |
+| PGlite Persistence Setup | [`src/collections/useIntervals.ts`](src/collections/useIntervals.ts) |
 | Convex Schema | [`convex/schema.ts`](convex/schema.ts) |
 | Replicate Functions | [`convex/intervals.ts`](convex/intervals.ts) |
 | Rich Text Editor Binding | [`src/components/IntervalEditor.tsx`](src/components/IntervalEditor.tsx) |
@@ -40,7 +40,7 @@ bun run dev
 
 ### PersistenceGate
 
-SQLite via sql.js requires async initialization. The `PersistenceGate` component blocks rendering until persistence is ready, ensuring offline-first functionality is established before any data access.
+PGlite requires async initialization. The `PersistenceGate` component blocks rendering until persistence is ready, ensuring offline-first functionality is established before any data access.
 
 ### Singleton Collections
 
@@ -52,7 +52,7 @@ Rich text fields use `collection.utils.prose()` which returns a Promise. Effect-
 
 ### Multi-Collection Architecture
 
-Intervals and comments use separate SQLite databases and Replicate collections, demonstrating how to structure apps with multiple synced data types.
+Intervals and comments share a single PGlite database via `persistence.pglite.once()`, demonstrating how to structure apps with multiple synced data types.
 
 ## Tech Stack
 
@@ -61,7 +61,7 @@ Intervals and comments use separate SQLite databases and Replicate collections, 
 - **Backend:** [Convex](https://convex.dev) (real-time database)
 - **Sync:** [@trestleinc/replicate](https://github.com/trestleinc/replicate) (CRDT layer)
 - **Editor:** [TipTap](https://tiptap.dev) + [Yjs](https://yjs.dev) (collaborative editing)
-- **Offline:** [sql.js](https://sql.js.org) (SQLite in browser)
+- **Offline:** [PGlite](https://pglite.dev) (PostgreSQL in browser)
 - **Styling:** Tailwind CSS v4
 
 ## Keyboard Shortcuts
