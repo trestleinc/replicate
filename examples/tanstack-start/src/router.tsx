@@ -1,15 +1,15 @@
-import { QueryClient } from '@tanstack/react-query';
-import { createRouter } from '@tanstack/react-router';
-import { routerWithQueryClient } from '@tanstack/react-router-with-query';
-import { ConvexClient } from 'convex/browser';
+import { QueryClient } from "@tanstack/react-query";
+import { createRouter } from "@tanstack/react-router";
+import { routerWithQueryClient } from "@tanstack/react-router-with-query";
+import { ConvexClient } from "convex/browser";
 
 // Import the generated route tree
-import { routeTree } from './routeTree.gen';
+import { routeTree } from "./routeTree.gen";
 
 // Initialize Convex client at module level for RxDB replication (WebSocket-based)
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 if (!convexUrl) {
-  throw new Error('VITE_CONVEX_URL environment variable is required');
+  throw new Error("VITE_CONVEX_URL environment variable is required");
 }
 export const convexClient = new ConvexClient(convexUrl);
 
@@ -46,7 +46,7 @@ export const getRouter = () => {
   return routerWithQueryClient(router, queryClient);
 };
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof getRouter>;
   }

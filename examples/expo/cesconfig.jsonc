@@ -1,0 +1,31 @@
+// This is an optional configuration file used primarily for debugging purposes when reporting issues.
+// It is safe to delete this file as it does not affect the functionality of your application.
+{
+  "cesVersion": "2.21.0-next.7a731e6",
+  "projectName": "my-expo-app",
+  "packages": [
+    {
+      "name": "nativewind",
+      "type": "styling"
+    }
+  ],
+  "flags": {
+    "noGit": false,
+    "noInstall": false,
+    "overwrite": false,
+    "importAlias": true,
+    "packageManager": "bun",
+    "eas": false,
+    "publish": false
+  },
+  "packageManager": {
+    "type": "bun",
+    "version": "1.3.4"
+  },
+  "os": {
+    "type": "Darwin",
+    "platform": "darwin",
+    "arch": "arm64",
+    "kernelVersion": "25.1.0"
+  }
+}

@@ -1,0 +1,27 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+@import "nativewind/theme";
+
+@theme {
+  --color-background: hsl(45 30% 96%);
+  --color-foreground: hsl(30 15% 15%);
+  --color-card: hsl(45 12% 94%);
+  --color-card-foreground: hsl(30 15% 15%);
+  --color-popover: hsl(45 12% 94%);
+  --color-popover-foreground: hsl(30 15% 15%);
+  --color-primary: hsl(25 65% 45%);
+  --color-primary-foreground: hsl(45 30% 96%);
+  --color-secondary: hsl(45 12% 94%);
+  --color-secondary-foreground: hsl(30 15% 15%);
+  --color-muted: hsl(45 12% 94%);
+  --color-muted-foreground: hsl(30 10% 45%);
+  --color-accent: hsl(25 65% 45%);
+  --color-accent-foreground: hsl(45 30% 96%);
+  --color-destructive: hsl(0 65% 45%);
+  --color-destructive-foreground: hsl(45 30% 96%);
+  --color-border: hsl(45 10% 88%);
+  --color-input: hsl(45 10% 88%);
+  --color-ring: hsl(25 65% 45%);
+  --radius: 0.125rem;
+}
