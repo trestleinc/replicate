@@ -1,6 +1,6 @@
 {
   "name": "@trestleinc/replicate",
-  "version": "1.2.0-preview.1",
+  "version": "1.2.0-preview.2",
   "description": "Offline-first data replication with Yjs CRDTs and Convex",
   "repository": "github:trestleinc/replicate",
   "homepage": "https://github.com/trestleinc/replicate#readme",

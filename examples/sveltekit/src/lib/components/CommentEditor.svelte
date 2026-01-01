@@ -14,6 +14,12 @@
   let editedBody = $state(body);
   let isEditing = $state(false);
 
+  $effect(() => {
+    if (!isEditing) {
+      editedBody = body;
+    }
+  });
+
   function handleBlur() {
     if (editedBody.trim() !== body) {
       collection.update(commentId, (draft) => {
