@@ -1,7 +1,17 @@
 import * as Y from "yjs";
 
 export function createDeleteDelta(): Uint8Array {
-  return new Uint8Array(0);
+  const doc = new Y.Doc();
+  const meta = doc.getMap("_meta");
+
+  doc.transact(() => {
+    meta.set("_deleted", true);
+    meta.set("_deletedAt", Date.now());
+  });
+
+  const update = Y.encodeStateAsUpdateV2(doc);
+  doc.destroy();
+  return update;
 }
 
 export function createUpdateDelta(
