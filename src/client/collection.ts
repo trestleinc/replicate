@@ -20,10 +20,15 @@ import {
   fragmentFromJSON,
 } from "$/client/merge";
 import {
-  createSubdocManager,
-  extractDocumentFromSubdoc,
+  createDocumentManager,
+  serializeDocument,
   extractAllDocuments,
-} from "$/client/subdocs";
+} from "$/client/documents";
+import {
+  createInsertDelta,
+  createDeleteDelta,
+  hasDeleteMarker,
+} from "$/client/deltas";
 import * as prose from "$/client/prose";
 import { extractProseFields } from "$/client/prose";
 import {
@@ -267,7 +272,7 @@ export function convexCollectionOptions(
         });
       }
 
-      const fragment = ctx.subdocs.getFragment(document, fieldStr);
+      const fragment = ctx.docManager.getFragment(document, fieldStr);
       if (!fragment) {
         throw new ProseError({
           document,
@@ -276,7 +281,7 @@ export function convexCollectionOptions(
         });
       }
 
-      const subdoc = ctx.subdocs.get(document);
+      const subdoc = ctx.docManager.get(document);
       if (!subdoc) {
         throw new ProseError({
           document,
@@ -297,7 +302,7 @@ export function convexCollectionOptions(
           field: fieldStr,
           fragment,
           ydoc: subdoc,
-          ymap: ctx.subdocs.getFields(document)!,
+          ymap: ctx.docManager.getFields(document)!,
           collectionRef,
           debounceMs: options?.debounceMs,
         });
@@ -347,12 +352,12 @@ export function convexCollectionOptions(
     },
   };
 
-  const subdocManager = createSubdocManager(collection);
+  const docManager = createDocumentManager(collection);
   let docPersistence: PersistenceProvider = null as any;
 
   initContext({
     collection,
-    subdocs: subdocManager,
+    docManager,
     client: convexClient,
     api,
     persistence,
@@ -381,13 +386,13 @@ export function convexCollectionOptions(
       return;
     }
 
-    const documents = subdocManager.documents();
+    const documents = docManager.documents();
     if (documents.length === 0) {
       return;
     }
 
     for (const document of documents) {
-      const localVector = subdocManager.encodeStateVector(document);
+      const localVector = docManager.encodeStateVector(document);
 
       convexClient.query(api.recovery, {
         document,
@@ -395,7 +400,7 @@ export function convexCollectionOptions(
       }).then((response) => {
         if (response.diff) {
           const diff = new Uint8Array(response.diff);
-          subdocManager.applyUpdate(document, diff, YjsOrigin.Server);
+          docManager.applyUpdate(document, diff, YjsOrigin.Server);
         }
       });
     }
@@ -406,7 +411,7 @@ export function convexCollectionOptions(
 
     for (const mut of mutations) {
       const document = String(mut.key);
-      const delta = subdocManager.transactWithDelta(
+      const delta = docManager.transactWithDelta(
         document,
         (fieldsMap) => {
           Object.entries(mut.modified as Record<string, unknown>).forEach(([k, v]) => {
@@ -433,7 +438,7 @@ export function convexCollectionOptions(
 
     for (const mut of mutations) {
       const document = String(mut.key);
-      const fieldsMap = subdocManager.getFields(document);
+      const fieldsMap = docManager.getFields(document);
 
       if (!fieldsMap) {
         continue;
@@ -444,7 +449,7 @@ export function convexCollectionOptions(
         continue;
       }
 
-      const delta = subdocManager.transactWithDelta(
+      const delta = docManager.transactWithDelta(
         document,
         (fields) => {
           Object.entries(modifiedFields).forEach(([k, v]) => {
@@ -473,8 +478,11 @@ export function convexCollectionOptions(
 
     for (const mut of mutations) {
       const document = String(mut.key);
-      const delta = subdocManager.encodeState(document);
-      subdocManager.delete(document);
+      // Create synthetic delete delta with _meta._deleted marker
+      // This is the key fix: subdoc destruction doesn't produce CRDT deltas,
+      // so we create a synthetic delta that marks the document as deleted
+      const delta = createDeleteDelta();
+      docManager.delete(document);
       deltas.push(delta);
     }
 
@@ -499,7 +507,7 @@ export function convexCollectionOptions(
           if (!delta || delta.length === 0) continue;
 
           const document = String(mut.key);
-          const materializedDoc = extractDocumentFromSubdoc(subdocManager, document)
+          const materializedDoc = serializeDocument(docManager, document)
             ?? mut.modified;
 
           await convexClient.mutation(api.insert, {
@@ -543,7 +551,7 @@ export function convexCollectionOptions(
             if (!delta || delta.length === 0) continue;
 
             const docId = String(mut.key);
-            const fullDoc = extractDocumentFromSubdoc(subdocManager, docId) ?? mut.modified;
+            const fullDoc = serializeDocument(docManager, docId) ?? mut.modified;
 
             await convexClient.mutation(api.update, {
               document: docId,
@@ -606,13 +614,10 @@ export function convexCollectionOptions(
 
         (async () => {
           try {
-            docPersistence = persistence.createDocPersistence(collection, subdocManager.rootDoc);
-            await docPersistence.whenSynced;
-
-            const subdocPromises = subdocManager.enablePersistence((document, subdoc) => {
-              return persistence.createDocPersistence(`${collection}:${document}`, subdoc);
+            const docPromises = docManager.enablePersistence((document, ydoc) => {
+              return persistence.createDocPersistence(`${collection}:${document}`, ydoc);
             });
-            await Promise.all(subdocPromises);
+            await Promise.all(docPromises);
 
             resolvePersistenceReady?.();
 
@@ -625,15 +630,15 @@ export function convexCollectionOptions(
             if (ssrCrdt) {
               for (const [docId, state] of Object.entries(ssrCrdt)) {
                 const update = new Uint8Array(state.bytes);
-                subdocManager.applyUpdate(docId, update, YjsOrigin.Server);
+                docManager.applyUpdate(docId, update, YjsOrigin.Server);
               }
             }
 
             await recover();
 
-            const docIds = subdocManager.documents();
+            const docIds = docManager.documents();
             if (docIds.length > 0) {
-              const items = extractAllDocuments(subdocManager) as DataType[];
+              const items = extractAllDocuments(docManager) as DataType[];
               ops.replace(items);
             }
             else {
@@ -668,14 +673,14 @@ export function convexCollectionOptions(
               document: string,
               exists: boolean,
             ) => {
-              if (!exists && !subdocManager.has(document)) {
+              if (!exists && !docManager.has(document)) {
                 return;
               }
 
-              const itemBefore = extractDocumentFromSubdoc(subdocManager, document);
+              const itemBefore = serializeDocument(docManager, document);
               const update = new Uint8Array(bytes);
-              subdocManager.applyUpdate(document, update, YjsOrigin.Server);
-              const itemAfter = extractDocumentFromSubdoc(subdocManager, document);
+              docManager.applyUpdate(document, update, YjsOrigin.Server);
+              const itemAfter = serializeDocument(docManager, document);
 
               if (itemAfter) {
                 if (itemBefore) {
@@ -698,15 +703,15 @@ export function convexCollectionOptions(
                 return;
               }
 
-              if (!exists && !subdocManager.has(document)) {
+              if (!exists && !docManager.has(document)) {
                 return;
               }
 
-              const itemBefore = extractDocumentFromSubdoc(subdocManager, document);
+              const itemBefore = serializeDocument(docManager, document);
               const update = new Uint8Array(bytes);
-              subdocManager.applyUpdate(document, update, YjsOrigin.Server);
+              docManager.applyUpdate(document, update, YjsOrigin.Server);
 
-              const itemAfter = extractDocumentFromSubdoc(subdocManager, document);
+              const itemAfter = serializeDocument(docManager, document);
               if (itemAfter) {
                 if (itemBefore) {
                   ops.upsert([itemAfter as DataType]);
@@ -750,7 +755,7 @@ export function convexCollectionOptions(
                 persistence.kv.set(`cursor:${collection}`, newSeq);
 
                 const markPromises = Array.from(syncedDocuments).map((document) => {
-                  const vector = subdocManager.encodeStateVector(document);
+                  const vector = docManager.encodeStateVector(document);
                   return convexClient.mutation(api.mark, {
                     document,
                     client: clientId,
@@ -792,7 +797,7 @@ export function convexCollectionOptions(
             prose.cleanup(collection);
             deleteContext(collection);
             docPersistence?.destroy();
-            subdocManager?.destroy();
+            docManager?.destroy();
           },
         };
       },

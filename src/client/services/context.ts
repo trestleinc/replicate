@@ -2,7 +2,7 @@ import type { ConvexClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 import type { Collection } from "@tanstack/db";
 import type { Persistence } from "$/client/persistence/types";
-import type { SubdocManager } from "$/client/subdocs";
+import type { DocumentManager } from "$/client/documents";
 import type { ActorManager, ReplicateRuntime } from "$/client/services/engine";
 
 interface ConvexCollectionApi {
@@ -20,7 +20,7 @@ interface ConvexCollectionApi {
 
 export interface CollectionContext {
   collection: string;
-  subdocs: SubdocManager;
+  docManager: DocumentManager;
   client: ConvexClient;
   api: ConvexCollectionApi;
   persistence: Persistence;
@@ -33,9 +33,7 @@ export interface CollectionContext {
   ref?: Collection<any>;
   synced?: Promise<void>;
   resolve?: () => void;
-  /** Promise that resolves when actor system is initialized */
   actorReady?: Promise<void>;
-  /** Resolver for actorReady promise */
   resolveActorReady?: () => void;
 }
 

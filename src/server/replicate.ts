@@ -184,16 +184,16 @@ export class Replicate<T extends object> {
           await opts.evalWrite(ctx, doc);
         }
 
-        const result = await ctx.runMutation(component.mutations.insertDocument, {
-          collection,
-          document: args.document,
-          bytes: args.bytes,
-        });
-
         await ctx.db.insert(collection, {
           id: args.document,
           ...(args.material as object),
           timestamp: Date.now(),
+        });
+
+        const result = await ctx.runMutation(component.mutations.insertDocument, {
+          collection,
+          document: args.document,
+          bytes: args.bytes,
         });
 
         if (opts?.onInsert) {
@@ -232,12 +232,6 @@ export class Replicate<T extends object> {
           await opts.evalWrite(ctx, doc);
         }
 
-        const result = await ctx.runMutation(component.mutations.updateDocument, {
-          collection,
-          document: args.document,
-          bytes: args.bytes,
-        });
-
         const existing = await ctx.db
           .query(collection)
           .withIndex("by_doc_id", q => q.eq("id", args.document))
@@ -249,6 +243,12 @@ export class Replicate<T extends object> {
             timestamp: Date.now(),
           });
         }
+
+        const result = await ctx.runMutation(component.mutations.updateDocument, {
+          collection,
+          document: args.document,
+          bytes: args.bytes,
+        });
 
         if (opts?.onUpdate) {
           await opts.onUpdate(ctx, doc);
@@ -283,12 +283,6 @@ export class Replicate<T extends object> {
           await opts.evalRemove(ctx, args.document);
         }
 
-        const result = await ctx.runMutation(component.mutations.deleteDocument, {
-          collection,
-          document: args.document,
-          bytes: args.bytes,
-        });
-
         const existing = await ctx.db
           .query(collection)
           .withIndex("by_doc_id", q => q.eq("id", args.document))
@@ -297,6 +291,12 @@ export class Replicate<T extends object> {
         if (existing) {
           await ctx.db.delete(existing._id);
         }
+
+        const result = await ctx.runMutation(component.mutations.deleteDocument, {
+          collection,
+          document: args.document,
+          bytes: args.bytes,
+        });
 
         if (opts?.onRemove) {
           await opts.onRemove(ctx, args.document);
