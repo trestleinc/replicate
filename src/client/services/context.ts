@@ -6,16 +6,11 @@ import type { DocumentManager } from "$/client/documents";
 import type { ActorManager, ReplicateRuntime } from "$/client/services/engine";
 
 interface ConvexCollectionApi {
-	stream: FunctionReference<"query">;
-	insert: FunctionReference<"mutation">;
-	update: FunctionReference<"mutation">;
-	remove: FunctionReference<"mutation">;
-	recovery: FunctionReference<"query">;
-	mark: FunctionReference<"mutation">;
-	compact: FunctionReference<"mutation">;
-	material?: FunctionReference<"query">;
-	sessions?: FunctionReference<"query">;
-	presence?: FunctionReference<"mutation">;
+	material: FunctionReference<"query">;
+	delta: FunctionReference<"query">;
+	replicate: FunctionReference<"mutation">;
+	presence: FunctionReference<"mutation">;
+	sessions: FunctionReference<"query">;
 }
 
 export interface CollectionContext {

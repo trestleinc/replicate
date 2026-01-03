@@ -92,18 +92,12 @@ export interface Materialized<T> {
 	crdt?: Record<string, { bytes: ArrayBuffer; seq: number }>;
 }
 
-/** API object from replicate() */
 interface ConvexCollectionApi {
-	stream: FunctionReference<"query">;
-	insert: FunctionReference<"mutation">;
-	update: FunctionReference<"mutation">;
-	remove: FunctionReference<"mutation">;
-	recovery: FunctionReference<"query">;
-	mark: FunctionReference<"mutation">;
-	compact: FunctionReference<"mutation">;
-	material?: FunctionReference<"query">;
-	sessions?: FunctionReference<"query">;
-	presence?: FunctionReference<"mutation">;
+	material: FunctionReference<"query">;
+	delta: FunctionReference<"query">;
+	replicate: FunctionReference<"mutation">;
+	presence: FunctionReference<"mutation">;
+	sessions: FunctionReference<"query">;
 }
 
 export interface ConvexCollectionConfig<
@@ -175,10 +169,10 @@ export function convexCollectionOptions<
 } {
 	const { validator, getKey, material, convexClient, api, persistence } = config;
 
-	const functionPath = getFunctionName(api.stream);
+	const functionPath = getFunctionName(api.delta);
 	const collection = functionPath.split(":")[0];
 	if (!collection) {
-		throw new Error("Could not extract collection name from api.stream function reference");
+		throw new Error("Could not extract collection name from api.delta function reference");
 	}
 
 	const proseFields: string[] = validator ? findProseFields(validator) : [];
@@ -346,36 +340,7 @@ export function convexCollectionOptions<
 		resolveOptimisticReady = resolve;
 	});
 
-	const recover = async (): Promise<void> => {
-		if (!api.recovery) {
-			return;
-		}
-
-		const documents = docManager.documents();
-		if (documents.length === 0) {
-			return;
-		}
-
-		const recoveryPromises = documents.map(async document => {
-			const localVector = docManager.encodeStateVector(document);
-
-			try {
-				const response = await convexClient.query(api.recovery, {
-					document,
-					vector: localVector.buffer as ArrayBuffer,
-				});
-
-				if (response.diff) {
-					const diff = new Uint8Array(response.diff);
-					docManager.applyUpdate(document, diff, YjsOrigin.Server);
-				}
-			} catch {
-				/* recovery errors are non-fatal */
-			}
-		});
-
-		await Promise.all(recoveryPromises);
-	};
+	const recover = async (): Promise<void> => {};
 
 	const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
 		const deltas: Uint8Array[] = [];
@@ -481,10 +446,11 @@ export function convexCollectionOptions<
 					const document = String(mut.key);
 					const materializedDoc = serializeDocument(docManager, document) ?? mut.modified;
 
-					await convexClient.mutation(api.insert, {
+					await convexClient.mutation(api.replicate, {
 						document: document,
 						bytes: delta.slice().buffer,
 						material: materializedDoc,
+						type: "insert",
 					});
 				}
 			} catch (error) {
@@ -506,10 +472,11 @@ export function convexCollectionOptions<
 
 				if (isContentSync && metadata?.contentSync) {
 					const { bytes, material } = metadata.contentSync;
-					await convexClient.mutation(api.update, {
+					await convexClient.mutation(api.replicate, {
 						document: documentKey,
 						bytes,
 						material,
+						type: "update",
 					});
 					return;
 				}
@@ -523,10 +490,11 @@ export function convexCollectionOptions<
 						const docId = String(mut.key);
 						const fullDoc = serializeDocument(docManager, docId) ?? mut.modified;
 
-						await convexClient.mutation(api.update, {
+						await convexClient.mutation(api.replicate, {
 							document: docId,
 							bytes: delta.slice().buffer,
 							material: fullDoc,
+							type: "update",
 						});
 					}
 				}
@@ -551,9 +519,10 @@ export function convexCollectionOptions<
 					const delta = deltas[i];
 					if (!delta || delta.length === 0) continue;
 
-					await convexClient.mutation(api.remove, {
+					await convexClient.mutation(api.replicate, {
 						document: String(mut.key),
 						bytes: delta.slice().buffer,
+						type: "delete",
 					});
 				}
 			} catch (error) {
@@ -727,7 +696,7 @@ export function convexCollectionOptions<
 								return;
 							}
 
-							const { changes, seq: newSeq, compact } = response;
+							const { changes, seq: newSeq } = response;
 							const syncedDocuments = new Set<string>();
 
 							for (const change of changes) {
@@ -751,9 +720,10 @@ export function convexCollectionOptions<
 								const markPromises = Array.from(syncedDocuments).map(document => {
 									const vector = docManager.encodeStateVector(document);
 									return convexClient
-										.mutation(api.mark, {
+										.mutation(api.presence, {
 											document,
 											client: clientId,
+											action: "mark",
 											seq: newSeq,
 											vector: vector.buffer as ArrayBuffer,
 										})
@@ -761,17 +731,10 @@ export function convexCollectionOptions<
 								});
 								Promise.all(markPromises);
 							}
-
-							if (compact?.documents?.length) {
-								const compactPromises = compact.documents.map((doc: string) =>
-									convexClient.mutation(api.compact, { document: doc }).catch(noop),
-								);
-								Promise.all(compactPromises);
-							}
 						};
 
 						subscription = convexClient.onUpdate(
-							api.stream,
+							api.delta,
 							{ seq: cursor, limit: 1000 },
 							(response: any) => {
 								handleSubscriptionUpdate(response);
