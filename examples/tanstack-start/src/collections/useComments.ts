@@ -1,19 +1,18 @@
-import { collection } from "@trestleinc/replicate/client";
+import { collection, type InferDoc } from "@trestleinc/replicate/client";
 import { ConvexClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
-import { commentSchema, type Comment } from "../types/interval";
+import schema from "../../convex/schema";
 import { pglite } from "../lib/pglite";
 
 const CONVEX_URL = import.meta.env.VITE_CONVEX_URL!;
 
-export const comments = collection.create({
+export const comments = collection.create(schema, "comments", {
   persistence: pglite,
   config: () => ({
-    schema: commentSchema,
     convexClient: new ConvexClient(CONVEX_URL),
     api: api.comments,
-    getKey: (comment: Comment) => comment.id,
+    getKey: (comment) => comment.id,
   }),
 });
 
-export type { Comment } from "../types/interval";
+export type Comment = InferDoc<typeof comments>;

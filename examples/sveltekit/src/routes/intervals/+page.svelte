@@ -2,7 +2,7 @@
   import { useLiveQuery } from "@tanstack/svelte-db";
   import { getFilterContext } from "$lib/contexts/filters.svelte";
   import IntervalListSkeleton from "$lib/components/IntervalListSkeleton.svelte";
-  import { intervals as intervalsLazy } from "$collections/useIntervals";
+  import { intervals as intervalsLazy, type Interval } from "$collections/useIntervals";
   import * as Table from "$lib/components/ui/table/index.js";
   import {
     createSvelteTable,
@@ -15,7 +15,6 @@
     type SortingState,
     type ColumnFiltersState,
   } from "$lib/components/ui/data-table";
-  import type { Interval } from "$lib/types";
   import StatusCell from "./StatusCell.svelte";
   import PriorityCell from "./PriorityCell.svelte";
   import ActionsCell from "./ActionsCell.svelte";

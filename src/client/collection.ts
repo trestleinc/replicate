@@ -9,7 +9,10 @@ import {
   type NonSingleResult,
   type BaseCollectionConfig,
 } from "@tanstack/db";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { SchemaDefinition } from "convex/server";
+import type { GenericValidator } from "convex/values";
+import type { DocFromSchema, TableNamesFromSchema } from "$/client/types";
+import { findProseFields } from "$/client/validators";
 import { Effect } from "effect";
 import { ProseError, NonRetriableError } from "$/client/errors";
 import { SeqService, createSeqLayer, type Seq } from "$/client/services/seq";
@@ -26,7 +29,6 @@ import {
 } from "$/client/documents";
 import { createDeleteDelta, applyDeleteMarkerToDoc } from "$/client/deltas";
 import * as prose from "$/client/prose";
-import { extractProseFields } from "$/client/prose";
 import {
   initContext,
   getContext,
@@ -45,7 +47,6 @@ import {
   type UserIdentity,
 } from "$/client/services/awareness";
 import { Awareness } from "y-protocols/awareness";
-import { z } from "zod";
 
 enum YjsOrigin {
   Local = "local",
@@ -120,10 +121,9 @@ interface ConvexCollectionApi {
 
 export interface ConvexCollectionConfig<
   T extends object = object,
-  TSchema extends StandardSchemaV1 = never,
   TKey extends string | number = string | number,
-> extends BaseCollectionConfig<T, TKey, TSchema> {
-  schema: TSchema;
+> extends Omit<BaseCollectionConfig<T, TKey, never>, "schema"> {
+  validator?: GenericValidator;
   convexClient: ConvexClient;
   api: ConvexCollectionApi;
   persistence: Persistence;
@@ -178,25 +178,16 @@ interface ConvexCollectionUtils<T extends object> {
 const DEFAULT_DEBOUNCE_MS = 200;
 
 export function convexCollectionOptions<
-  TSchema extends z.ZodObject<z.ZodRawShape>,
+  T extends object = object,
   TKey extends string | number = string | number,
 >(
-  config: ConvexCollectionConfig<z.infer<TSchema>, TSchema, TKey>,
-): CollectionConfig<z.infer<TSchema>, TKey, TSchema, ConvexCollectionUtils<z.infer<TSchema>>> & {
+  config: ConvexCollectionConfig<T, TKey>,
+): CollectionConfig<T, TKey, never, ConvexCollectionUtils<T>> & {
   id: string;
-  utils: ConvexCollectionUtils<z.infer<TSchema>>;
-  schema: TSchema;
-};
-
-export function convexCollectionOptions(
-  config: ConvexCollectionConfig<any, any, any>,
-): CollectionConfig<any, any, any, ConvexCollectionUtils<any>> & {
-  id: string;
-  utils: ConvexCollectionUtils<any>;
-  schema: any;
+  utils: ConvexCollectionUtils<T>;
 } {
   const {
-    schema,
+    validator,
     getKey,
     material,
     convexClient,
@@ -210,8 +201,7 @@ export function convexCollectionOptions(
     throw new Error("Could not extract collection name from api.stream function reference");
   }
 
-  const proseFields: string[]
-    = schema && schema instanceof z.ZodObject ? extractProseFields(schema) : [];
+  const proseFields: string[] = validator ? findProseFields(validator) : [];
 
   // DataType is 'any' in implementation - type safety comes from overload signatures
   type DataType = any;
@@ -497,7 +487,6 @@ export function convexCollectionOptions(
   return {
     id: collection,
     getKey,
-    schema: schema,
     utils,
 
     onInsert: async ({ transaction }: CollectionTransaction<DataType>) => {
@@ -840,36 +829,50 @@ export function convexCollectionOptions(
   };
 }
 
-type LazyCollectionConfig<TSchema extends z.ZodObject<z.ZodRawShape>> = Omit<
-  ConvexCollectionConfig<z.infer<TSchema>, TSchema, string>,
-  "persistence" | "material"
+type LazyCollectionConfig<T extends object> = Omit<
+  ConvexCollectionConfig<T, string>,
+  "persistence" | "material" | "validator"
 >;
 
-interface LazyCollection<T extends object> {
+export interface LazyCollection<T extends object> {
   init(material?: Materialized<T>): Promise<void>;
-  get(): Collection<T, string, ConvexCollectionUtils<T>, any, T> & NonSingleResult;
+  get(): Collection<T, string, ConvexCollectionUtils<T>, never, T> & NonSingleResult;
+  readonly $docType?: T;
 }
 
 export type ConvexCollection<T extends object>
-  = Collection<T, any, ConvexCollectionUtils<T>, any, T> & NonSingleResult;
+  = Collection<T, any, ConvexCollectionUtils<T>, never, T> & NonSingleResult;
 
-interface CreateCollectionOptions<TSchema extends z.ZodObject<z.ZodRawShape>> {
+interface CreateCollectionOptions<T extends object> {
   persistence: () => Promise<Persistence>;
-  config: () => Omit<LazyCollectionConfig<TSchema>, "material">;
+  config: () => Omit<LazyCollectionConfig<T>, "material">;
 }
 
 export const collection = {
-  create<TSchema extends z.ZodObject<z.ZodRawShape>>(
-    options: CreateCollectionOptions<TSchema>,
-  ): LazyCollection<z.infer<TSchema>> {
+  create<
+    Schema extends SchemaDefinition<any, any>,
+    TableName extends TableNamesFromSchema<Schema>,
+  >(
+    schema: Schema,
+    table: TableName,
+    options: CreateCollectionOptions<DocFromSchema<Schema, TableName>>,
+  ): LazyCollection<DocFromSchema<Schema, TableName>> {
+    type T = DocFromSchema<Schema, TableName>;
+
+    const tableDefinition = (schema.tables as Record<string, { validator?: GenericValidator }>)[table];
+    if (!tableDefinition) {
+      throw new Error(`Table "${table}" not found in schema`);
+    }
+    const validator = tableDefinition.validator;
+
     let persistence: Persistence | null = null;
-    let resolvedConfig: LazyCollectionConfig<TSchema> | null = null;
-    let material: Materialized<z.infer<TSchema>> | undefined;
-    type Instance = LazyCollection<z.infer<TSchema>>["get"] extends () => infer R ? R : never;
+    let resolvedConfig: LazyCollectionConfig<T> | null = null;
+    let material: Materialized<T> | undefined;
+    type Instance = LazyCollection<T>["get"] extends () => infer R ? R : never;
     let instance: Instance | null = null;
 
     return {
-      async init(mat?: Materialized<z.infer<TSchema>>) {
+      async init(mat?: Materialized<T>) {
         if (!persistence) {
           persistence = await options.persistence();
           resolvedConfig = options.config();
@@ -882,12 +885,13 @@ export const collection = {
           throw new Error("Call init() before get()");
         }
         if (!instance) {
-          const opts = convexCollectionOptions({
+          const opts = convexCollectionOptions<T, string>({
             ...resolvedConfig,
+            validator,
             persistence,
             material,
-          } as any);
-          instance = createCollection(opts) as any;
+          });
+          instance = createCollection(opts) as Instance;
         }
         return instance!;
       },

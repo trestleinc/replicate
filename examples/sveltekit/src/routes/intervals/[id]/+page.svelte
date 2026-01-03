@@ -4,8 +4,7 @@
   import IntervalEditor from "$lib/components/IntervalEditor.svelte";
   import IntervalEditorSkeleton from "$lib/components/IntervalEditorSkeleton.svelte";
   import CommentList from "$lib/components/CommentList.svelte";
-  import type { Interval } from "$lib/types";
-  import { intervals } from "$collections/useIntervals";
+  import { intervals, type Interval } from "$collections/useIntervals";
 
   const collection = intervals.get();
   const id = $derived(page.params.id);

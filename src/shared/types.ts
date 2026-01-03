@@ -17,16 +17,7 @@ export interface XmlFragmentJSON {
   content?: XmlNodeJSON[];
 }
 
-declare const PROSE_BRAND: unique symbol;
-
-/**
- * Branded prose type for Zod schemas.
- * Extends XmlFragmentJSON with a unique brand for type-level detection.
- * Use the `prose()` helper from `@trestleinc/replicate/client` to create this type.
- */
-export interface ProseValue extends XmlFragmentJSON {
-  readonly [PROSE_BRAND]: typeof PROSE_BRAND;
-}
+export type ProseValue = XmlFragmentJSON;
 
 /** ProseMirror node structure */
 export interface XmlNodeJSON {

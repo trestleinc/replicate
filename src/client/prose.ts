@@ -1,12 +1,10 @@
 import * as Y from "yjs";
-import { z } from "zod";
 import type { Collection } from "@tanstack/db";
 import { Effect, SubscriptionRef, Stream, Fiber } from "effect";
 import { getLogger } from "$/client/logger";
 import { serializeYMapValue } from "$/client/merge";
 import { getContext, hasContext } from "$/client/services/context";
 import { runWithRuntime } from "$/client/services/engine";
-import type { ProseValue } from "$/shared/types";
 
 const SERVER_ORIGIN = "server";
 const noop = (): void => undefined;
@@ -180,57 +178,4 @@ export function cleanup(collection: string): void {
   }
 
   logger.debug("Prose cleanup complete", { collection });
-}
-
-const PROSE_MARKER = Symbol.for("replicate:prose");
-
-function createProseSchema(): z.ZodType<ProseValue> {
-  const schema = z.custom<ProseValue>(
-    (val) => {
-      if (val == null) return true;
-      if (typeof val !== "object") return false;
-      return (val as { type?: string }).type === "doc";
-    },
-    { message: "Expected prose document with type \"doc\"" },
-  );
-
-  Object.defineProperty(schema, PROSE_MARKER, { value: true, writable: false });
-
-  return schema;
-}
-
-function emptyProse(): ProseValue {
-  return { type: "doc", content: [] } as unknown as ProseValue;
-}
-
-export function prose(): z.ZodType<ProseValue> {
-  return createProseSchema();
-}
-
-prose.empty = emptyProse;
-
-export function isProseSchema(schema: unknown): boolean {
-  return (
-    schema != null
-    && typeof schema === "object"
-    && PROSE_MARKER in schema
-    && (schema as Record<symbol, unknown>)[PROSE_MARKER] === true
-  );
-}
-
-export function extractProseFields(schema: z.ZodObject<z.ZodRawShape>): string[] {
-  const fields: string[] = [];
-
-  for (const [key, fieldSchema] of Object.entries(schema.shape)) {
-    let unwrapped = fieldSchema;
-    while (unwrapped instanceof z.ZodOptional || unwrapped instanceof z.ZodNullable) {
-      unwrapped = unwrapped.unwrap();
-    }
-
-    if (isProseSchema(unwrapped)) {
-      fields.push(key);
-    }
-  }
-
-  return fields;
 }

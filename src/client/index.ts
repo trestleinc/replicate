@@ -2,9 +2,12 @@ export {
   collection,
   type EditorBinding,
   type ConvexCollection,
+  type LazyCollection,
   type Materialized,
   type ProseOptions,
 } from "$/client/collection";
+
+export type { DocFromSchema, TableNamesFromSchema, InferDoc } from "$/client/types";
 
 export { type UserIdentity } from "$/client/services/awareness";
 
@@ -31,13 +34,13 @@ export const errors = {
 } as const;
 
 import { extract } from "$/client/merge";
-import { prose as proseSchema } from "$/client/prose";
+import { emptyProse } from "$/client/validators";
 
 export const schema = {
-  prose: Object.assign(proseSchema, {
+  prose: {
     extract,
-    empty: proseSchema.empty,
-  }),
+    empty: emptyProse,
+  },
 } as const;
 
 export { persistence, type StorageAdapter, type Persistence } from "$/client/persistence/index";

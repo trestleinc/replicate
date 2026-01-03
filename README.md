@@ -171,40 +171,32 @@ Create a collection definition using `collection.create()`. This is SSR-safe bec
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
 import { api } from '../../convex/_generated/api';
-import { PGlite } from '@electric-sql/pglite';
-import { z } from 'zod';
-
-// Define your Zod schema (required)
-const taskSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  isCompleted: z.boolean(),
-});
-
-export type Task = z.infer<typeof taskSchema>;
+import schema from '../../convex/schema';
 
 // Create lazy-initialized collection (SSR-safe)
-export const tasks = collection.create({
-  // Async factory - only called in browser during init()
+// Types are inferred from Convex schema - no Zod needed!
+export const tasks = collection.create(schema, 'tasks', {
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
     return persistence.pglite(db, 'tasks');
   },
-  // Sync factory - only called in browser during init()
   config: () => ({
-    schema: taskSchema,
     convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
     getKey: (task) => task.id,
   }),
 });
+
+// Type is inferred from collection - no separate definition needed!
+export type Task = NonNullable<typeof tasks.$docType>;
 ```
 
 **Key points:**
-- `collection.create()` returns a lazy collection that's safe to import during SSR
-- `persistence` and `config` are factory functions, not values - they're only called during `init()`
-- `schema` is required (Zod schema for type inference and prose field detection)
-- Collection name is auto-extracted from `api.tasks` function path
+- `collection.create(schema, tableName, options)` - pass Convex schema and table name
+- Types are automatically inferred from the Convex schema - no Zod required
+- `$docType` phantom property exposes the document type for extraction
+- Prose fields are auto-detected from Convex validators
 
 ### Step 5: Initialize and Use in Components
 
@@ -523,17 +515,17 @@ export const {
 
 ### Rich Text / Prose Fields
 
-For collaborative rich text editing, use `schema.prose()` on both server and client:
+For collaborative rich text editing, use `schema.prose()` in your Convex schema:
 
 ```typescript
-// convex/schema.ts (server)
+// convex/schema.ts
 import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
   notebooks: schema.table({
     id: v.string(),
     title: v.string(),
-    content: schema.prose(),  // ProseMirror-compatible JSON
+    content: schema.prose(),  // ProseMirror-compatible JSON (auto-detected on client)
   }),
 });
 
@@ -545,6 +537,8 @@ const plainText = schema.prose.extract(notebook.content);
 // Client: Get editor binding for ProseMirror/TipTap
 const binding = await collection.utils.prose(notebookId, 'content');
 ```
+
+**Note:** Prose fields are automatically detected on the client by introspecting the Convex validator structure. No separate client-side schema definition needed.
 
 **Important:** `collection.utils.prose()` is async and internally waits for the actor system to initialize before observing the Yjs fragment. This ensures the sync infrastructure is ready before collaborative editing begins.
 
@@ -743,37 +737,42 @@ await configure({
 
 ### Client-Side (`@trestleinc/replicate/client`)
 
-#### `collection.create({ persistence, config })`
+#### `collection.create(schema, tableName, options)`
 
-Creates a lazy-initialized collection with deferred persistence and config resolution. Both `persistence` and `config` are factory functions that are only called when `init()` is invoked (browser-only).
+Creates a lazy-initialized collection with automatic type inference from Convex schema.
 
 **Parameters:**
-- `persistence` - Async factory function that returns a `Persistence` instance
-- `config` - Sync factory function that returns the collection config (ConvexClient, schema, api, etc.)
+- `schema` - Your Convex schema (import from `convex/schema`)
+- `tableName` - Table name (must exist in schema)
+- `options.persistence` - Async factory returning a `Persistence` instance
+- `options.config` - Sync factory returning collection config (ConvexClient, api, etc.)
 
-**Returns:** `LazyCollection` with `init(material?)` and `get()` methods
+**Returns:** `LazyCollection<T>` with `init(material?)`, `get()`, and `$docType` for type extraction
 
 **Example:**
 ```typescript
 import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
-import { PGlite } from '@electric-sql/pglite';
+import schema from '../../convex/schema';
+import { api } from '../../convex/_generated/api';
 
-export const tasks = collection.create({
+export const tasks = collection.create(schema, 'tasks', {
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
     return persistence.pglite(db, 'tasks');
   },
   config: () => ({
-    schema: taskSchema,
-    getKey: (task) => task.id,
     convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
+    getKey: (task) => task.id,
   }),
 });
 
+// Extract type from collection
+export type Task = NonNullable<typeof tasks.$docType>;
+
 // In your app initialization (browser only):
-// Pass SSR-prefetched material for instant hydration
 await tasks.init(material);
 const collection = tasks.get();
 ```
@@ -796,10 +795,9 @@ The `config` factory in `collection.create()` accepts these options:
 
 ```typescript
 interface CollectionConfig<T> {
-  schema: ZodObject;              // Required: Zod schema for type inference
   getKey: (item: T) => string | number;  // Extract unique key from item
   convexClient: ConvexClient;     // Convex client instance
-  api: {                          // API from collection.create()
+  api: {                          // API from server collection.create()
     stream: FunctionReference;    // Real-time subscription
     insert: FunctionReference;    // Insert mutation
     update: FunctionReference;    // Update mutation
@@ -809,24 +807,28 @@ interface CollectionConfig<T> {
     compact: FunctionReference;   // Manual compaction
     material?: FunctionReference; // SSR hydration query
   };
-  undoCaptureTimeout?: number;    // Undo stack merge window (default: 500ms)
 }
 ```
 
 **Example:**
 ```typescript
-export const tasks = collection.create({
+import schema from '../../convex/schema';
+
+export const tasks = collection.create(schema, 'tasks', {
   persistence: async () => {
+    const { PGlite } = await import('@electric-sql/pglite');
     const db = new PGlite('idb://tasks');
     return persistence.pglite(db, 'tasks');
   },
   config: () => ({
-    schema: taskSchema,
-    getKey: (task) => task.id,
     convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
     api: api.tasks,
+    getKey: (task) => task.id,
   }),
 });
+
+// Type extracted from collection
+export type Task = NonNullable<typeof tasks.$docType>;
 ```
 
 #### `schema.prose.extract(proseJson)`
@@ -1012,13 +1014,13 @@ Validator for ProseMirror-compatible JSON fields.
 content: schema.prose()  // Validates ProseMirror JSON structure
 ```
 
-### Shared Types (`@trestleinc/replicate/shared`)
+### Shared Types (`@trestleinc/replicate`)
 
 ```typescript
-import type { ProseValue } from '@trestleinc/replicate/shared';
+import type { ProseValue } from '@trestleinc/replicate';
 
-// ProseValue - branded type for prose fields in Zod schemas
-// Use schema.prose() from client to create Zod fields of this type
+// ProseValue - type alias for ProseMirror JSON structure
+// Automatically inferred from schema.prose() fields in Convex schema
 ```
 
 ## React Native

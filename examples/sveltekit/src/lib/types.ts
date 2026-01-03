@@ -1,6 +1,3 @@
-import { z } from "zod";
-import { schema } from "@trestleinc/replicate/client";
-
 export const Status = {
   BACKLOG: "backlog",
   TODO: "todo",
@@ -36,24 +33,3 @@ export const PriorityLabels: Record<PriorityValue, string> = {
   high: "High",
   urgent: "Urgent",
 };
-
-export const intervalSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  description: schema.prose(),
-  status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]),
-  priority: z.enum(["none", "low", "medium", "high", "urgent"]),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const commentSchema = z.object({
-  id: z.string(),
-  intervalId: z.string(),
-  body: z.string(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export type Interval = z.infer<typeof intervalSchema>;
-export type Comment = z.infer<typeof commentSchema>;
