@@ -6,10 +6,10 @@
  */
 
 export interface ReplicateParams {
-  readonly begin: () => void;
-  readonly write: (message: { type: "insert" | "update" | "delete"; value: unknown }) => void;
-  readonly commit: () => void;
-  readonly truncate: () => void;
+	readonly begin: () => void;
+	readonly write: (message: { type: "insert" | "update" | "delete"; value: unknown }) => void;
+	readonly commit: () => void;
+	readonly truncate: () => void;
 }
 
 /**
@@ -17,10 +17,10 @@ export interface ReplicateParams {
  * These functions are already tied to the collection's TanStack DB params.
  */
 export interface BoundReplicateOps<T> {
-  readonly insert: (items: T[]) => void;
-  readonly delete: (items: T[]) => void;
-  readonly upsert: (items: T[]) => void;
-  readonly replace: (items: T[]) => void;
+	readonly insert: (items: T[]) => void;
+	readonly delete: (items: T[]) => void;
+	readonly upsert: (items: T[]) => void;
+	readonly replace: (items: T[]) => void;
 }
 
 /**
@@ -37,43 +37,43 @@ export interface BoundReplicateOps<T> {
  * ```
  */
 export function createReplicateOps<T>(params: ReplicateParams): BoundReplicateOps<T> {
-  return {
-    insert(items: T[]): void {
-      params.begin();
-      for (const item of items) {
-        params.write({ type: "insert", value: item });
-      }
-      params.commit();
-    },
+	return {
+		insert(items: T[]): void {
+			params.begin();
+			for (const item of items) {
+				params.write({ type: "insert", value: item });
+			}
+			params.commit();
+		},
 
-    delete(items: T[]): void {
-      params.begin();
-      for (const item of items) {
-        params.write({ type: "delete", value: item });
-      }
-      params.commit();
-    },
+		delete(items: T[]): void {
+			params.begin();
+			for (const item of items) {
+				params.write({ type: "delete", value: item });
+			}
+			params.commit();
+		},
 
-    upsert(items: T[]): void {
-      params.begin();
-      for (const item of items) {
-        params.write({ type: "update", value: item });
-      }
-      params.commit();
-    },
+		upsert(items: T[]): void {
+			params.begin();
+			for (const item of items) {
+				params.write({ type: "update", value: item });
+			}
+			params.commit();
+		},
 
-    replace(items: T[]): void {
-      params.begin();
-      params.truncate();
-      for (const item of items) {
-        params.write({ type: "insert", value: item });
-      }
-      params.commit();
-    },
-  };
+		replace(items: T[]): void {
+			params.begin();
+			params.truncate();
+			for (const item of items) {
+				params.write({ type: "insert", value: item });
+			}
+			params.commit();
+		},
+	};
 }
 
 // Internal - for test cleanup only
 export function _resetReplicateParams(): void {
-  // No-op now - nothing to reset since we don't use global state
+	// No-op now - nothing to reset since we don't use global state
 }

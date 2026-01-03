@@ -4,6 +4,6 @@ export type { CollectionOptions } from "$/server/collection";
 import { table, prose } from "$/server/schema";
 
 export const schema = {
-  table,
-  prose,
+	table,
+	prose,
 } as const;

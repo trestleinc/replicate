@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { proseValidator } from "$/shared/validators";
 
 export interface ReplicationFields {
-  timestamp: number;
+	timestamp: number;
 }
 
 export const prose = () => proseValidator;
@@ -24,14 +24,14 @@ export const prose = () => proseValidator;
  * ```
  */
 export function table(userFields: Record<string, any>, applyIndexes?: (table: any) => any): any {
-  const tbl = defineTable({
-    ...userFields,
-    timestamp: v.number(),
-  });
+	const tbl = defineTable({
+		...userFields,
+		timestamp: v.number(),
+	});
 
-  if (applyIndexes) {
-    return applyIndexes(tbl);
-  }
+	if (applyIndexes) {
+		return applyIndexes(tbl);
+	}
 
-  return tbl;
+	return tbl;
 }

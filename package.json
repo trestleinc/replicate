@@ -25,7 +25,7 @@
     "convex": "1.31.2"
   },
   "scripts": {
-    "build": "oxlint --fix && tsdown",
+    "build": "oxfmt --write src && oxlint --fix && tsdown",
     "dev": "tsdown --watch",
     "clean": "rm -rf dist",
     "test": "vitest run",
@@ -88,6 +88,7 @@
   },
   "devDependencies": {
     "@trestleinc/convex-oxlint": "0.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260103.1",
     "@edge-runtime/vm": "5.0.0",
     "@microsoft/api-extractor": "7.55.2",
     "@tanstack/db": "0.5.15",
@@ -97,6 +98,7 @@
     "dotenv": "17.2.3",
     "fake-indexeddb": "6.2.5",
     "lib0": "0.2.116",
+    "oxfmt": "0.21.0",
     "oxlint": "1.36.0",
     "publint": "0.3.16",
     "tsdown": "0.18.2",

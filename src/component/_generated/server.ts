@@ -9,24 +9,24 @@
  */
 
 import type {
-  ActionBuilder,
-  HttpActionBuilder,
-  MutationBuilder,
-  QueryBuilder,
-  GenericActionCtx,
-  GenericMutationCtx,
-  GenericQueryCtx,
-  GenericDatabaseReader,
-  GenericDatabaseWriter,
+	ActionBuilder,
+	HttpActionBuilder,
+	MutationBuilder,
+	QueryBuilder,
+	GenericActionCtx,
+	GenericMutationCtx,
+	GenericQueryCtx,
+	GenericDatabaseReader,
+	GenericDatabaseWriter,
 } from "convex/server";
 import {
-  actionGeneric,
-  httpActionGeneric,
-  queryGeneric,
-  mutationGeneric,
-  internalActionGeneric,
-  internalMutationGeneric,
-  internalQueryGeneric,
+	actionGeneric,
+	httpActionGeneric,
+	queryGeneric,
+	mutationGeneric,
+	internalActionGeneric,
+	internalMutationGeneric,
+	internalQueryGeneric,
 } from "convex/server";
 import type { DataModel } from "./dataModel.js";
 
@@ -48,8 +48,7 @@ export const query: QueryBuilder<DataModel, "public"> = queryGeneric;
  * @param func - The query function. It receives a {@link QueryCtx} as its first argument.
  * @returns The wrapped query. Include this as an `export` to name it and make it accessible.
  */
-export const internalQuery: QueryBuilder<DataModel, "internal"> =
-  internalQueryGeneric;
+export const internalQuery: QueryBuilder<DataModel, "internal"> = internalQueryGeneric;
 
 /**
  * Define a mutation in this Convex app's public API.
@@ -69,8 +68,7 @@ export const mutation: MutationBuilder<DataModel, "public"> = mutationGeneric;
  * @param func - The mutation function. It receives a {@link MutationCtx} as its first argument.
  * @returns The wrapped mutation. Include this as an `export` to name it and make it accessible.
  */
-export const internalMutation: MutationBuilder<DataModel, "internal"> =
-  internalMutationGeneric;
+export const internalMutation: MutationBuilder<DataModel, "internal"> = internalMutationGeneric;
 
 /**
  * Define an action in this Convex app's public API.
@@ -91,8 +89,7 @@ export const action: ActionBuilder<DataModel, "public"> = actionGeneric;
  * @param func - The function. It receives an {@link ActionCtx} as its first argument.
  * @returns The wrapped function. Include this as an `export` to name it and make it accessible.
  */
-export const internalAction: ActionBuilder<DataModel, "internal"> =
-  internalActionGeneric;
+export const internalAction: ActionBuilder<DataModel, "internal"> = internalActionGeneric;
 
 /**
  * Define an HTTP action.
@@ -108,9 +105,9 @@ export const internalAction: ActionBuilder<DataModel, "internal"> =
 export const httpAction: HttpActionBuilder = httpActionGeneric;
 
 type GenericCtx =
-  | GenericActionCtx<DataModel>
-  | GenericMutationCtx<DataModel>
-  | GenericQueryCtx<DataModel>;
+	| GenericActionCtx<DataModel>
+	| GenericMutationCtx<DataModel>
+	| GenericQueryCtx<DataModel>;
 
 /**
  * A set of services for use within Convex query functions.

@@ -25,16 +25,16 @@ import type * as Y from "yjs";
  * ```
  */
 export interface StorageAdapter {
-  get(key: string): Promise<Uint8Array | undefined>;
-  set(key: string, value: Uint8Array): Promise<void>;
-  delete(key: string): Promise<void>;
-  keys(prefix: string): Promise<string[]>;
-  close?(): void;
+	get(key: string): Promise<Uint8Array | undefined>;
+	set(key: string, value: Uint8Array): Promise<void>;
+	delete(key: string): Promise<void>;
+	keys(prefix: string): Promise<string[]>;
+	close?(): void;
 }
 
 export interface PersistenceProvider {
-  readonly whenSynced: Promise<void>;
-  destroy(): void;
+	readonly whenSynced: Promise<void>;
+	destroy(): void;
 }
 
 /**
@@ -42,13 +42,13 @@ export interface PersistenceProvider {
  * Create via `persistence.sqlite()`, `persistence.memory()`, or `persistence.custom()`.
  */
 export interface Persistence {
-  createDocPersistence(collection: string, ydoc: Y.Doc): PersistenceProvider;
-  listDocuments(prefix: string): Promise<string[]>;
-  readonly kv: KeyValueStore;
+	createDocPersistence(collection: string, ydoc: Y.Doc): PersistenceProvider;
+	listDocuments(prefix: string): Promise<string[]>;
+	readonly kv: KeyValueStore;
 }
 
 export interface KeyValueStore {
-  get<T>(key: string): Promise<T | undefined>;
-  set<T>(key: string, value: T): Promise<void>;
-  del(key: string): Promise<void>;
+	get<T>(key: string): Promise<T | undefined>;
+	set<T>(key: string, value: T): Promise<void>;
+	del(key: string): Promise<void>;
 }

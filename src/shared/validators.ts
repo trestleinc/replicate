@@ -20,9 +20,9 @@ import { type Infer, v } from "convex/values";
  * Used in sessions and presence tracking.
  */
 export const profileValidator = v.object({
-  name: v.optional(v.string()),
-  color: v.optional(v.string()),
-  avatar: v.optional(v.string()),
+	name: v.optional(v.string()),
+	color: v.optional(v.string()),
+	avatar: v.optional(v.string()),
 });
 
 /**
@@ -30,9 +30,9 @@ export const profileValidator = v.object({
  * Tracks anchor/head selection positions and optional field context.
  */
 export const cursorValidator = v.object({
-  anchor: v.any(),
-  head: v.any(),
-  field: v.optional(v.string()),
+	anchor: v.any(),
+	head: v.any(),
+	field: v.optional(v.string()),
 });
 
 /**
@@ -40,8 +40,8 @@ export const cursorValidator = v.object({
  * Used for collaborative rich text editing fields.
  */
 export const proseValidator = v.object({
-  type: v.literal("doc"),
-  content: v.optional(v.array(v.any())),
+	type: v.literal("doc"),
+	content: v.optional(v.array(v.any())),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,45 +52,49 @@ export const proseValidator = v.object({
  * Individual change in a stream response.
  */
 export const streamChangeValidator = v.object({
-  document: v.string(),
-  bytes: v.bytes(),
-  seq: v.number(),
-  type: v.string(),
+	document: v.string(),
+	bytes: v.bytes(),
+	seq: v.number(),
+	type: v.string(),
 });
 
 /**
  * Extended stream change with existence flag (used in server responses).
  */
 export const streamChangeWithExistsValidator = v.object({
-  document: v.string(),
-  bytes: v.bytes(),
-  seq: v.number(),
-  type: v.string(),
-  exists: v.boolean(),
+	document: v.string(),
+	bytes: v.bytes(),
+	seq: v.number(),
+	type: v.string(),
+	exists: v.boolean(),
 });
 
 /**
  * Stream query result with changes, cursor, and compaction hints.
  */
 export const streamResultValidator = v.object({
-  changes: v.array(streamChangeValidator),
-  seq: v.number(),
-  more: v.boolean(),
-  compact: v.optional(v.object({
-    documents: v.array(v.string()),
-  })),
+	changes: v.array(streamChangeValidator),
+	seq: v.number(),
+	more: v.boolean(),
+	compact: v.optional(
+		v.object({
+			documents: v.array(v.string()),
+		}),
+	),
 });
 
 /**
  * Stream result with exists flag on changes (server-enriched response).
  */
 export const streamResultWithExistsValidator = v.object({
-  changes: v.array(streamChangeWithExistsValidator),
-  seq: v.number(),
-  more: v.boolean(),
-  compact: v.optional(v.object({
-    documents: v.array(v.string()),
-  })),
+	changes: v.array(streamChangeWithExistsValidator),
+	seq: v.number(),
+	more: v.boolean(),
+	compact: v.optional(
+		v.object({
+			documents: v.array(v.string()),
+		}),
+	),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,21 +106,18 @@ export const streamResultWithExistsValidator = v.object({
  * Returned by sessions query.
  */
 export const sessionValidator = v.object({
-  client: v.string(),
-  document: v.string(),
-  user: v.optional(v.string()),
-  profile: v.optional(v.any()),
-  cursor: v.optional(cursorValidator),
-  seen: v.number(),
+	client: v.string(),
+	document: v.string(),
+	user: v.optional(v.string()),
+	profile: v.optional(v.any()),
+	cursor: v.optional(cursorValidator),
+	seen: v.number(),
 });
 
 /**
  * Presence action (join or leave).
  */
-export const presenceActionValidator = v.union(
-  v.literal("join"),
-  v.literal("leave"),
-);
+export const presenceActionValidator = v.union(v.literal("join"), v.literal("leave"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutation Result Validators
@@ -126,37 +127,37 @@ export const presenceActionValidator = v.union(
  * Standard success/seq result for insert/update/delete mutations.
  */
 export const successSeqValidator = v.object({
-  success: v.boolean(),
-  seq: v.number(),
+	success: v.boolean(),
+	seq: v.number(),
 });
 
 /**
  * Compaction result with statistics.
  */
 export const compactResultValidator = v.object({
-  success: v.boolean(),
-  removed: v.number(),
-  retained: v.number(),
-  size: v.number(),
+	success: v.boolean(),
+	removed: v.number(),
+	retained: v.number(),
+	size: v.number(),
 });
 
 /**
  * Recovery query result with optional diff and state vector.
  */
 export const recoveryResultValidator = v.object({
-  diff: v.optional(v.bytes()),
-  vector: v.bytes(),
+	diff: v.optional(v.bytes()),
+	vector: v.bytes(),
 });
 
 /**
  * Document state result (for SSR/hydration).
  */
 export const documentStateValidator = v.union(
-  v.object({
-    bytes: v.bytes(),
-    seq: v.number(),
-  }),
-  v.null(),
+	v.object({
+		bytes: v.bytes(),
+		seq: v.number(),
+	}),
+	v.null(),
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,13 +168,18 @@ export const documentStateValidator = v.union(
  * SSR material query result.
  */
 export const materialResultValidator = v.object({
-  documents: v.any(),
-  count: v.number(),
-  crdt: v.optional(v.record(v.string(), v.object({
-    bytes: v.bytes(),
-    seq: v.number(),
-  }))),
-  cursor: v.optional(v.number()),
+	documents: v.any(),
+	count: v.number(),
+	crdt: v.optional(
+		v.record(
+			v.string(),
+			v.object({
+				bytes: v.bytes(),
+				seq: v.number(),
+			}),
+		),
+	),
+	cursor: v.optional(v.number()),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

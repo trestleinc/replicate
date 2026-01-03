@@ -10,19 +10,19 @@ import type { Persistence, PersistenceProvider, KeyValueStore } from "./types.js
  * In-memory key-value store.
  */
 class MemoryKeyValueStore implements KeyValueStore {
-  private store = new Map<string, unknown>();
+	private store = new Map<string, unknown>();
 
-  async get<T>(key: string): Promise<T | undefined> {
-    return this.store.get(key) as T | undefined;
-  }
+	async get<T>(key: string): Promise<T | undefined> {
+		return this.store.get(key) as T | undefined;
+	}
 
-  async set<T>(key: string, value: T): Promise<void> {
-    this.store.set(key, value);
-  }
+	async set<T>(key: string, value: T): Promise<void> {
+		this.store.set(key, value);
+	}
 
-  async del(key: string): Promise<void> {
-    this.store.delete(key);
-  }
+	async del(key: string): Promise<void> {
+		this.store.delete(key);
+	}
 }
 
 /**
@@ -31,11 +31,11 @@ class MemoryKeyValueStore implements KeyValueStore {
  * The Y.Doc is kept in memory without persistence.
  */
 class MemoryPersistenceProvider implements PersistenceProvider {
-  readonly whenSynced = Promise.resolve();
+	readonly whenSynced = Promise.resolve();
 
-  destroy(): void {
-    // No resources to clean up
-  }
+	destroy(): void {
+		// No resources to clean up
+	}
 }
 
 /**
@@ -53,12 +53,12 @@ class MemoryPersistenceProvider implements PersistenceProvider {
  * ```
  */
 export function memoryPersistence(): Persistence {
-  const kv = new MemoryKeyValueStore();
-  return {
-    createDocPersistence: (_: string, __: Y.Doc) => new MemoryPersistenceProvider(),
-    async listDocuments(_prefix: string): Promise<string[]> {
-      return [];
-    },
-    kv,
-  };
+	const kv = new MemoryKeyValueStore();
+	return {
+		createDocPersistence: (_: string, __: Y.Doc) => new MemoryPersistenceProvider(),
+		async listDocuments(_prefix: string): Promise<string[]> {
+			return [];
+		},
+		kv,
+	};
 }
