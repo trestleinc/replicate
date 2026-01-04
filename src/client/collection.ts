@@ -365,7 +365,29 @@ export function convexCollectionOptions<
 		resolveOptimisticReady = resolve;
 	});
 
-	const recover = async (): Promise<void> => {};
+	const recover = async (): Promise<void> => {
+		const docIds = docManager.documents();
+		if (docIds.length === 0) return;
+
+		const recoveryPromises = docIds.map(async docId => {
+			try {
+				const vector = docManager.encodeStateVector(docId);
+				const result = await convexClient.query(api.delta, {
+					document: docId,
+					vector: vector.buffer as ArrayBuffer,
+				});
+
+				if (result.mode === "recovery" && result.diff) {
+					const update = new Uint8Array(result.diff);
+					docManager.applyUpdate(docId, update, YjsOrigin.Server);
+				}
+			} catch {
+				noop();
+			}
+		});
+
+		await Promise.all(recoveryPromises);
+	};
 
 	const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
 		const deltas: Uint8Array[] = [];

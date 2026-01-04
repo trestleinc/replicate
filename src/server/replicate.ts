@@ -10,7 +10,6 @@ import {
 	presenceActionValidator,
 	successSeqValidator,
 	compactResultValidator,
-	recoveryResultValidator,
 	replicateTypeValidator,
 	sessionActionValidator,
 } from "$/shared/validators";
@@ -537,18 +536,34 @@ export class Replicate<T extends object> {
 
 		return queryGeneric({
 			args: {
-				seq: v.number(),
+				seq: v.optional(v.number()),
 				limit: v.optional(v.number()),
 				threshold: v.optional(v.number()),
+				document: v.optional(v.string()),
+				vector: v.optional(v.bytes()),
 			},
-			returns: streamResultWithExistsValidator,
+			returns: v.any(),
 			handler: async (ctx, args) => {
 				if (opts?.evalRead) {
 					await opts.evalRead(ctx, collection);
 				}
+
+				if (args.vector !== undefined && args.document === undefined) {
+					throw new Error("'document' is required when 'vector' is provided");
+				}
+
+				if (args.vector !== undefined && args.document !== undefined) {
+					const recoveryResult = await ctx.runQuery(component.mutations.recovery, {
+						collection,
+						document: args.document,
+						vector: args.vector,
+					});
+					return { mode: "recovery" as const, ...recoveryResult };
+				}
+
 				const result = await ctx.runQuery(component.mutations.stream, {
 					collection,
-					seq: args.seq,
+					seq: args.seq ?? 0,
 					limit: args.limit,
 					threshold: args.threshold,
 				});
@@ -578,7 +593,7 @@ export class Replicate<T extends object> {
 					exists: existingDocs.has(c.document),
 				}));
 
-				const enrichedResult = { ...result, changes: enrichedChanges };
+				const enrichedResult = { mode: "stream" as const, ...result, changes: enrichedChanges };
 
 				if (opts?.onDelta) {
 					await opts.onDelta(ctx, enrichedResult);
@@ -681,36 +696,6 @@ export class Replicate<T extends object> {
 				return await ctx.runMutation(component.mutations.compact, {
 					collection,
 					document: args.document,
-				});
-			},
-		});
-	}
-
-	createRecoveryQuery(opts?: {
-		evalRead?: (
-			ctx: GenericQueryCtx<GenericDataModel>,
-			collection: string,
-			document: string,
-		) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-
-		return queryGeneric({
-			args: {
-				document: v.string(),
-				vector: v.bytes(),
-			},
-			returns: recoveryResultValidator,
-			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection, args.document);
-				}
-
-				return await ctx.runQuery(component.mutations.recovery, {
-					collection,
-					document: args.document,
-					vector: args.vector,
 				});
 			},
 		});
