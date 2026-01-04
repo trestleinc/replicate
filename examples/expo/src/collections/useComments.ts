@@ -9,7 +9,7 @@ const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL!;
 export const comments = collection.create(schema, "comments", {
   persistence: async () => {
     const db = open({ name: "comments.db" });
-    return persistence.sqlite.native(db, "comments");
+    return persistence.native(db, "comments");
   },
   config: () => ({
     convexClient: new ConvexClient(CONVEX_URL),

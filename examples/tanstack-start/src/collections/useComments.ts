@@ -2,12 +2,12 @@ import { collection, type InferDoc } from "@trestleinc/replicate/client";
 import { ConvexClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
-import { pglite } from "../lib/pglite";
+import { sqlite } from "../lib/sqlite";
 
 const CONVEX_URL = import.meta.env.VITE_CONVEX_URL!;
 
 export const comments = collection.create(schema, "comments", {
-  persistence: pglite,
+  persistence: sqlite,
   config: () => ({
     convexClient: new ConvexClient(CONVEX_URL),
     api: api.comments,

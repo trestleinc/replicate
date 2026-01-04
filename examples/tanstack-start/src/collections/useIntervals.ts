@@ -2,12 +2,12 @@ import { collection } from "@trestleinc/replicate/client";
 import { ConvexClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import schema from "../../convex/schema";
-import { pglite } from "../lib/pglite";
+import { sqlite } from "../lib/sqlite";
 
 const CONVEX_URL = import.meta.env.VITE_CONVEX_URL!;
 
 export const intervals = collection.create(schema, "intervals", {
-  persistence: pglite,
+  persistence: sqlite,
   config: () => ({
     convexClient: new ConvexClient(CONVEX_URL),
     api: api.intervals,

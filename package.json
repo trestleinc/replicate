@@ -58,6 +58,9 @@
         "types": "./dist/component/convex.config.d.ts",
         "default": "./dist/component/convex.config.js"
       }
+    },
+    "./worker": {
+      "import": "./dist/client/persistence/sqlite/worker.js"
     }
   },
   "files": [
@@ -76,10 +79,12 @@
     "convex": "^1.31.0",
     "lib0": "^0.2.0",
     "y-protocols": "^1.0.7",
-    "yjs": "^13.6.0"
+    "yjs": "^13.6.0",
+    "wa-sqlite": "^1.0.0",
+    "@op-engineering/op-sqlite": "^9.0.0"
   },
   "peerDependenciesMeta": {
-    "sql.js": {
+    "wa-sqlite": {
       "optional": true
     },
     "@op-engineering/op-sqlite": {
@@ -104,7 +109,8 @@
     "tsdown": "0.18.2",
     "typescript": "5.9.3",
     "y-protocols": "1.0.7",
-    "yjs": "13.6.28"
+    "yjs": "13.6.28",
+    "wa-sqlite": "1.0.0"
   },
   "main": "./dist/shared/index.js",
   "types": "./dist/shared/index.d.ts",
