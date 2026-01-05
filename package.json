@@ -92,13 +92,13 @@
     }
   },
   "devDependencies": {
-    "@trestleinc/convex-oxlint": "0.1.0",
-    "@typescript/native-preview": "7.0.0-dev.20260103.1",
     "@edge-runtime/vm": "5.0.0",
     "@microsoft/api-extractor": "7.55.2",
     "@tanstack/db": "0.5.15",
+    "@trestleinc/convex-oxlint": "0.1.0",
     "@types/node": "25.0.3",
     "@types/sql.js": "1.4.9",
+    "@typescript/native-preview": "7.0.0-dev.20260103.1",
     "convex": "1.31.2",
     "dotenv": "17.2.3",
     "fake-indexeddb": "6.2.5",
@@ -108,9 +108,10 @@
     "publint": "0.3.16",
     "tsdown": "0.18.2",
     "typescript": "5.9.3",
+    "wa-sqlite": "1.0.0",
+    "wrangler": "4.54.0",
     "y-protocols": "1.0.7",
-    "yjs": "13.6.28",
-    "wa-sqlite": "1.0.0"
+    "yjs": "13.6.28"
   },
   "main": "./dist/shared/index.js",
   "types": "./dist/shared/index.d.ts",

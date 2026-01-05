@@ -18,12 +18,14 @@ This guide explains how to set up your own CDN for wa-sqlite to maximize perform
 │  Web App                                                     │
 │    └── Web Worker                                           │
 │          └── Dynamic imports from CDN                       │
-│                ├── wa-sqlite.mjs (~15KB)                   │
-│                ├── OPFSCoopSyncVFS.js (~8KB)               │
+│                ├── wa-sqlite-async.mjs (~15KB)             │
+│                ├── IDBBatchAtomicVFS.js (~12KB)            │
 │                ├── sqlite-api.js (~20KB)                   │
-│                └── wa-sqlite.wasm (~400KB)                 │
+│                └── wa-sqlite-async.wasm (~400KB)           │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **Note:** We use `IDBBatchAtomicVFS` (IndexedDB-based) instead of OPFS adapters for stability.
 
 ## Setup Options
 
@@ -45,16 +47,17 @@ wrangler r2 bucket create wa-sqlite-cdn
 git clone https://github.com/rhashimoto/wa-sqlite.git
 cd wa-sqlite
 
-# Upload to R2
-wrangler r2 object put wa-sqlite-cdn/v1.0.0/dist/wa-sqlite.mjs --file=dist/wa-sqlite.mjs
-wrangler r2 object put wa-sqlite-cdn/v1.0.0/dist/wa-sqlite.wasm --file=dist/wa-sqlite.wasm
+# Upload to R2 - core async build
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/dist/wa-sqlite-async.mjs --file=dist/wa-sqlite-async.mjs
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/dist/wa-sqlite-async.wasm --file=dist/wa-sqlite-async.wasm
 wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/sqlite-api.js --file=src/sqlite-api.js
-wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/examples/OPFSCoopSyncVFS.js --file=src/examples/OPFSCoopSyncVFS.js
 
-# Also upload dependencies for OPFSCoopSyncVFS
+# Upload IDBBatchAtomicVFS and its dependencies
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/examples/IDBBatchAtomicVFS.js --file=src/examples/IDBBatchAtomicVFS.js
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/FacadeVFS.js --file=src/FacadeVFS.js
 wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/VFS.js --file=src/VFS.js
-wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/examples/WebLocks.js --file=src/examples/WebLocks.js
-wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/examples/OPFSPermutedVFS.js --file=src/examples/OPFSPermutedVFS.js
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/WebLocksMixin.js --file=src/WebLocksMixin.js
+wrangler r2 object put wa-sqlite-cdn/v1.0.0/src/sqlite-constants.js --file=src/sqlite-constants.js
 ```
 
 #### 3. Configure Public Access
@@ -156,7 +159,7 @@ Update the worker to use your CDN:
 
 ```typescript
 // src/client/persistence/sqlite/worker.ts
-const CDN_BASE = "https://cdn.yourdomain.com/wa-sqlite/v1.0.0";
+const CDN_BASE = "https://wa-sqlite.robelest.com/v1.0.0";
 ```
 
 ### User-Configurable CDN
@@ -225,13 +228,17 @@ fi
 # Clone specific tag/commit
 git clone --depth 1 --branch $VERSION https://github.com/rhashimoto/wa-sqlite.git /tmp/wa-sqlite
 
-# Upload to R2
-wrangler r2 object put $BUCKET/$VERSION/dist/wa-sqlite.mjs --file=/tmp/wa-sqlite/dist/wa-sqlite.mjs
-wrangler r2 object put $BUCKET/$VERSION/dist/wa-sqlite.wasm --file=/tmp/wa-sqlite/dist/wa-sqlite.wasm
+# Upload to R2 - core async build
+wrangler r2 object put $BUCKET/$VERSION/dist/wa-sqlite-async.mjs --file=/tmp/wa-sqlite/dist/wa-sqlite-async.mjs
+wrangler r2 object put $BUCKET/$VERSION/dist/wa-sqlite-async.wasm --file=/tmp/wa-sqlite/dist/wa-sqlite-async.wasm
 wrangler r2 object put $BUCKET/$VERSION/src/sqlite-api.js --file=/tmp/wa-sqlite/src/sqlite-api.js
-wrangler r2 object put $BUCKET/$VERSION/src/examples/OPFSCoopSyncVFS.js --file=/tmp/wa-sqlite/src/examples/OPFSCoopSyncVFS.js
+
+# Upload IDBBatchAtomicVFS and its dependencies
+wrangler r2 object put $BUCKET/$VERSION/src/examples/IDBBatchAtomicVFS.js --file=/tmp/wa-sqlite/src/examples/IDBBatchAtomicVFS.js
+wrangler r2 object put $BUCKET/$VERSION/src/FacadeVFS.js --file=/tmp/wa-sqlite/src/FacadeVFS.js
 wrangler r2 object put $BUCKET/$VERSION/src/VFS.js --file=/tmp/wa-sqlite/src/VFS.js
-wrangler r2 object put $BUCKET/$VERSION/src/examples/WebLocks.js --file=/tmp/wa-sqlite/src/examples/WebLocks.js
+wrangler r2 object put $BUCKET/$VERSION/src/WebLocksMixin.js --file=/tmp/wa-sqlite/src/WebLocksMixin.js
+wrangler r2 object put $BUCKET/$VERSION/src/sqlite-constants.js --file=/tmp/wa-sqlite/src/sqlite-constants.js
 
 # Cleanup
 rm -rf /tmp/wa-sqlite
@@ -244,14 +251,14 @@ echo "Uploaded wa-sqlite $VERSION to CDN"
 ### 1. Brotli Compression
 
 Cloudflare automatically applies Brotli for supported browsers:
-- `wa-sqlite.wasm`: 400KB → ~150KB (62% reduction)
+- `wa-sqlite-async.wasm`: 400KB → ~150KB (62% reduction)
 - JS files: ~43KB → ~12KB (72% reduction)
 
 ### 2. HTTP/2 Server Push (Optional)
 
 ```typescript
 // In worker, add Link headers for push
-headers.set("Link", "</v1.0.0/dist/wa-sqlite.wasm>; rel=preload; as=fetch");
+headers.set("Link", "</v1.0.0/dist/wa-sqlite-async.wasm>; rel=preload; as=fetch");
 ```
 
 ### 3. Edge Caching Rules
