@@ -103,7 +103,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 				connected?: boolean;
 				document: string;
 				exclude?: string;
-				group?: boolean;
 			},
 			Array<{
 				client: string;

@@ -123,7 +123,7 @@ interface ConvexCollectionApi {
 	delta: FunctionReference<"query">;
 	replicate: FunctionReference<"mutation">;
 	presence: FunctionReference<"mutation">;
-	sessions: FunctionReference<"query">;
+	session: FunctionReference<"query">;
 }
 
 export interface ConvexCollectionConfig<
@@ -296,13 +296,13 @@ export function convexCollectionOptions<
 			const storedClientId = ctx.clientId;
 
 			let awarenessProvider: ConvexAwarenessProvider | null = null;
-			const hasPresenceApi = storedApi?.sessions && storedApi?.presence;
+			const hasPresenceApi = storedApi?.session && storedApi?.presence;
 			if (storedConvexClient && hasPresenceApi && storedClientId) {
 				awarenessProvider = createAwarenessProvider({
 					convexClient: storedConvexClient,
 					api: {
 						presence: storedApi.presence!,
-						sessions: storedApi.sessions!,
+						session: storedApi.session!,
 					},
 					document,
 					client: storedClientId,

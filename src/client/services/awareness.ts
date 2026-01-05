@@ -8,7 +8,7 @@ const DEFAULT_THROTTLE_MS = 50;
 
 interface AwarenessApi {
 	presence: FunctionReference<"mutation">;
-	sessions: FunctionReference<"query">;
+	session: FunctionReference<"query">;
 }
 
 export interface UserIdentity {
@@ -273,7 +273,7 @@ export function createAwarenessProvider(config: ConvexAwarenessConfig): ConvexAw
 
 	const subscribeToPresence = (): void => {
 		unsubscribeCursors = convexClient.onUpdate(
-			api.sessions,
+			api.session,
 			{ document, connected: true, exclude: client },
 			(
 				remotes: {

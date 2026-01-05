@@ -5,7 +5,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 
 export const {
-	material, delta, replicate, presence, sessions,
+	material, delta, replicate, presence, session,
 } = collection.create<Doc<"comments">>(components.replicate, "comments");
 
 export const get = query({

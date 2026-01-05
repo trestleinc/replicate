@@ -10,7 +10,7 @@ interface ConvexCollectionApi {
 	delta: FunctionReference<"query">;
 	replicate: FunctionReference<"mutation">;
 	presence: FunctionReference<"mutation">;
-	sessions: FunctionReference<"query">;
+	session: FunctionReference<"query">;
 }
 
 export interface CollectionContext {

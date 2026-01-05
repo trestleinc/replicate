@@ -2,12 +2,11 @@ import { collection } from "@trestleinc/replicate/server";
 import { query } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
-import type { Interval } from "../src/types/interval";
+import type { Doc } from "./_generated/dataModel";
 
 export const {
-  stream, material, insert, update, remove,
-  recovery, mark, compact, sessions, presence,
-} = collection.create<Interval>(components.replicate, "intervals");
+  material, delta, replicate, presence, session,
+} = collection.create<Doc<"intervals">>(components.replicate, "intervals");
 
 export const get = query({
   args: { id: v.string() },

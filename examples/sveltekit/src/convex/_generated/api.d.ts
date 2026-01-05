@@ -123,7 +123,6 @@ export declare const components: {
           connected?: boolean;
           document: string;
           exclude?: string;
-          group?: boolean;
         },
         Array<{
           client: string;

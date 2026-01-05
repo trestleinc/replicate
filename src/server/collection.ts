@@ -1,11 +1,11 @@
 import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from "convex/server";
-import { Replicate } from "$/server/replicate";
+import { Replicate, type ViewFunction } from "$/server/replicate";
 import type { CompactionConfig } from "$/shared/types";
 
 export interface CollectionOptions<T extends object> {
 	compaction?: Partial<CompactionConfig>;
+	view?: ViewFunction;
 	hooks?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
 		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
 		evalRemove?: (ctx: GenericMutationCtx<GenericDataModel>, docId: string) => void | Promise<void>;
 		evalSession?: (
@@ -40,17 +40,18 @@ function createCollectionInternal<T extends object>(
 	const storage = new Replicate<T>(component, name, options?.compaction);
 
 	const hooks = options?.hooks;
+	const view = options?.view;
 
 	return {
 		__collection: name,
 
 		material: storage.createMaterialQuery({
-			evalRead: hooks?.evalRead,
+			view,
 			transform: hooks?.transform,
 		}),
 
 		delta: storage.createDeltaQuery({
-			evalRead: hooks?.evalRead,
+			view,
 			onDelta: hooks?.onDelta,
 		}),
 
@@ -63,11 +64,10 @@ function createCollectionInternal<T extends object>(
 		}),
 
 		presence: storage.createSessionMutation({
-			evalWrite: hooks?.evalSession,
+			view,
+			evalSession: hooks?.evalSession,
 		}),
 
-		sessions: storage.createSessionsQuery({
-			evalRead: hooks?.evalRead,
-		}),
+		session: storage.createSessionQuery({ view }),
 	};
 }

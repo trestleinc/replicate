@@ -519,7 +519,6 @@ export const sessions = query({
 		document: v.string(),
 		connected: v.optional(v.boolean()),
 		exclude: v.optional(v.string()),
-		group: v.optional(v.boolean()),
 	},
 	returns: v.array(sessionValidator),
 	handler: async (ctx, args) => {
@@ -535,7 +534,7 @@ export const sessions = query({
 
 		const records = await query.collect();
 
-		let results = records
+		const mapped = records
 			.filter((p: any) => !args.exclude || p.client !== args.exclude)
 			.map((p: any) => ({
 				client: p.client,
@@ -546,19 +545,16 @@ export const sessions = query({
 				seen: p.seen,
 			}));
 
-		if (args.group) {
-			const byUser = new Map<string, (typeof results)[0]>();
-			for (const p of results) {
-				const key = p.user ?? p.client;
-				const existing = byUser.get(key);
-				if (!existing || p.seen > existing.seen) {
-					byUser.set(key, p);
-				}
+		const byUser = new Map<string, (typeof mapped)[0]>();
+		for (const p of mapped) {
+			const key = p.user ?? p.client;
+			const existing = byUser.get(key);
+			if (!existing || p.seen > existing.seen) {
+				byUser.set(key, p);
 			}
-			results = Array.from(byUser.values());
 		}
 
-		return results;
+		return Array.from(byUser.values());
 	},
 });
 

@@ -5,8 +5,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 
 export const {
-  stream, material, insert, update, remove,
-  recovery, mark, compact, sessions, presence,
+  material, delta, replicate, presence, session,
 } = collection.create<Doc<"intervals">>(components.replicate, "intervals");
 
 export const get = query({

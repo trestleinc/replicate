@@ -7,12 +7,16 @@ import {
 	cursorValidator,
 	streamResultWithExistsValidator,
 	sessionValidator,
-	presenceActionValidator,
 	successSeqValidator,
 	compactResultValidator,
 	replicateTypeValidator,
 	sessionActionValidator,
 } from "$/shared/validators";
+
+export type ViewFunction = (
+	ctx: GenericQueryCtx<GenericDataModel>,
+	query: any,
+) => Promise<any> | any;
 
 const BYTES_PER_MB = 1024 * 1024;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -37,7 +41,7 @@ export class Replicate<T extends object> {
 	}
 
 	createStreamQuery(opts?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+		view?: ViewFunction;
 		onStream?: (ctx: GenericQueryCtx<GenericDataModel>, result: any) => void | Promise<void>;
 	}) {
 		const component = this.component;
@@ -51,9 +55,6 @@ export class Replicate<T extends object> {
 			},
 			returns: streamResultWithExistsValidator,
 			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection);
-				}
 				const result = await ctx.runQuery(component.mutations.stream, {
 					collection,
 					seq: args.seq,
@@ -67,12 +68,22 @@ export class Replicate<T extends object> {
 				}
 
 				const existingDocs = new Set<string>();
+
 				for (const docId of docIdSet) {
 					const doc = await ctx.db
 						.query(collection)
 						.withIndex("by_doc_id", (q: any) => q.eq("id", docId))
 						.first();
-					if (doc) existingDocs.add(docId);
+
+					if (!doc) continue;
+
+					if (opts?.view) {
+						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
+						const visible = await viewQuery.filter((q: any) => q.eq(q.field("id"), docId)).first();
+						if (visible) existingDocs.add(docId);
+					} else {
+						existingDocs.add(docId);
+					}
 				}
 
 				interface StreamChange {
@@ -98,7 +109,7 @@ export class Replicate<T extends object> {
 	}
 
 	createMaterialQuery(opts?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+		view?: ViewFunction;
 		transform?: (docs: T[]) => T[] | Promise<T[]>;
 	}) {
 		const collection = this.collectionName;
@@ -110,16 +121,15 @@ export class Replicate<T extends object> {
 			},
 			returns: v.any(),
 			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection);
-				}
+				const query = opts?.view
+					? await opts.view(ctx, ctx.db.query(collection))
+					: ctx.db.query(collection).withIndex("by_timestamp").order("desc");
 
 				if (args.numItems !== undefined) {
-					const result = await ctx.db
-						.query(collection)
-						.withIndex("by_timestamp")
-						.order("desc")
-						.paginate({ numItems: args.numItems, cursor: args.cursor ?? null });
+					const result = await query.paginate({
+						numItems: args.numItems,
+						cursor: args.cursor ?? null,
+					});
 
 					let docs = result.page as T[];
 					if (opts?.transform) {
@@ -133,7 +143,7 @@ export class Replicate<T extends object> {
 					};
 				}
 
-				let docs = (await ctx.db.query(collection).collect()) as T[];
+				let docs = (await query.collect()) as T[];
 				if (opts?.transform) {
 					docs = await opts.transform(docs);
 				}
@@ -420,7 +430,11 @@ export class Replicate<T extends object> {
 	}
 
 	createSessionMutation(opts?: {
-		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
+		view?: ViewFunction;
+		evalSession?: (
+			ctx: GenericMutationCtx<GenericDataModel>,
+			client: string,
+		) => void | Promise<void>;
 	}) {
 		const component = this.component;
 		const collection = this.collectionName;
@@ -439,8 +453,18 @@ export class Replicate<T extends object> {
 			},
 			returns: v.null(),
 			handler: async (ctx, args) => {
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, args.client);
+				if (opts?.view) {
+					const viewQuery = await opts.view(ctx as any, ctx.db.query(collection));
+					const canAccess = await viewQuery
+						.filter((q: any) => q.eq(q.field("id"), args.document))
+						.first();
+					if (!canAccess) {
+						throw new Error("Unauthorized: cannot access this document");
+					}
+				}
+
+				if (opts?.evalSession) {
+					await opts.evalSession(ctx, args.client);
 				}
 
 				const { action, document, client, user, profile, cursor, interval, vector, seq } = args;
@@ -499,36 +523,8 @@ export class Replicate<T extends object> {
 		});
 	}
 
-	createSessionQuery(opts?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-
-		return queryGeneric({
-			args: {
-				document: v.string(),
-				connected: v.optional(v.boolean()),
-				exclude: v.optional(v.string()),
-			},
-			returns: v.array(sessionValidator),
-			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection);
-				}
-
-				return await ctx.runQuery(component.mutations.sessions, {
-					collection,
-					document: args.document,
-					connected: args.connected,
-					exclude: args.exclude,
-				});
-			},
-		});
-	}
-
 	createDeltaQuery(opts?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
+		view?: ViewFunction;
 		onDelta?: (ctx: GenericQueryCtx<GenericDataModel>, result: any) => void | Promise<void>;
 	}) {
 		const component = this.component;
@@ -544,10 +540,6 @@ export class Replicate<T extends object> {
 			},
 			returns: v.any(),
 			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection);
-				}
-
 				if (args.vector !== undefined && args.document === undefined) {
 					throw new Error("'document' is required when 'vector' is provided");
 				}
@@ -574,12 +566,22 @@ export class Replicate<T extends object> {
 				}
 
 				const existingDocs = new Set<string>();
+
 				for (const docId of docIdSet) {
 					const doc = await ctx.db
 						.query(collection)
 						.withIndex("by_doc_id", (q: any) => q.eq("id", docId))
 						.first();
-					if (doc) existingDocs.add(docId);
+
+					if (!doc) continue;
+
+					if (opts?.view) {
+						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
+						const visible = await viewQuery.filter((q: any) => q.eq(q.field("id"), docId)).first();
+						if (visible) existingDocs.add(docId);
+					} else {
+						existingDocs.add(docId);
+					}
 				}
 
 				interface StreamChange {
@@ -604,9 +606,7 @@ export class Replicate<T extends object> {
 		});
 	}
 
-	createSessionsQuery(opts?: {
-		evalRead?: (ctx: GenericQueryCtx<GenericDataModel>, collection: string) => void | Promise<void>;
-	}) {
+	createSessionQuery(opts?: { view?: ViewFunction }) {
 		const component = this.component;
 		const collection = this.collectionName;
 
@@ -615,12 +615,17 @@ export class Replicate<T extends object> {
 				document: v.string(),
 				connected: v.optional(v.boolean()),
 				exclude: v.optional(v.string()),
-				group: v.optional(v.boolean()),
 			},
 			returns: v.array(sessionValidator),
 			handler: async (ctx, args) => {
-				if (opts?.evalRead) {
-					await opts.evalRead(ctx, collection);
+				if (opts?.view) {
+					const viewQuery = await opts.view(ctx, ctx.db.query(collection));
+					const canAccess = await viewQuery
+						.filter((q: any) => q.eq(q.field("id"), args.document))
+						.first();
+					if (!canAccess) {
+						throw new Error("Unauthorized: cannot access this document");
+					}
 				}
 
 				return await ctx.runQuery(component.mutations.sessions, {
@@ -628,48 +633,7 @@ export class Replicate<T extends object> {
 					document: args.document,
 					connected: args.connected,
 					exclude: args.exclude,
-					group: args.group,
 				});
-			},
-		});
-	}
-
-	createPresenceMutation(opts?: {
-		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-
-		return mutationGeneric({
-			args: {
-				document: v.string(),
-				client: v.string(),
-				action: presenceActionValidator,
-				user: v.optional(v.string()),
-				profile: v.optional(profileValidator),
-				cursor: v.optional(cursorValidator),
-				interval: v.optional(v.number()),
-				vector: v.optional(v.bytes()),
-			},
-			returns: v.null(),
-			handler: async (ctx, args) => {
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, args.client);
-				}
-
-				await ctx.runMutation(component.mutations.presence, {
-					collection,
-					document: args.document,
-					client: args.client,
-					action: args.action,
-					user: args.user,
-					profile: args.profile,
-					cursor: args.cursor,
-					interval: args.interval,
-					vector: args.vector,
-				});
-
-				return null;
 			},
 		});
 	}
