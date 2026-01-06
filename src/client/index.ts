@@ -47,4 +47,13 @@ export const schema = {
 	},
 } as const;
 
-export { persistence, type StorageAdapter, type Persistence } from "$/client/persistence/index";
+export {
+	persistence,
+	isPRFSupported,
+	type StorageAdapter,
+	type Persistence,
+	type EncryptedPersistence,
+	type EncryptionState,
+	type WebEncryptedConfig,
+	type NativeEncryptedConfig,
+} from "$/client/persistence/index";

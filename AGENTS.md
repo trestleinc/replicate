@@ -56,12 +56,14 @@ schema.prose()           // Validator for prose fields
 
 ### Client (`@trestleinc/replicate/client`)
 ```typescript
-collection.create()          // Main entry point - create lazy-initialized collections
-persistence.sqlite()         // Browser wa-sqlite Web Worker + OPFSCoopSyncVFS
-persistence.sqlite.once()    // SQLite singleton mode (shared across collections)
-persistence.native()         // React Native SQLite persistence (op-sqlite)
-persistence.memory()         // In-memory persistence (testing)
-persistence.custom()         // Custom storage adapter
+collection.create()              // Main entry point - create lazy-initialized collections
+persistence.web.sqlite()         // Browser wa-sqlite Web Worker + OPFSCoopSyncVFS
+persistence.web.sqlite.once()    // SQLite singleton mode (shared across collections)
+persistence.web.encrypted()      // Browser encrypted storage (WebAuthn PRF)
+persistence.native.sqlite()      // React Native SQLite persistence (op-sqlite)
+persistence.native.encrypted()   // React Native encrypted storage (not yet implemented)
+persistence.memory()             // In-memory persistence (testing)
+persistence.custom()             // Custom storage adapter
 schema.prose()               // Zod schema for prose fields
 schema.prose.extract()       // Extract plain text from prose JSON
 schema.prose.empty()         // Create empty prose value

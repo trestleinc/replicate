@@ -169,12 +169,14 @@ Server update (via stream subscription)
 // Main entry point
 collection.create()           // Create lazy-initialized collection (SSR-safe)
 
-// Persistence providers
-persistence.sqlite()          // Browser: wa-sqlite Web Worker + OPFSCoopSyncVFS
-persistence.sqlite.once()     // SQLite singleton (shared across collections)
-persistence.native()          // React Native: op-sqlite
-persistence.memory()          // Testing: in-memory
-persistence.custom()          // Custom storage adapter
+// Persistence providers (namespaced by platform)
+persistence.web.sqlite()          // Browser: wa-sqlite Web Worker + OPFSCoopSyncVFS
+persistence.web.sqlite.once()     // SQLite singleton (shared across collections)
+persistence.web.encrypted()       // Browser: encrypted storage with WebAuthn PRF
+persistence.native.sqlite()       // React Native: op-sqlite
+persistence.native.encrypted()    // React Native: encrypted storage (not yet implemented)
+persistence.memory()              // Testing: in-memory (cross-platform)
+persistence.custom()              // Custom storage adapter (cross-platform)
 
 // Schema helpers (matches server API)
 schema.prose()                // Zod schema for prose fields

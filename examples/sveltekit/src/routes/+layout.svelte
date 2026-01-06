@@ -29,6 +29,6 @@
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
-<PersistenceGate intervalsMaterial={page.data.intervalsMaterial} commentsMaterial={page.data.commentsMaterial}>
+<PersistenceGate enableEncryption={true} intervalsMaterial={page.data.intervalsMaterial} commentsMaterial={page.data.commentsMaterial}>
 	{@render children()}
 </PersistenceGate>

@@ -22,6 +22,80 @@ import type { FunctionReference } from "convex/server";
  * ```
  */
 export type ComponentApi<Name extends string | undefined = string | undefined> = {
+	encryption: {
+		approveDevice: FunctionReference<
+			"mutation",
+			"internal",
+			{
+				collection: string;
+				deviceId: string;
+				userId: string;
+				wrappedUmk: ArrayBuffer;
+			},
+			any,
+			Name
+		>;
+		getDocKey: FunctionReference<
+			"query",
+			"internal",
+			{ collection: string; document: string; userId: string },
+			any,
+			Name
+		>;
+		getDocKeysForUser: FunctionReference<
+			"query",
+			"internal",
+			{ collection: string; userId: string },
+			any,
+			Name
+		>;
+		getPendingDevices: FunctionReference<
+			"query",
+			"internal",
+			{ collection: string; userId: string },
+			any,
+			Name
+		>;
+		getWrappedUmk: FunctionReference<
+			"query",
+			"internal",
+			{ collection: string; deviceId: string; userId: string },
+			any,
+			Name
+		>;
+		listDevices: FunctionReference<
+			"query",
+			"internal",
+			{ collection: string; userId: string },
+			any,
+			Name
+		>;
+		registerDevice: FunctionReference<
+			"mutation",
+			"internal",
+			{
+				collection: string;
+				deviceId: string;
+				name?: string;
+				publicKey: ArrayBuffer;
+				userId: string;
+			},
+			any,
+			Name
+		>;
+		storeDocKey: FunctionReference<
+			"mutation",
+			"internal",
+			{
+				collection: string;
+				document: string;
+				userId: string;
+				wrappedKey: ArrayBuffer;
+			},
+			any,
+			Name
+		>;
+	};
 	mutations: {
 		compact: FunctionReference<
 			"mutation",

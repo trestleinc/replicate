@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as encryption from "../encryption.js";
 import type * as logger from "../logger.js";
 import type * as mutations from "../mutations.js";
 
@@ -15,6 +16,7 @@ import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server
 import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
+	encryption: typeof encryption;
 	logger: typeof logger;
 	mutations: typeof mutations;
 }> = anyApi as any;

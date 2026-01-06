@@ -1,12 +1,12 @@
 import { collection } from "@trestleinc/replicate/client";
 import { api } from "$convex/_generated/api";
 import schema from "$convex/schema";
-import { sqlite } from "$lib/sqlite";
+import { createPersistence } from "$lib/sqlite";
 import { convexClient } from "$lib/convex";
 import { authClient } from "$lib/auth-client";
 
 export const comments = collection.create(schema, "comments", {
-  persistence: sqlite,
+  persistence: createPersistence,
   config: () => ({
     convexClient,
     api: api.comments,

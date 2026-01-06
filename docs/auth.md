@@ -4,12 +4,22 @@ This guide explains how to secure your Replicate collections.
 
 ## Overview
 
-Replicate uses a layered auth model:
+Replicate uses a layered security model:
 
 ```
-view     = read access gate (documents, sync, presence)
-hooks    = write access gate + lifecycle events
+view       = read access gate (documents, sync, presence)
+hooks      = write access gate + lifecycle events
+encryption = data protection (local + optional E2E)
 ```
+
+**Key insight**: Authentication (who you are) is separate from encryption (protecting data). This enables:
+- Any auth provider (Clerk, WorkOS, Google OAuth, Better Auth)
+- Passwordless encryption via biometrics (Touch ID / Face ID)
+- Offline access to encrypted data
+
+## Authorization
+
+### View Function
 
 The `view` function controls **all read access**. If a user can't see a document via `view`, they also can't:
 - Fetch it via `material`
@@ -19,7 +29,6 @@ The `view` function controls **all read access**. If a user can't see a document
 
 ```typescript
 collection.create<Task>(components.replicate, "tasks", {
-  // Read access: controls what documents user can see + join
   view: async (ctx, q) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
@@ -29,7 +38,6 @@ collection.create<Task>(components.replicate, "tasks", {
       .order("desc");
   },
   
-  // Write access: additional validation for mutations
   hooks: {
     evalWrite: async (ctx, doc) => { /* validate writes */ },
     evalRemove: async (ctx, docId) => { /* validate deletes */ },
@@ -37,7 +45,7 @@ collection.create<Task>(components.replicate, "tasks", {
 });
 ```
 
-## API Auth Matrix
+### API Auth Matrix
 
 | API | Type | Auth | Purpose |
 |-----|------|------|---------|
@@ -47,99 +55,7 @@ collection.create<Task>(components.replicate, "tasks", {
 | `presence` | mutation | `view` | Join/leave/heartbeat |
 | `replicate` | mutation | `evalWrite` / `evalRemove` | Insert/update/delete |
 
-**Key insight**: `view` gates everything. If you can't read a document, you can't interact with it at all.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CONFIGURATION                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-  collection.create<Task>(components.replicate, "tasks", {
-    
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │  view: async (ctx, q) => { ... }           ◄── READ ACCESS GATE     │
-    │                                                                     │
-    │  - Throw to deny ALL access (read + presence)                       │
-    │  - Return filtered query to limit visible documents                 │
-    │  - Applied to: material, delta, session, presence                   │
-    └─────────────────────────────────────────────────────────────────────┘
-    
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │  hooks: {                                  ◄── WRITE ACCESS + EVENTS│
-    │    evalWrite:   (ctx, doc) => { ... }      // validate writes       │
-    │    evalRemove:  (ctx, docId) => { ... }    // validate deletes      │
-    │    evalSession: (ctx, client) => { ... }   // additional presence   │
-    │    transform:   (docs) => { ... }          // field filtering       │
-    │    onInsert/onUpdate/onRemove              // lifecycle events      │
-    │  }                                                                  │
-    └─────────────────────────────────────────────────────────────────────┘
-  })
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                 API LAYER                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-         QUERIES (read)                           MUTATIONS (write)
-         
-  ┌──────────────────────┐                 ┌──────────────────────┐
-  │      material        │                 │      replicate       │
-  │  └─► view ✓          │                 │  └─► evalWrite ✓     │
-  │  └─► transform ✓     │                 │  └─► evalRemove ✓    │
-  └──────────────────────┘                 └──────────────────────┘
-  
-  ┌──────────────────────┐                 ┌──────────────────────┐
-  │       delta          │                 │      presence        │
-  │  └─► view ✓          │                 │  └─► view ✓          │
-  └──────────────────────┘                 │  └─► evalSession ✓   │
-                                           └──────────────────────┘
-  ┌──────────────────────┐
-  │      session         │
-  │  └─► view ✓          │
-  │  └─► groups by user  │
-  └──────────────────────┘
-```
-
-## View Function
-
-The `view` function is the single entry point for read authorization:
-
-```typescript
-type ViewFunction = (
-  ctx: QueryCtx,
-  query: Query<TableInfo>
-) => OrderedQuery<TableInfo> | Promise<OrderedQuery<TableInfo>>;
-```
-
-It does three things:
-1. **Auth check** - Throw to deny access entirely
-2. **Filtering** - Use `.withIndex()` to limit visible documents  
-3. **Ordering** - Chain `.order("asc" | "desc")`
-
-### How View Applies to Each API
-
-**`material` query:**
-```
-view() → filtered query → paginate → transform → return docs
-```
-
-**`delta` query:**
-```
-view() → for each delta, check if doc is in view → return visible deltas
-```
-
-**`session` query:**
-```
-view() → verify user can access document → return presence (grouped by user)
-```
-
-**`presence` mutation:**
-```
-view() → verify user can access document → allow join/leave
-```
-
-## Hooks
+### Hooks
 
 Hooks provide write-side authorization and lifecycle events:
 
@@ -160,361 +76,9 @@ hooks: {
 }
 ```
 
-### View vs Hooks
+### Authorization Patterns
 
-| Concern | Use `view` | Use `hooks` |
-|---------|-----------|-------------|
-| "Can user read this?" | ✅ | |
-| "Can user see who's editing?" | ✅ | |
-| "Can user join presence?" | ✅ | |
-| "Can user write this?" | | ✅ `evalWrite` |
-| "Can user delete this?" | | ✅ `evalRemove` |
-| "Hide sensitive fields" | | ✅ `transform` |
-| "Log after write" | | ✅ `onInsert` etc |
-
-## Client-Side Setup
-
-Replicate uses a **pre-authenticated ConvexClient** for server-side authorization. Your auth provider (Better Auth, Clerk, etc.) configures the client, and Replicate reuses it.
-
-### Setting Up the Authenticated Client
-
-Create a shared ConvexClient and configure auth via your provider's integration:
-
-```typescript
-// src/lib/convex.ts
-import { ConvexClient } from "convex/browser";
-
-export const convexClient = new ConvexClient(process.env.PUBLIC_CONVEX_URL);
-```
-
-Then pass it to your auth provider's setup (this configures `setAuth()` internally):
-
-**Better Auth (SvelteKit):**
-```typescript
-// +layout.svelte
-import { createSvelteAuthClient } from "@mmailaender/convex-better-auth-svelte/svelte";
-import { authClient } from "$lib/auth-client";
-import { convexClient } from "$lib/convex";
-
-createSvelteAuthClient({ authClient, convexClient });
-```
-
-**Clerk (React):**
-```typescript
-// App.tsx
-import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { convexClient } from "./lib/convex";
-
-<ClerkProvider>
-  <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-    <App />
-  </ConvexProviderWithClerk>
-</ClerkProvider>
-```
-
-**Custom Auth:**
-```typescript
-// Manual setAuth configuration
-convexClient.setAuth(
-  async ({ forceRefreshToken }) => {
-    const token = await yourAuthProvider.getToken({ skipCache: forceRefreshToken });
-    return token ?? null;
-  },
-  (isAuthenticated) => console.log("Auth state:", isAuthenticated)
-);
-```
-
-### Using the Authenticated Client in Collections
-
-Pass the shared client to your collection config:
-
-```typescript
-// src/collections/tasks.ts
-import { collection, persistence } from "@trestleinc/replicate/client";
-import { convexClient } from "$lib/convex";
-
-export const tasks = collection.create(schema, "tasks", {
-  persistence: () => persistence.sqlite(db, "tasks"),
-  config: () => ({
-    convexClient,  // Pre-authenticated client
-    api: api.tasks,
-    getKey: (t) => t.id,
-  }),
-});
-```
-
-Now `ctx.auth.getUserIdentity()` will work in your server-side `view` and `hooks`.
-
-## Presence Identity (Auth-Agnostic)
-
-Replicate's presence system (cursors, avatars) uses a separate **client-side identity** that works with any auth provider.
-
-### UserIdentity Interface
-
-```typescript
-interface UserIdentity {
-  id?: string;      // User ID (for session grouping across devices)
-  name?: string;    // Display name (shown in cursors)
-  color?: string;   // Cursor/selection color (hex, e.g., "#6366f1")
-  avatar?: string;  // Avatar URL (for presence indicators)
-}
-```
-
-### Passing Identity to Collections
-
-Provide a `user` getter in your collection config. This function is called when establishing presence:
-
-```typescript
-import { collection, persistence } from "@trestleinc/replicate/client";
-
-export const tasks = collection.create(schema, "tasks", {
-  persistence: async () => persistence.pglite(db, "tasks"),
-  config: () => ({
-    convexClient,
-    api: api.tasks,
-    getKey: (t) => t.id,
-    
-    user: () => {
-      const session = getAuthSession(); // Your auth provider
-      if (!session?.user) return undefined;
-      
-      return {
-        id: session.user.id,
-        name: session.user.name,
-        avatar: session.user.image,
-      };
-    },
-  }),
-});
-```
-
-### Provider Examples
-
-**Better Auth:**
-```typescript
-import { authClient } from "$lib/auth-client";
-
-user: () => {
-  const session = authClient.useSession();
-  if (!session.data?.user) return undefined;
-  
-  return {
-    id: session.data.user.id,
-    name: session.data.user.name,
-    avatar: session.data.user.image,
-  };
-},
-```
-
-**Clerk:**
-```typescript
-import { useUser } from "@clerk/clerk-react";
-
-user: () => {
-  const { user } = useUser();
-  if (!user) return undefined;
-  
-  return {
-    id: user.id,
-    name: user.fullName ?? user.username,
-    avatar: user.imageUrl,
-  };
-},
-```
-
-**WorkOS AuthKit:**
-```typescript
-import { useAuth } from "@workos-inc/authkit-react";
-
-user: () => {
-  const { user } = useAuth();
-  if (!user) return undefined;
-  
-  return {
-    id: user.id,
-    name: `${user.firstName} ${user.lastName}`.trim(),
-    avatar: user.profilePictureUrl,
-  };
-},
-```
-
-**Convex Auth (ctx.auth):**
-```typescript
-// For SSR scenarios where you have the identity from server
-user: () => {
-  const identity = getServerIdentity(); // From your SSR loader
-  if (!identity) return undefined;
-  
-  return {
-    id: identity.subject,
-    name: identity.name,
-    avatar: identity.pictureUrl,
-  };
-},
-```
-
-**Custom/JWT:**
-```typescript
-import { jwtDecode } from "jwt-decode";
-
-user: () => {
-  const token = localStorage.getItem("auth_token");
-  if (!token) return undefined;
-  
-  const decoded = jwtDecode<{ sub: string; name: string }>(token);
-  return {
-    id: decoded.sub,
-    name: decoded.name,
-  };
-},
-```
-
-### How Identity Flows Through the System
-
-```
-┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-│   Auth Provider │      │     Client      │      │     Server      │
-│                 │      │                 │      │                 │
-│  Better Auth    │      │  collection     │      │  sessions table │
-│  Clerk          │ ───► │  config.user()  │ ───► │                 │
-│  WorkOS         │      │                 │      │  ┌───────────┐  │
-│  Custom JWT     │      │  UserIdentity   │      │  │ client    │  │
-│                 │      │  {              │      │  │ user      │  │
-└─────────────────┘      │    id,          │      │  │ profile   │  │
-                         │    name,        │      │  │ cursor    │  │
-                         │    avatar       │      │  └───────────┘  │
-                         │  }              │      │                 │
-                         └─────────────────┘      └─────────────────┘
-```
-
-1. **Auth provider** authenticates user (any provider)
-2. **Client** extracts identity via `config.user()` getter
-3. **Presence system** sends identity with heartbeats
-4. **Server** stores in sessions table, groups by `user.id`
-5. **Other clients** see user presence via `session` query
-
-### Per-Document Identity Override
-
-You can also pass identity per-document when binding to prose fields:
-
-```typescript
-const binding = await collection.utils.prose(docId, "content", {
-  user: {
-    id: currentUser.id,
-    name: currentUser.displayName,
-    color: "#6366f1",
-    avatar: currentUser.avatarUrl,
-  },
-});
-```
-
-This is useful when you need different identity per document or want to override the collection-level default.
-
-### Anonymous Users
-
-If `user()` returns `undefined`, presence still works with anonymous identity:
-
-```typescript
-user: () => {
-  const session = getAuthSession();
-  if (!session) return undefined; // Anonymous - auto-generated name/color
-  
-  return {
-    id: session.user.id,
-    name: session.user.name,
-  };
-},
-```
-
-Anonymous users get:
-- Stable random name (e.g., "Swift Fox", "Calm Bear")
-- Stable random color (seeded from client ID)
-- No cross-device grouping (each device is separate)
-
-## Session + Presence
-
-### Session Query (Who's Online)
-
-The `session` query returns user-level presence, grouped from device-level sessions:
-
-```
-Sessions Table (device-level)              session query output (user-level)
-
-┌─────────────────────────────┐           ┌─────────────────────────────┐
-│ client: "device-aaa"        │──┐        │                             │
-│ user: "alice"               │  │        │  user: "alice"              │
-│ cursor: { pos: 10 }         │  ├──────► │  cursor: { pos: 42 }        │
-│ seen: 1000                  │  │        │  profile: { name: "Alice" } │
-├─────────────────────────────┤  │        │                             │
-│ client: "device-bbb"        │──┘        └─────────────────────────────┘
-│ user: "alice"               │ (grouped, most recent cursor wins)
-│ cursor: { pos: 42 }         │
-│ seen: 2000 ◄─── latest      │           ┌─────────────────────────────┐
-├─────────────────────────────┤           │                             │
-│ client: "device-ccc"        │──────────►│  user: "bob"                │
-│ user: "bob"                 │           │  cursor: { pos: 5 }         │
-│ cursor: { pos: 5 }          │           │  profile: { name: "Bob" }   │
-└─────────────────────────────┘           │                             │
-                                          └─────────────────────────────┘
-```
-
-**Auth flow:**
-1. `view()` runs - checks if user can access the document
-2. If authorized, query sessions for that document
-3. Group by user, return most recent session per user
-
-### Presence Mutation (Join/Leave)
-
-The `presence` mutation lets users join/leave a document's presence:
-
-```typescript
-// Client calls presence to join
-await convex.mutation(api.tasks.presence, {
-  action: "join",
-  document: "doc123",
-  client: deviceId,           // Unique per device/tab
-  user: identity.subject,     // From auth provider
-  profile: { name: "Alice", color: "#6366f1" },
-  cursor: { anchor: 0, head: 0 },
-});
-```
-
-**Auth flow:**
-1. `view()` runs - checks if user can access the document
-2. If authorized, `evalSession()` runs for additional validation
-3. Session record created/updated in sessions table
-
-### Identity Flow
-
-```
-Auth Provider          Client                  presence mutation       sessions table
-     │                   │                           │                      │
-     │  JWT              │                           │                      │
-     ├──────────────────►│                           │                      │
-     │                   │                           │                      │
-     │            identity.subject                   │                      │
-     │            = "user:alice"                     │                      │
-     │                   │                           │                      │
-     │                   │  presence({               │                      │
-     │                   │    action: "join",        │                      │
-     │                   │    document: "doc123",    │                      │
-     │                   │    client: "device-uuid", │                      │
-     │                   │    user: identity.subject,│ ◄── USER ID FROM AUTH│
-     │                   │    profile: {...},        │                      │
-     │                   │  })                       │                      │
-     │                   │─────────────────────────► │                      │
-     │                   │                           │                      │
-     │                   │                    view() │ ◄── CAN USER SEE DOC?│
-     │                   │                           │                      │
-     │                   │               evalSession │ ◄── EXTRA VALIDATION │
-     │                   │                           │                      │
-     │                   │                           │  INSERT/UPDATE ─────►│
-```
-
-## Usage Patterns
-
-### Pattern 1: User-Owned Data
-
+**User-Owned Data:**
 ```typescript
 collection.create<Task>(components.replicate, "tasks", {
   view: async (ctx, q) => {
@@ -529,17 +93,15 @@ collection.create<Task>(components.replicate, "tasks", {
   hooks: {
     evalWrite: async (ctx, doc) => {
       const identity = await ctx.auth.getUserIdentity();
-      if (!identity) throw new Error("Unauthorized");
-      if (doc.ownerId !== identity.subject) {
-        throw new Error("Forbidden: cannot modify other users' data");
+      if (doc.ownerId !== identity?.subject) {
+        throw new Error("Forbidden");
       }
     },
   },
 });
 ```
 
-### Pattern 2: Multi-Tenant (Organization)
-
+**Multi-Tenant:**
 ```typescript
 collection.create<Project>(components.replicate, "projects", {
   view: async (ctx, q) => {
@@ -555,8 +117,7 @@ collection.create<Project>(components.replicate, "projects", {
 });
 ```
 
-### Pattern 3: Role-Based Access
-
+**Role-Based:**
 ```typescript
 collection.create<Document>(components.replicate, "documents", {
   view: async (ctx, q) => {
@@ -568,7 +129,6 @@ collection.create<Document>(components.replicate, "documents", {
       .withIndex("by_token", q => q.eq("tokenIdentifier", identity.subject))
       .unique();
     
-    // Admins see all, others see only their own
     if (user?.role === "admin") {
       return q.withIndex("by_timestamp").order("desc");
     }
@@ -580,126 +140,483 @@ collection.create<Document>(components.replicate, "documents", {
 });
 ```
 
-### Pattern 4: Public Collection (No Auth)
+---
+
+## Encryption
+
+Replicate supports optional encryption for local storage, with an additional opt-in for end-to-end encryption where the server cannot read your data.
+
+### Security Layers
+
+```
+SERVER LAYER                              CLIENT LAYER
+view: (ctx, q) => ...                     persistence.web.encrypted({ ... })
+- WHO can see what docs                   - HOW data is protected
+- Applied at query time                   - Local encryption + optional E2E
+- Auth-dependent (online)                 - Works offline
+```
+
+### Encryption Modes
+
+| Mode | Local Storage | Server Storage | Use Case | Status |
+|------|--------------|----------------|----------|--------|
+| **None** (default) | Plaintext | Plaintext + Convex encryption | Standard apps | ✅ Available |
+| **Local** | Encrypted | Plaintext + Convex encryption | Device protection | ✅ Available |
+| **E2E** | Encrypted | Encrypted blobs (server can't read) | Maximum privacy | 🚧 Planned |
+
+> **Note:** Local encryption mode is fully implemented. E2E mode (server-side encrypted blobs) is planned for a future release.
+
+### API
 
 ```typescript
-collection.create<Post>(components.replicate, "publicPosts", {
-  // No view = all documents visible, anyone can read + see presence
+// Web (uses WebAuthn PRF for biometrics)
+persistence.web.encrypted({
+  storage: persistence.web.sqlite(db, name),
+  userId,
+  mode?: 'local' | 'e2e',  // default: 'local'
   
-  hooks: {
-    // But still protect writes
-    evalWrite: async (ctx, doc) => {
-      const identity = await ctx.auth.getUserIdentity();
-      if (!identity) throw new Error("Unauthorized");
+  unlock: {
+    webauthn?: true,
+    passphrase?: {
+      get: () => Promise<string>,
+      setup: (recoveryKey: string) => Promise<string>,
     },
   },
-});
-```
-
-### Pattern 5: Field-Level Security
-
-```typescript
-collection.create<User>(components.replicate, "users", {
-  view: async (ctx, q) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    
-    return q
-      .withIndex("by_tenant", q => q.eq("tenantId", identity.org_id))
-      .order("desc");
+  
+  recovery?: {
+    onSetup: (key: string) => Promise<void>,
+    onRecover: () => Promise<string>,
   },
   
-  hooks: {
-    // Remove sensitive fields before sending to client
-    transform: (docs) => docs.map(doc => ({
-      ...doc,
-      passwordHash: undefined,
-      internalNotes: undefined,
-    })),
+  lock?: { idle: number },
+  onLock?: () => void,
+  onUnlock?: () => void,
+})
+
+// Native (uses react-native-keychain / expo biometrics)
+persistence.native.encrypted({
+  storage: persistence.native.sqlite(db, name),
+  userId,
+  mode?: 'local' | 'e2e',
+  
+  unlock: {
+    biometric?: true,
+    passphrase?: {
+      get: () => Promise<string>,
+      setup: (recoveryKey: string) => Promise<string>,
+    },
   },
+  
+  // same options as web...
+})
+
+// Cross-platform (no encryption)
+persistence.memory()
+persistence.custom(adapter)
+```
+
+### Basic Usage
+
+**Local encryption with biometrics (simplest):**
+```typescript
+export const tasks = collection.create(schema, "tasks", {
+  persistence: async () => {
+    const userId = authStore.user?.id;
+    if (!userId) throw new Error("Not authenticated");
+
+    const db = await getDatabase();
+    return persistence.web.encrypted({
+      storage: persistence.web.sqlite(db, "tasks"),
+      userId,
+      unlock: { webauthn: true },
+    });
+  },
+  config: () => ({ convexClient, api: api.tasks, getKey: (t) => t.id }),
 });
 ```
 
-## Schema Requirements
+**E2E encryption with biometrics:**
+```typescript
+persistence.web.encrypted({
+  storage: persistence.web.sqlite(db, "tasks"),
+  userId,
+  mode: 'e2e',
+  unlock: { webauthn: true },
+})
+```
 
-Your schema must include indexes that match your `view` queries:
+**With passphrase fallback:**
+```typescript
+persistence.web.encrypted({
+  storage: persistence.web.sqlite(db, "tasks"),
+  userId,
+  mode: 'e2e',
+  unlock: {
+    webauthn: true,
+    passphrase: {
+      get: () => showUnlockDialog(),
+      setup: (recoveryKey) => showSetupDialog(recoveryKey),
+    },
+  },
+})
+```
+
+**With recovery + auto-lock:**
+```typescript
+persistence.web.encrypted({
+  storage: persistence.web.sqlite(db, "tasks"),
+  userId,
+  mode: 'e2e',
+  unlock: {
+    webauthn: true,
+    passphrase: {
+      get: () => showUnlockDialog(),
+      setup: (recoveryKey) => showSetupDialog(recoveryKey),
+    },
+  },
+  recovery: {
+    onSetup: (key) => showRecoveryKeyDialog(key),
+    onRecover: () => promptRecoveryKeyInput(),
+  },
+  lock: { idle: 5 },
+  onLock: () => navigate('/locked'),
+})
+```
+
+**React Native:**
+```typescript
+persistence.native.encrypted({
+  storage: persistence.native.sqlite(db, "tasks"),
+  userId,
+  unlock: { biometric: true },
+})
+```
+
+---
+
+## How It Works
+
+### WebAuthn PRF (Biometrics)
+
+WebAuthn PRF enables **passwordless encryption** using Touch ID, Face ID, or Windows Hello.
+
+```
+Touch ID / Face ID / Windows Hello
+        |
+        v
+   WebAuthn + PRF Extension
+        |
+        v
+   Deterministic 256-bit secret
+        |
+        v
+   Encryption key (same biometric = same key)
+```
+
+**Browser Support (all major browsers):**
+- Chrome 132+
+- Edge 132+
+- Safari macOS 15+ / iOS 18+
+- Firefox 135+
+
+**Auto-detection:** When `webauthn: true`, Replicate automatically selects the best available authenticator (Touch ID → Face ID → Windows Hello → security key).
+
+**Passphrase fallback** is optional - useful for user preference or recovery on new devices.
+
+### Key Hierarchy (Apple-Style)
+
+Replicate uses the same key hierarchy as Apple iCloud Keychain:
+
+```
+LEVEL 1: Device Keys (per device)
+  Touch ID --> WebAuthn PRF --> Device Key
+  
+LEVEL 2: User Master Key (per user, shared across devices)
+  UMK (random 256-bit)
+    |-- Wrapped with iPhone's device key
+    |-- Wrapped with MacBook's device key
+    |-- Wrapped with Android's device key
+  
+LEVEL 3: Document Keys (per document, for sharing)
+  Doc Key (random 256-bit)
+    |-- Wrapped with Alice's UMK
+    |-- Wrapped with Bob's UMK (if shared)
+```
+
+**Decryption path:**
+```
+Biometric --> Device Key --> unwrap UMK --> unwrap Doc Key --> decrypt data
+```
+
+### Device Approval Flow
+
+When adding a new device (no passwords required):
+
+```
+1. User signs in on new MacBook (OAuth)
+2. MacBook: Touch ID --> new Device Key
+3. MacBook registers public key with server
+4. iPhone shows: "New device wants access - MacBook Pro"
+5. User approves with Face ID on iPhone
+6. iPhone wraps UMK with MacBook's public key, uploads
+7. MacBook downloads wrapped UMK, unwraps with Touch ID
+8. MacBook now has full access
+```
+
+### What Server Stores
 
 ```typescript
-// convex/schema.ts
-import { defineSchema } from "convex/server";
-import { v } from "convex/values";
-import { schema } from "@trestleinc/replicate/server";
+// Per user
+{
+  userId: "alice",
+  devices: [
+    { deviceId: "iphone", publicKey: "..." },
+    { deviceId: "macbook", publicKey: "..." },
+  ],
+  wrappedUMK: [
+    { deviceId: "iphone", wrapped: "..." },
+    { deviceId: "macbook", wrapped: "..." },
+  ],
+}
 
-export default defineSchema({
-  tasks: schema.table({
-    ownerId: v.string(),
-    tenantId: v.optional(v.string()),
-    title: v.string(),
-    status: v.string(),
-  })
-    .index("by_owner", ["ownerId"])
-    .index("by_tenant", ["tenantId"])
-    .index("by_owner_status", ["ownerId", "status"])
-    .index("by_doc_id", ["id"])
-    .index("by_timestamp", ["timestamp"]),
+// Per document (E2E mode)
+{
+  docId: "doc123",
+  encryptedContent: "...",  // Server can't read
+  wrappedDocKey: [
+    { userId: "alice", wrapped: "..." },
+    { userId: "bob", wrapped: "..." },
+  ],
+}
+```
+
+### E2E Encryption Flow
+
+```
+CLIENT                                    SERVER
+
+User edits document
+        |
+        v
+Yjs CRDT update (plaintext)
+        |
+        +---> Encrypt with Doc Key
+        |            |
+        v            v
+Store in SQLite     Send encrypted blob ---------> Store encrypted
+(encrypted)                                        (can't decrypt)
+
+
+SYNC FROM SERVER:
+
+<------------------------------------ Receive encrypted blob
+        |
+        v
+Decrypt with Doc Key
+        |
+        v
+Apply Yjs update
+        |
+        v
+Re-encrypt for local storage
+```
+
+---
+
+## User Flows
+
+### First Time Setup (Biometrics)
+
+```
++------------------------------------------+
+|  Secure Your Data                        |
+|                                          |
+|  Use Touch ID to encrypt your data.      |
+|  This works offline and keeps your       |
+|  data private.                           |
+|                                          |
+|  [Enable Touch ID]                       |
++------------------------------------------+
+```
+
+If recovery is configured:
+```
++------------------------------------------+
+|  Your Recovery Key                       |
+|                                          |
+|  A3X7-K9M2-P4Q8-R1T5-W6Y0-B2C8          |
+|                                          |
+|  Save this! It's the only way to         |
+|  access your data on a new device.       |
+|                                          |
+|  [Copy] [I've Saved It]                  |
++------------------------------------------+
+```
+
+### Returning User (Unlock)
+
+```
++------------------------------------------+
+|  Unlock Your Data                        |
+|                                          |
+|  [Use Touch ID]                          |
+|                                          |
+|  [Use Passphrase Instead]                |
++------------------------------------------+
+```
+
+### New Device
+
+```
++------------------------------------------+
+|  Set Up This Device                      |
+|                                          |
+|  Approve from another device, or         |
+|  enter your recovery key.                |
+|                                          |
+|  [Request Approval]                      |
+|  [Use Recovery Key]                      |
++------------------------------------------+
+```
+
+---
+
+## Complete Example
+
+```typescript
+// src/collections/tasks.ts
+import { collection, persistence } from "@trestleinc/replicate/client";
+import { authStore } from "$lib/auth";
+import { getDatabase } from "$lib/db";
+import { 
+  showUnlockDialog, 
+  showSetupDialog, 
+  showRecoveryKeyDialog,
+  showRecoveryInput 
+} from "$lib/dialogs";
+
+export const tasks = collection.create(schema, "tasks", {
+  persistence: async () => {
+    const userId = authStore.user?.id;
+    if (!userId) throw new Error("Not authenticated");
+
+    const db = await getDatabase();
+    return persistence.web.encrypted({
+      storage: persistence.web.sqlite(db, "tasks"),
+      userId,
+      mode: 'e2e',
+      
+      unlock: {
+        webauthn: true,
+        passphrase: {
+          get: () => showUnlockDialog(),
+          setup: (recoveryKey) => showSetupDialog(recoveryKey),
+        },
+      },
+      
+      recovery: {
+        onSetup: (key) => showRecoveryKeyDialog(key),
+        onRecover: () => showRecoveryInput(),
+      },
+      
+      lock: { idle: 5 },
+      onLock: () => navigate('/locked'),
+    });
+  },
+  
+  config: () => ({
+    convexClient,
+    api: api.tasks,
+    getKey: (t) => t.id,
+    user: () => authStore.user,
+  }),
 });
 ```
 
-## Security Best Practices
+---
 
-### 1. Always Use Indexes in View
+## Security Summary
+
+| Property | Local Mode | E2E Mode |
+|----------|------------|----------|
+| Data encrypted at rest (local) | Yes | Yes |
+| Offline access | Yes | Yes |
+| Multi-user isolation | Yes | Yes |
+| Server can read data | Yes | **No** |
+| Server-side queries | Yes | **No** |
+| Passwordless (biometrics) | Yes | Yes |
+| Multi-device | Yes | Yes (device approval) |
+
+| Concern | Handled By | Works Offline? |
+|---------|------------|----------------|
+| "Who are you?" | Auth Provider | No |
+| "Can you see this doc?" | `view` function | No |
+| "Can you edit this doc?" | `evalWrite` hook | No |
+| "Can you decrypt data?" | Biometrics / Passphrase | **Yes** |
+
+---
+
+## Client-Side Auth Setup
+
+Replicate uses a **pre-authenticated ConvexClient**. Your auth provider configures the client, Replicate reuses it.
 
 ```typescript
-// GOOD - Uses index, efficient O(log n)
-view: async (ctx, q) => {
-  const identity = await ctx.auth.getUserIdentity();
-  return q
-    .withIndex("by_owner", q => q.eq("ownerId", identity?.subject))
-    .order("desc");
-},
-
-// BAD - Full table scan, then filter O(n)
-hooks: {
-  transform: (docs) => docs.filter(d => d.ownerId === userId),
-},
+// src/lib/convex.ts
+import { ConvexClient } from "convex/browser";
+export const convexClient = new ConvexClient(process.env.PUBLIC_CONVEX_URL);
 ```
 
-### 2. Validate Writes Separately
+**Better Auth (SvelteKit):**
+```typescript
+import { createSvelteAuthClient } from "@mmailaender/convex-better-auth-svelte/svelte";
+createSvelteAuthClient({ authClient, convexClient });
+```
 
-`view` controls reads, but writes need explicit validation:
+**Clerk (React):**
+```typescript
+<ClerkProvider>
+  <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
+    <App />
+  </ConvexProviderWithClerk>
+</ClerkProvider>
+```
+
+**Custom:**
+```typescript
+convexClient.setAuth(
+  async ({ forceRefreshToken }) => {
+    const token = await yourAuthProvider.getToken({ skipCache: forceRefreshToken });
+    return token ?? null;
+  }
+);
+```
+
+---
+
+## Presence Identity
+
+Presence (cursors, avatars) uses a separate client-side identity that works with any auth provider:
 
 ```typescript
-hooks: {
-  evalWrite: async (ctx, doc) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
+export const tasks = collection.create(schema, "tasks", {
+  persistence: () => persistence.web.sqlite(db, "tasks"),
+  config: () => ({
+    convexClient,
+    api: api.tasks,
+    getKey: (t) => t.id,
     
-    // Verify ownership
-    if (doc.ownerId !== identity.subject) {
-      throw new Error("Forbidden");
-    }
-  },
-},
+    user: () => {
+      const session = getAuthSession();
+      if (!session?.user) return undefined;
+      
+      return {
+        id: session.user.id,
+        name: session.user.name,
+        avatar: session.user.image,
+      };
+    },
+  }),
+});
 ```
 
-### 3. Don't Trust Client Data
-
-```typescript
-hooks: {
-  evalWrite: async (ctx, doc) => {
-    const identity = await ctx.auth.getUserIdentity();
-    // Override ownerId with authenticated user
-    doc.ownerId = identity!.subject;
-  },
-},
-```
-
-### 4. Use View for Presence Auth
-
-If a user shouldn't see a document, they shouldn't see who's editing it:
-
-```typescript
-// With view set, these are automatically protected:
-session({ document: "doc123" })   // Only works if user can see doc
-presence({ document: "doc123" })  // Only works if user can see doc
-```
+Anonymous users get auto-generated names and colors.

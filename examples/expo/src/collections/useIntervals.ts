@@ -9,7 +9,7 @@ const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL!;
 export const intervals = collection.create(schema, "intervals", {
   persistence: async () => {
     const db = open({ name: "intervals.db" });
-    return persistence.native(db, "intervals");
+    return persistence.native.sqlite(db, "intervals");
   },
   config: () => ({
     convexClient: new ConvexClient(CONVEX_URL),
