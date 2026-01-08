@@ -14,10 +14,6 @@ export function setEncryptedPersistence(p: Persistence | null): void {
   encryptedPersistenceRef = p;
 }
 
-export function getEncryptedPersistence(): Persistence | null {
-  return encryptedPersistenceRef;
-}
-
 export async function createPersistence(): Promise<Persistence> {
   if (encryptedPersistenceRef) {
     return encryptedPersistenceRef;

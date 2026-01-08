@@ -1,4 +1,4 @@
-import { collection } from "@trestleinc/replicate/client";
+import { collection, identity } from "@trestleinc/replicate/client";
 import { api } from "$convex/_generated/api";
 import schema from "$convex/schema";
 import { createPersistence } from "$lib/sqlite";
@@ -10,16 +10,17 @@ export const intervals = collection.create(schema, "intervals", {
   config: () => ({
     convexClient,
     api: api.intervals,
-    getKey: (interval) => interval.id,
+    getKey: interval => interval.id,
     user: () => {
       const store = authClient.useSession();
       const session = store.get();
       if (!session.data?.user) return undefined;
-      return {
+      return identity.from({
         id: session.data.user.id,
         name: session.data.user.name,
         avatar: session.data.user.image ?? undefined,
-      };
+        color: identity.color.generate(session.data.user.id),
+      });
     },
   }),
 });

@@ -3,14 +3,7 @@ import { query } from "./_generated/server";
 import { components } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { authComponent } from "./auth";
-
-async function getAuthUserId(ctx: any): Promise<string | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) return null;
-  const authUser = await authComponent.getAuthUser(ctx);
-  return authUser?._id ?? identity.subject;
-}
+import { getAuthUserId } from "./auth-utils";
 
 export const {
   material, delta, replicate, presence, session,
@@ -19,10 +12,10 @@ export const {
     const userId = await getAuthUserId(ctx);
 
     if (!userId) {
-      return q.filter((f: any) => f.eq(f.field("isPublic"), true)).order("desc");
+      return q.filter(f => f.eq(f.field("isPublic"), true)).order("desc");
     }
 
-    return q.filter((f: any) =>
+    return q.filter(f =>
       f.or(
         f.eq(f.field("isPublic"), true),
         f.eq(f.field("ownerId"), userId),
@@ -43,7 +36,7 @@ export const {
     evalRemove: async (ctx, docId) => {
       const doc = await ctx.db
         .query("comments")
-        .withIndex("by_doc_id", (q) => q.eq("id", docId))
+        .withIndex("by_doc_id", q => q.eq("id", docId))
         .first();
 
       if (!doc) return;
