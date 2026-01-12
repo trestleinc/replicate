@@ -107,7 +107,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 		deleteDocument: FunctionReference<
 			"mutation",
 			"internal",
-			{ bytes: ArrayBuffer; collection: string; document: string },
+			{
+				bytes: ArrayBuffer;
+				collection: string;
+				document: string;
+				retain?: number;
+				threshold?: number;
+				timeout?: number;
+			},
 			{ seq: number; success: boolean },
 			Name
 		>;
@@ -128,7 +135,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 		insertDocument: FunctionReference<
 			"mutation",
 			"internal",
-			{ bytes: ArrayBuffer; collection: string; document: string },
+			{
+				bytes: ArrayBuffer;
+				collection: string;
+				document: string;
+				retain?: number;
+				threshold?: number;
+				timeout?: number;
+			},
 			{ seq: number; success: boolean },
 			Name
 		>;
@@ -167,6 +181,28 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			"internal",
 			{ collection: string; document: string; vector: ArrayBuffer },
 			{ diff?: ArrayBuffer; vector: ArrayBuffer },
+			Name
+		>;
+		runCompaction: FunctionReference<
+			"mutation",
+			"internal",
+			{ id: string; retain?: number; timeout?: number },
+			null | { removed: number; retained: number },
+			Name
+		>;
+		scheduleCompaction: FunctionReference<
+			"mutation",
+			"internal",
+			{
+				collection: string;
+				document: string;
+				retain?: number;
+				timeout?: number;
+			},
+			{
+				id?: string;
+				status: "scheduled" | "already_running" | "already_pending";
+			},
 			Name
 		>;
 		sessions: FunctionReference<
@@ -208,7 +244,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 		updateDocument: FunctionReference<
 			"mutation",
 			"internal",
-			{ bytes: ArrayBuffer; collection: string; document: string },
+			{
+				bytes: ArrayBuffer;
+				collection: string;
+				document: string;
+				retain?: number;
+				threshold?: number;
+				timeout?: number;
+			},
 			{ seq: number; success: boolean },
 			Name
 		>;

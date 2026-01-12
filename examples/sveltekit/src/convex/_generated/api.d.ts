@@ -9,9 +9,12 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as authUtils from "../authUtils.js";
 import type * as comments from "../comments.js";
 import type * as http from "../http.js";
 import type * as intervals from "../intervals.js";
+import type * as schema_comments from "../schema/comments.js";
+import type * as schema_intervals from "../schema/intervals.js";
 
 import type {
   ApiFromModules,
@@ -21,9 +24,12 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  authUtils: typeof authUtils;
   comments: typeof comments;
   http: typeof http;
   intervals: typeof intervals;
+  "schema/comments": typeof schema_comments;
+  "schema/intervals": typeof schema_intervals;
 }>;
 
 /**
@@ -130,7 +136,14 @@ export declare const components: {
       deleteDocument: FunctionReference<
         "mutation",
         "internal",
-        { bytes: ArrayBuffer; collection: string; document: string },
+        {
+          bytes: ArrayBuffer;
+          collection: string;
+          document: string;
+          retain?: number;
+          threshold?: number;
+          timeout?: number;
+        },
         { seq: number; success: boolean }
       >;
       disconnect: FunctionReference<
@@ -148,7 +161,14 @@ export declare const components: {
       insertDocument: FunctionReference<
         "mutation",
         "internal",
-        { bytes: ArrayBuffer; collection: string; document: string },
+        {
+          bytes: ArrayBuffer;
+          collection: string;
+          document: string;
+          retain?: number;
+          threshold?: number;
+          timeout?: number;
+        },
         { seq: number; success: boolean }
       >;
       mark: FunctionReference<
@@ -184,6 +204,26 @@ export declare const components: {
         "internal",
         { collection: string; document: string; vector: ArrayBuffer },
         { diff?: ArrayBuffer; vector: ArrayBuffer }
+      >;
+      runCompaction: FunctionReference<
+        "mutation",
+        "internal",
+        { id: string; retain?: number; timeout?: number },
+        null | { removed: number; retained: number }
+      >;
+      scheduleCompaction: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          collection: string;
+          document: string;
+          retain?: number;
+          timeout?: number;
+        },
+        {
+          id?: string;
+          status: "scheduled" | "already_running" | "already_pending";
+        }
       >;
       sessions: FunctionReference<
         "query",
@@ -222,7 +262,14 @@ export declare const components: {
       updateDocument: FunctionReference<
         "mutation",
         "internal",
-        { bytes: ArrayBuffer; collection: string; document: string },
+        {
+          bytes: ArrayBuffer;
+          collection: string;
+          document: string;
+          retain?: number;
+          threshold?: number;
+          timeout?: number;
+        },
         { seq: number; success: boolean }
       >;
     };
