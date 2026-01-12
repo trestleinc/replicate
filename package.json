@@ -70,9 +70,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@effect/platform": "0.94.0",
-    "@logtape/logtape": "1.3.5",
-    "effect": "3.19.13"
+    "@logtape/logtape": "1.3.5"
   },
   "peerDependencies": {
     "@tanstack/db": "^0.5.15",
@@ -93,7 +91,6 @@
   },
   "devDependencies": {
     "@edge-runtime/vm": "5.0.0",
-    "@effect/vitest": "latest",
     "@microsoft/api-extractor": "7.55.2",
     "@tanstack/db": "0.5.15",
     "@testing-library/jest-dom": "6.9.1",

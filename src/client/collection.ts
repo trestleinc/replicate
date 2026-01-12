@@ -16,9 +16,8 @@ import type { MigrationErrorHandler, ClientMigrationMap } from "$/client/migrati
 import { runMigrations } from "$/client/migration";
 import type { DocFromSchema, TableNamesFromSchema } from "$/client/types";
 import { findProseFields } from "$/client/validators";
-import { Effect } from "effect";
 import { ProseError, NonRetriableError } from "$/client/errors";
-import { SeqService, createSeqLayer, type Seq } from "$/client/services/seq";
+import { createSeqService, type Seq } from "$/client/services/seq";
 import { getClientId } from "$/client/services/session";
 import { createReplicateOps, type BoundReplicateOps } from "$/client/ops";
 import { isDoc, fragmentFromJSON } from "$/client/merge";
@@ -485,8 +484,8 @@ export function convexCollectionOptions<
 	// Used by onDelete and other handlers that need to sync with TanStack DB
 	let ops: BoundReplicateOps<DataType> = null as any;
 
-	// Create services layer with the persistence KV store
-	const seqLayer = createSeqLayer(persistence.kv);
+	// Create seq service with the persistence KV store
+	const seqService = createSeqService(persistence.kv);
 
 	let resolvePersistenceReady: (() => void) | undefined;
 	const persistenceReadyPromise = new Promise<void>(resolve => {
@@ -771,12 +770,7 @@ export function convexCollectionOptions<
 						markReady();
 						getContext(collection).resolve?.();
 
-						const persistedCursor = await Effect.runPromise(
-							Effect.gen(function* () {
-								const seqSvc = yield* SeqService;
-								return yield* seqSvc.load(collection);
-							}).pipe(Effect.provide(seqLayer)),
-						);
+						const persistedCursor = await seqService.load(collection);
 						let cursor = ssrCursor ?? persistedCursor;
 
 						if (cursor > 0 && docManager.documents().length === 0) {

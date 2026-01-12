@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Important: Always Use Context7 for Library Documentation
 
-**CRITICAL**: When looking up documentation for any library (Yjs, Convex, TanStack, Effect, etc.), ALWAYS use the Context7 MCP tool. NEVER use WebSearch for library documentation.
+**CRITICAL**: When looking up documentation for any library (Yjs, Convex, TanStack, etc.), ALWAYS use the Context7 MCP tool. NEVER use WebSearch for library documentation.
 
 **Usage pattern:**
 1. First resolve the library ID: `mcp__context7__resolve-library-id` with library name
@@ -57,7 +57,7 @@ src/
 │   │   │   └── native.ts    # op-sqlite (React Native)
 │   │   ├── memory.ts        # Testing: in-memory
 │   │   └── custom.ts        # Custom adapter wrapper
-│   └── services/            # Effect.ts services (see below)
+│   └── services/            # Client services (sync, seq, session, etc.)
 ├── server/                  # Server-side (Convex functions)
 │   ├── index.ts             # Public exports
 │   ├── collection.ts        # replicate() factory
@@ -71,61 +71,48 @@ src/
     └── types.ts             # ProseFields, XmlFragmentJSON, OperationType
 ```
 
-### Effect.ts Actor-Based Sync Architecture
+### Sync Architecture
 
-The sync system uses a **per-document actor model** built with Effect.ts primitives. This replaced the previous centralized sync engine with semaphores.
+The sync system uses a **simple debounce-based sync manager** with per-document sync handlers.
 
 #### Services (`src/client/services/`)
 
 ```
 services/
-├── actor.ts      # DocumentActor - per-document sync actor
-├── manager.ts    # ActorManager - manages actor lifecycle
-├── runtime.ts    # ReplicateRuntime - Effect runtime factory
-├── errors.ts     # Effect TaggedError types
-├── engine.ts     # Re-exports (barrel file)
+├── sync.ts       # DocumentSync + SyncManager - per-document sync with debounce
+├── seq.ts        # SeqService - cursor/sequence tracking (persists sync position)
 ├── context.ts    # CollectionContext - consolidated state
-├── seq.ts        # SeqService - cursor/sequence tracking
 ├── session.ts    # Session management helpers
 └── awareness.ts  # Yjs awareness/presence
 ```
 
-#### Actor Model Design
+#### Sync Manager Design
 
-**DocumentActor** (`actor.ts`):
-- One actor per document (prose field)
-- Uses `Queue.unbounded` as mailbox for messages
-- Message types: `LocalChange`, `ExternalUpdate`, `Shutdown`
-- `Queue.takeAll` batches rapid local changes into single sync
-- `SubscriptionRef` for reactive pending state (UI can subscribe)
-- `Schedule.exponential` with jitter for retry on failure
+**DocumentSync** (`sync.ts`):
+- One sync handler per document (prose field)
+- Simple `setTimeout` debouncing (default 200ms)
+- Pending state with listener subscriptions
+- Methods: `onLocalChange()`, `onServerUpdate()`, `isPending()`, `onPendingChange()`, `destroy()`
 
-```typescript
-// Message flow
-LocalChange → debounce (300ms) → batch with takeAll → sync → update vector
-ExternalUpdate → update stored vector (Yjs already applied by collection.ts)
-Shutdown → interrupt debounce fiber → signal done
-```
+**SyncManager** (`sync.ts`):
+- Per-collection sync managers to avoid cross-collection conflicts
+- Methods: `register`, `get`, `unregister`, `destroy`
+- Module-level Map for collection isolation
 
-**ActorManager** (`manager.ts`):
-- Manages per-document actors with `HashMap<string, ManagedActor>`
-- Methods: `register`, `get`, `onLocalChange`, `onServerUpdate`, `unregister`, `destroy`
-- Each actor has its own `Scope` for resource cleanup
-
-**ReplicateRuntime** (`runtime.ts`):
-- Creates Effect runtime with `ActorManager` and `SeqService`
-- Two modes:
-  - **Per-collection** (default): Each collection gets its own runtime
-  - **Singleton**: Shared runtime with reference counting (for shared SQLite)
-- `runWithRuntime` helper for executing effects
+**SeqService** (`seq.ts`):
+- Tracks cursor/sequence numbers for sync progress
+- Persists highest `seq` received from server
+- Simple async interface: `load()`, `save()`, `clear()`
 
 #### Error Types (`errors.ts`)
 
 ```typescript
-SyncError                  // Sync failed for document
-DocumentNotRegisteredError // Document not registered with actor
-ActorShutdownError         // Actor was shut down
-ActorManagerError          // ActorManager operation failed
+NetworkError               // Retryable sync errors
+IDBError                   // Storage read errors
+IDBWriteError              // Storage write errors
+ProseError                 // Rich text field binding issues
+CollectionNotReadyError    // Collection not initialized
+NonRetriableError          // Auth failures, validation errors
 ```
 
 #### Data Flow
@@ -134,20 +121,17 @@ ActorManagerError          // ActorManager operation failed
 Client edit
     → Y.Doc update event
     → prose.ts captures delta
-    → actorManager.onLocalChange(documentId)
-    → actor.send({ _tag: "LocalChange" })
-    → debounce timer starts
-    → (more edits batch via Queue.takeAll)
+    → sync.onLocalChange()
+    → debounce timer starts (200ms default)
+    → (rapid edits restart the debounce timer)
     → debounce expires
     → performSync (encode delta, call Convex mutation)
-    → update stored vector
     → set pending=false
 
 Server update (via stream subscription)
     → collection.ts applies Y.applyUpdate to subdoc
     → ops.upsert/insert/delete to TanStack DB
-    → actorManager.onServerUpdate(documentId)
-    → actor updates stored vector (bookkeeping only)
+    → sync.onServerUpdate() (no-op, Yjs already merged)
 ```
 
 ### Core Concepts
@@ -160,7 +144,7 @@ Server update (via stream subscription)
 **CollectionContext** (`context.ts`):
 - Consolidated state for each collection
 - Replaces multiple module-level Maps
-- Contains: subdocManager, convexClient, api, peerId, persistence, proseFields, mutex, runtime, actorManager
+- Contains: subdocManager, convexClient, api, peerId, persistence, proseFields, mutex
 
 ## Public API Surface
 
@@ -241,40 +225,32 @@ const collection = tasks.get();
 const binding = await collection.utils.prose(id, 'content');
 ```
 
-### Actor Registration (Internal)
+### Sync Registration (Internal)
 
 ```typescript
-// prose.ts registers actor when binding is created
-const actor = await runWithRuntime(
-  ctx.runtime!,
-  ctx.actorManager!.register(document, ydoc, syncFn)
-);
+// prose.ts registers sync when binding is created
+const syncManager = createSyncManager(collection);
+const sync = syncManager.register(documentId, ydoc, syncFn);
 
 // Pending state subscription for UI
-const stream = SubscriptionRef.changes(actor.pending);
-await runWithRuntime(
-  ctx.runtime!,
-  Stream.runForEach(stream, (pending) =>
-    Effect.sync(() => callback(pending))
-  )
-);
+const unsubscribe = sync.onPendingChange((pending) => {
+  // Update UI indicator
+});
 ```
 
 ## Naming Conventions
 
 - **Public API**: Single-word function names, nested under noun objects (`replicate()`, `schema.table()`, `prose.extract()`)
-- **Service files**: lowercase, no suffix (`actor.ts`, not `ActorService.ts`)
-- **Effect services**: PascalCase class extending Context.Tag (`ActorManagerService`)
-- **Error classes**: Short names with "Error" suffix (`SyncError`, `ActorShutdownError`)
+- **Service files**: lowercase, no suffix (`sync.ts`, not `SyncService.ts`)
+- **Error classes**: Short names with "Error" suffix (`NetworkError`, `IDBError`)
 - **Use "replicate"**: not "sync" for public API
 
 ## Important Notes
 
-- **Effect.ts services** - Sync uses Effect for structured concurrency and resource management
-- **Actor model** - One actor per document handles sync; messages processed sequentially (no races)
+- **Simple sync manager** - Per-document sync handlers with setTimeout debouncing
+- **Debounce batching** - Rapid local changes coalesced into single sync (200ms default)
 - **Hard deletes** - Documents physically removed from main table, history kept in component
 - **LogTape logging** - Use LogTape, not console.*
 - **Import types** - Use `import type` for type-only imports
 - **bun for commands** - Use `bun run` not `pnpm run` for all commands
-- **Queue.takeAll batching** - Rapid local changes coalesced into single sync
-- **ExternalUpdate is bookkeeping** - Yjs update already applied by collection.ts; actor just updates vector
+- **No external deps for sync** - Sync system uses plain JavaScript (no Effect.ts)
