@@ -11,8 +11,28 @@
 
   const intervalsQuery = useLiveQuery(collection);
 
-  const interval = $derived(
+  // Cache last known valid interval to handle transient null states during updates
+  let lastKnownInterval = $state<Interval | null>(null);
+
+  const currentInterval = $derived(
     ((intervalsQuery.data ?? [])).find(i => i.id === id) ?? null,
+  );
+
+  // Update cache only when we have a valid result
+  $effect(() => {
+    if (currentInterval !== null) {
+      lastKnownInterval = currentInterval;
+    }
+  });
+
+  // Use current or cached interval
+  const interval = $derived(currentInterval ?? lastKnownInterval);
+
+  // True "not found" only when: not loading, no current, no valid cache for this ID
+  const notFound = $derived(
+    !intervalsQuery.isLoading &&
+    currentInterval === null &&
+    (lastKnownInterval === null || lastKnownInterval.id !== id)
   );
 
   function handlePropertyUpdate(updates: Partial<Pick<Interval, "status" | "priority">>) {
@@ -26,15 +46,15 @@
   }
 </script>
 
-{#if intervalsQuery.isLoading}
+{#if intervalsQuery.isLoading && !lastKnownInterval}
   <IntervalEditorSkeleton />
-{:else if !interval}
+{:else if notFound}
   <div class="flex-1 flex items-center justify-center">
     <div class="text-center text-muted-foreground">
       <p>Interval not found</p>
     </div>
   </div>
-{:else if id}
+{:else if interval && id}
   <div class="flex-1 overflow-auto">
     {#key id}
       <IntervalEditor intervalId={id} {interval} onPropertyUpdate={handlePropertyUpdate} />

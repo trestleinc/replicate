@@ -3,7 +3,6 @@ import type { FunctionReference } from "convex/server";
 import type { Collection } from "@tanstack/db";
 import type { Persistence } from "$/client/persistence/types";
 import type { DocumentManager } from "$/client/documents";
-import type { ActorManager, ReplicateRuntime } from "$/client/services/engine";
 import type { UserIdentity } from "$/client/identity";
 
 interface ConvexCollectionApi {
@@ -22,8 +21,6 @@ export interface CollectionContext {
 	persistence: Persistence;
 	fields: Set<string>;
 	fragmentObservers: Map<string, () => void>;
-	actorManager?: ActorManager;
-	runtime?: ReplicateRuntime;
 	cleanup?: () => void;
 	clientId?: string;
 	ref?: Collection<any>;
@@ -35,14 +32,6 @@ export interface CollectionContext {
 }
 
 const contexts = new Map<string, CollectionContext>();
-const ACTOR_INIT_TIMEOUT_MS = 10000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-	return Promise.race([
-		promise,
-		new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
-	]);
-}
 
 export function getContext(collection: string): CollectionContext {
 	const ctx = contexts.get(collection);
@@ -56,7 +45,7 @@ export function hasContext(collection: string): boolean {
 
 type InitContextConfig = Omit<
 	CollectionContext,
-	"fragmentObservers" | "cleanup" | "clientId" | "ref" | "actorManager" | "runtime"
+	"fragmentObservers" | "cleanup" | "clientId" | "ref"
 >;
 
 export function initContext(config: InitContextConfig): CollectionContext {
@@ -103,30 +92,11 @@ export function deleteContext(collection: string): void {
 				// Ignore cleanup errors during context deletion
 			}
 		}
-
-		// Clean up runtime resources
-		if (ctx.runtime) {
-			try {
-				ctx.runtime.cleanup();
-			} catch {
-				// Ignore cleanup errors during context deletion
-			}
-		}
 	}
 	contexts.delete(collection);
 }
 
-export async function waitForActorReady(collection: string): Promise<void> {
-	const ctx = contexts.get(collection);
-	if (!ctx?.actorReady) return;
-	await withTimeout(
-		ctx.actorReady,
-		ACTOR_INIT_TIMEOUT_MS,
-		`Actor initialization timed out for collection ${collection}`,
-	);
-}
-
-type UpdateableFields = "clientId" | "ref" | "cleanup" | "actorManager" | "runtime";
+type UpdateableFields = "clientId" | "ref" | "cleanup";
 
 export function updateContext(
 	collection: string,

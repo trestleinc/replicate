@@ -32,9 +32,7 @@ import {
 	hasContext,
 	updateContext,
 	deleteContext,
-	waitForActorReady,
 } from "$/client/services/context";
-import { createRuntime, runWithRuntime, type ReplicateRuntime } from "$/client/services/engine";
 import { createAwarenessProvider, type ConvexAwarenessProvider } from "$/client/services/awareness";
 import {
 	createDocumentPresence,
@@ -214,8 +212,6 @@ interface ConvexCollectionExtensions<T extends object> {
 	readonly session: SessionAPI;
 }
 
-const DEFAULT_DEBOUNCE_MS = 200;
-
 export function convexCollectionOptions<
 	T extends object = object,
 	TKey extends string | number = string | number,
@@ -307,8 +303,6 @@ export function convexCollectionOptions<
 					collection,
 				});
 			}
-
-			await waitForActorReady(collection);
 
 			const collectionRef = ctx.ref;
 			if (collectionRef) {
@@ -790,16 +784,7 @@ export function convexCollectionOptions<
 							persistence.kv.set(`cursor:${collection}`, 0);
 						}
 
-						const replicateRuntime: ReplicateRuntime = await Effect.runPromise(
-							Effect.scoped(
-								createRuntime({
-									kv: persistence.kv,
-									config: { debounceMs: DEFAULT_DEBOUNCE_MS },
-								}),
-							),
-						);
-						const actorManager = replicateRuntime.actorManager;
-						updateContext(collection, { actorManager, runtime: replicateRuntime });
+						// Signal that sync is ready (no actor system needed - sync manager is self-contained)
 						getContext(collection).resolveActorReady?.();
 
 						const handleSnapshotChange = async (
@@ -833,9 +818,17 @@ export function convexCollectionOptions<
 								} else {
 									ops.insert([itemAfter as DataType]);
 								}
+							} else if (itemBefore) {
+								// itemAfter is null but itemBefore exists - document serialization failed
+								// Keep existing item to prevent data loss
+								logger.warn("Document serialization returned null after snapshot update", {
+									document,
+									collection,
+									hadFieldsAfter: !!docManager.getFields(document),
+								});
+								// Re-add the previous item to prevent it from disappearing
+								ops.upsert([itemBefore as DataType]);
 							}
-
-							await runWithRuntime(replicateRuntime, actorManager.onServerUpdate(document));
 						};
 
 						const handleDeltaChange = async (
@@ -873,9 +866,17 @@ export function convexCollectionOptions<
 								} else {
 									ops.insert([itemAfter as DataType]);
 								}
+							} else if (itemBefore) {
+								// itemAfter is null but itemBefore exists - document serialization failed
+								// Keep existing item to prevent data loss
+								logger.warn("Document serialization returned null after delta update", {
+									document,
+									collection,
+									hadFieldsAfter: !!docManager.getFields(document),
+								});
+								// Re-add the previous item to prevent it from disappearing
+								ops.upsert([itemBefore as DataType]);
 							}
-
-							await runWithRuntime(replicateRuntime, actorManager.onServerUpdate(document));
 						};
 
 						const handleSubscriptionUpdate = async (response: any) => {
