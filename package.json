@@ -19,10 +19,10 @@
   "type": "module",
   "private": false,
   "resolutions": {
-    "convex": "1.31.2"
+    "convex": "^1.31.2"
   },
   "overrides": {
-    "convex": "1.31.2"
+    "convex": "^1.31.2"
   },
   "scripts": {
     "build": "oxfmt --write src && oxlint --fix && tsdown",
@@ -99,7 +99,7 @@
     "@types/sql.js": "1.4.9",
     "@typescript/native-preview": "7.0.0-dev.20260103.1",
     "@vitest/browser": "latest",
-    "convex": "1.31.2",
+    "convex": "1.31.3",
     "convex-test": "0.0.41",
     "dotenv": "latest",
     "fake-indexeddb": "6.2.5",
