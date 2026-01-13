@@ -1,11 +1,11 @@
 import { OperationType } from "./shared/types.js";
-import * as convex_server4 from "convex/server";
+import * as convex_server0 from "convex/server";
 
 //#region src/component/mutations.d.ts
 declare namespace mutations_d_exports {
   export { OperationType, compact, deleteDocument, disconnect, getDocumentState, insertDocument, mark, presence, recovery, sessions, stream, updateDocument };
 }
-declare const insertDocument: convex_server4.RegisteredMutation<"public", {
+declare const insertDocument: convex_server0.RegisteredMutation<"public", {
   bytes: ArrayBuffer;
   collection: string;
   document: string;
@@ -13,7 +13,7 @@ declare const insertDocument: convex_server4.RegisteredMutation<"public", {
   success: boolean;
   seq: number;
 }>>;
-declare const updateDocument: convex_server4.RegisteredMutation<"public", {
+declare const updateDocument: convex_server0.RegisteredMutation<"public", {
   bytes: ArrayBuffer;
   collection: string;
   document: string;
@@ -21,7 +21,7 @@ declare const updateDocument: convex_server4.RegisteredMutation<"public", {
   success: boolean;
   seq: number;
 }>>;
-declare const deleteDocument: convex_server4.RegisteredMutation<"public", {
+declare const deleteDocument: convex_server0.RegisteredMutation<"public", {
   bytes: ArrayBuffer;
   collection: string;
   document: string;
@@ -29,14 +29,14 @@ declare const deleteDocument: convex_server4.RegisteredMutation<"public", {
   success: boolean;
   seq: number;
 }>>;
-declare const mark: convex_server4.RegisteredMutation<"public", {
+declare const mark: convex_server0.RegisteredMutation<"public", {
   seq?: number | undefined;
   vector?: ArrayBuffer | undefined;
   collection: string;
   document: string;
   client: string;
 }, Promise<null>>;
-declare const compact: convex_server4.RegisteredMutation<"public", {
+declare const compact: convex_server0.RegisteredMutation<"public", {
   collection: string;
   document: string;
 }, Promise<{
@@ -45,7 +45,7 @@ declare const compact: convex_server4.RegisteredMutation<"public", {
   retained: number;
   size: number;
 }>>;
-declare const stream: convex_server4.RegisteredQuery<"public", {
+declare const stream: convex_server0.RegisteredQuery<"public", {
   limit?: number | undefined;
   threshold?: number | undefined;
   collection: string;
@@ -63,7 +63,7 @@ declare const stream: convex_server4.RegisteredQuery<"public", {
     documents: string[];
   } | undefined;
 }>>;
-declare const recovery: convex_server4.RegisteredQuery<"public", {
+declare const recovery: convex_server0.RegisteredQuery<"public", {
   collection: string;
   document: string;
   vector: ArrayBuffer;
@@ -74,14 +74,14 @@ declare const recovery: convex_server4.RegisteredQuery<"public", {
   diff: ArrayBuffer | undefined;
   vector: ArrayBuffer;
 }>>;
-declare const getDocumentState: convex_server4.RegisteredQuery<"public", {
+declare const getDocumentState: convex_server0.RegisteredQuery<"public", {
   collection: string;
   document: string;
 }, Promise<{
   bytes: ArrayBuffer;
   seq: number;
 } | null>>;
-declare const sessions: convex_server4.RegisteredQuery<"public", {
+declare const sessions: convex_server0.RegisteredQuery<"public", {
   connected?: boolean | undefined;
   exclude?: string | undefined;
   group?: boolean | undefined;
@@ -95,12 +95,12 @@ declare const sessions: convex_server4.RegisteredQuery<"public", {
   cursor: any;
   seen: any;
 }[]>>;
-declare const disconnect: convex_server4.RegisteredMutation<"public", {
+declare const disconnect: convex_server0.RegisteredMutation<"public", {
   collection: string;
   document: string;
   client: string;
 }, Promise<null>>;
-declare const presence: convex_server4.RegisteredMutation<"public", {
+declare const presence: convex_server0.RegisteredMutation<"public", {
   vector?: ArrayBuffer | undefined;
   user?: string | undefined;
   profile?: {

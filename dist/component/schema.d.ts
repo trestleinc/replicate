@@ -1,9 +1,9 @@
-import * as convex_server0 from "convex/server";
+import * as convex_server10 from "convex/server";
 import * as convex_values0 from "convex/values";
 
 //#region src/component/schema.d.ts
-declare const _default: convex_server0.SchemaDefinition<{
-  documents: convex_server0.TableDefinition<convex_values0.VObject<{
+declare const _default: convex_server10.SchemaDefinition<{
+  documents: convex_server10.TableDefinition<convex_values0.VObject<{
     bytes: ArrayBuffer;
     collection: string;
     document: string;
@@ -18,7 +18,7 @@ declare const _default: convex_server0.SchemaDefinition<{
     by_document: ["collection", "document", "_creationTime"];
     by_seq: ["collection", "seq", "_creationTime"];
   }, {}, {}>;
-  snapshots: convex_server0.TableDefinition<convex_values0.VObject<{
+  snapshots: convex_server10.TableDefinition<convex_values0.VObject<{
     bytes: ArrayBuffer;
     collection: string;
     document: string;
@@ -35,7 +35,7 @@ declare const _default: convex_server0.SchemaDefinition<{
   }, "required", "bytes" | "collection" | "document" | "seq" | "vector" | "created">, {
     by_document: ["collection", "document", "_creationTime"];
   }, {}, {}>;
-  sessions: convex_server0.TableDefinition<convex_values0.VObject<{
+  sessions: convex_server10.TableDefinition<convex_values0.VObject<{
     vector?: ArrayBuffer | undefined;
     user?: string | undefined;
     profile?: {

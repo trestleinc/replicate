@@ -29,8 +29,8 @@
     "zod": "4.2.1"
   },
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
+    "build": "tsdown --no-publint",
+    "dev": "tsdown --watch --no-publint",
     "clean": "rm -rf dist",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
