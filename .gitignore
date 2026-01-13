@@ -5,7 +5,7 @@
 
 # Dist
 node_modules
-dist/
+# dist/
 packages/*/dist
 examples/*/dist
 examples/*/.env
