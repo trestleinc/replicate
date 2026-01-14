@@ -20,7 +20,6 @@ export { OperationType };
 
 const DEFAULT_THRESHOLD = 500;
 const DEFAULT_TIMEOUT = 24 * 60 * 60 * 1000;
-const DEFAULT_DELTA_COUNT_THRESHOLD = 500;
 const MAX_RETRIES = 3;
 
 async function getNextSeq(ctx: any, collection: string): Promise<number> {
@@ -32,20 +31,56 @@ async function getNextSeq(ctx: any, collection: string): Promise<number> {
 	return (latest?.seq ?? 0) + 1;
 }
 
+// O(1) delta count increment - called when inserting a delta
+async function incrementDeltaCount(
+	ctx: any,
+	collection: string,
+	document: string,
+): Promise<number> {
+	const existing = await ctx.db
+		.query("deltaCounts")
+		.withIndex("by_document", (q: any) => q.eq("collection", collection).eq("document", document))
+		.first();
+
+	if (existing) {
+		const newCount = existing.count + 1;
+		await ctx.db.patch(existing._id, { count: newCount });
+		return newCount;
+	}
+
+	await ctx.db.insert("deltaCounts", { collection, document, count: 1 });
+	return 1;
+}
+
+// O(1) delta count decrement - called when compaction deletes deltas
+async function decrementDeltaCount(
+	ctx: any,
+	collection: string,
+	document: string,
+	amount: number,
+): Promise<void> {
+	const existing = await ctx.db
+		.query("deltaCounts")
+		.withIndex("by_document", (q: any) => q.eq("collection", collection).eq("document", document))
+		.first();
+
+	if (existing) {
+		const newCount = Math.max(0, existing.count - amount);
+		await ctx.db.patch(existing._id, { count: newCount });
+	}
+}
+
+// O(1) compaction threshold check using cached count
 async function scheduleCompactionIfNeeded(
 	ctx: any,
 	collection: string,
 	document: string,
+	currentCount: number,
 	threshold: number = DEFAULT_THRESHOLD,
 	timeout: number = DEFAULT_TIMEOUT,
 	retain: number = 0,
 ): Promise<void> {
-	const deltas = await ctx.db
-		.query("deltas")
-		.withIndex("by_document", (q: any) => q.eq("collection", collection).eq("document", document))
-		.collect();
-
-	if (deltas.length >= threshold) {
+	if (currentCount >= threshold) {
 		await ctx.runMutation(api.mutations.scheduleCompaction, {
 			collection,
 			document,
@@ -75,10 +110,13 @@ export const insertDocument = mutation({
 			seq,
 		});
 
+		// O(1) count increment and compaction check
+		const count = await incrementDeltaCount(ctx, args.collection, args.document);
 		await scheduleCompactionIfNeeded(
 			ctx,
 			args.collection,
 			args.document,
+			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
 			args.retain ?? 0,
@@ -108,10 +146,13 @@ export const updateDocument = mutation({
 			seq,
 		});
 
+		// O(1) count increment and compaction check
+		const count = await incrementDeltaCount(ctx, args.collection, args.document);
 		await scheduleCompactionIfNeeded(
 			ctx,
 			args.collection,
 			args.document,
+			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
 			args.retain ?? 0,
@@ -141,10 +182,13 @@ export const deleteDocument = mutation({
 			seq,
 		});
 
+		// O(1) count increment and compaction check
+		const count = await incrementDeltaCount(ctx, args.collection, args.document);
 		await scheduleCompactionIfNeeded(
 			ctx,
 			args.collection,
 			args.document,
+			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
 			args.retain ?? 0,
@@ -296,6 +340,12 @@ export const compact = mutation({
 				await ctx.db.delete(delta._id);
 				removed++;
 			}
+
+			// Decrement delta count to keep it in sync
+			if (removed > 0) {
+				await decrementDeltaCount(ctx, args.collection, args.document, removed);
+			}
+
 			logger.info("Full compaction completed", {
 				document: args.document,
 				removed,
@@ -523,6 +573,11 @@ export const runCompaction = mutation({
 					}
 				}
 
+				// Decrement delta count to keep it in sync
+				if (removed > 0) {
+					await decrementDeltaCount(ctx, job.collection, job.document, removed);
+				}
+
 				logger.info("Compaction completed", {
 					document: job.document,
 					removed,
@@ -589,7 +644,8 @@ export const stream = query({
 	returns: streamResultValidator,
 	handler: async (ctx, args) => {
 		const limit = args.limit ?? 100;
-		const threshold = args.threshold ?? DEFAULT_DELTA_COUNT_THRESHOLD;
+		// threshold arg kept for API compatibility but no longer used
+		// (compaction check moved to write mutations for O(1) performance)
 
 		const documents = await ctx.db
 			.query("deltas")
@@ -607,32 +663,15 @@ export const stream = query({
 
 			const newSeq = documents[documents.length - 1]?.seq ?? args.seq;
 
-			const allDocs = await ctx.db
-				.query("deltas")
-				.withIndex("by_collection", (q: any) => q.eq("collection", args.collection))
-				.collect();
-
-			const countByDoc = new Map<string, number>();
-			for (const doc of allDocs) {
-				const current = countByDoc.get(doc.document) ?? 0;
-				countByDoc.set(doc.document, current + 1);
-			}
-
-			const documentsNeedingCompaction: string[] = [];
-			for (const [docId, count] of countByDoc) {
-				if (count >= threshold) {
-					documentsNeedingCompaction.push(docId);
-				}
-			}
+			// Compaction eligibility is now checked only during write mutations
+			// (insertDocument, updateDocument, deleteDocument) via scheduleCompactionIfNeeded.
+			// This removes the O(n) full collection scan that was running on every subscription update.
 
 			return {
 				changes,
 				seq: newSeq,
 				more: documents.length === limit,
-				compact:
-					documentsNeedingCompaction.length > 0
-						? { documents: documentsNeedingCompaction }
-						: undefined,
+				compact: undefined,
 			};
 		}
 

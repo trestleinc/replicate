@@ -46,6 +46,13 @@ export default defineSchema({
 		.index("by_document", ["collection", "document"])
 		.index("by_seq", ["collection", "seq"]),
 
+	// Tracks delta count per document for O(1) compaction threshold checks
+	deltaCounts: defineTable({
+		collection: v.string(),
+		document: v.string(),
+		count: v.number(),
+	}).index("by_document", ["collection", "document"]),
+
 	snapshots: defineTable({
 		collection: v.string(),
 		document: v.string(),
