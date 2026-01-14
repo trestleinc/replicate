@@ -158,7 +158,7 @@ export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
 	return null;
 }
 
-import type { XmlFragmentJSON, XmlNodeJSON } from "$/shared/types";
+import type { XmlFragmentJSON, XmlNodeJSON } from "$/shared";
 
 /**
  * Check if a value looks like ProseMirror/BlockNote JSON document.

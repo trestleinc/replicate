@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { mutation, query } from "$/component/_generated/server";
 import { api } from "$/component/_generated/api";
 import { getLogger } from "$/component/logger";
-import { OperationType } from "$/shared/types";
+import { OperationType } from "$/shared";
 import {
 	profileValidator,
 	cursorValidator,
@@ -14,7 +14,7 @@ import {
 	compactResultValidator,
 	recoveryResultValidator,
 	documentStateValidator,
-} from "$/shared/validators";
+} from "$/shared";
 
 export { OperationType };
 

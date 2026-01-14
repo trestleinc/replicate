@@ -1,6 +1,6 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
-import { proseValidator } from "$/shared/validators";
+import { proseValidator } from "$/shared";
 
 export interface ReplicationFields {
 	timestamp: number;

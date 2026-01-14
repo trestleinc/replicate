@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { profileValidator, cursorValidator } from "$/shared/validators";
+import { profileValidator, cursorValidator } from "$/shared";
 
 export default defineSchema({
 	devices: defineTable({

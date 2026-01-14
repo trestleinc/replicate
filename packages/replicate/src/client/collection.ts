@@ -38,7 +38,6 @@ import {
 } from "$/client/services/presence";
 
 export type { Presence as DocumentPresence, PresenceState };
-export type { PresenceState as SessionInfo };
 import type { AnonymousPresenceConfig, UserIdentity } from "$/client/identity";
 import { Awareness } from "y-protocols/awareness";
 
@@ -50,7 +49,7 @@ enum YjsOrigin {
 
 const logger = getLogger(["replicate", "collection"]);
 
-import type { ProseFields } from "$/shared/types";
+import type { ProseFields } from "$/shared";
 
 interface HttpError extends Error {
 	status?: number;
@@ -1068,7 +1067,7 @@ export function convexCollectionOptions<T extends object = object>(
 }
 
 type LazyCollectionConfig<T extends object> = Omit<
-	ConvexCollectionConfig<T, string>,
+	ConvexCollectionConfig<T>,
 	"persistence" | "material" | "validator"
 >;
 
@@ -1197,7 +1196,7 @@ function createVersionedCollection<T extends object>(
 				throw new Error("Call init() before get()");
 			}
 			if (!instance) {
-				const opts = convexCollectionOptions<T, string>({
+				const opts = convexCollectionOptions<T>({
 					...resolvedConfig,
 					validator: versionedSchema.shape,
 					persistence,

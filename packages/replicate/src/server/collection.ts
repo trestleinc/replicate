@@ -1,6 +1,6 @@
 import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from "convex/server";
-import { Replicate, type ViewFunction } from "$/server/replicate";
-import type { CompactionConfig } from "$/shared/types";
+import { Replicate, type ViewFunction } from "$/server";
+import type { CompactionConfig } from "$/shared";
 
 export interface CollectionOptions<T extends object> {
 	compaction?: Partial<CompactionConfig>;
