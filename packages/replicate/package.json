@@ -70,7 +70,8 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@logtape/logtape": "1.3.5"
+		"@logtape/logtape": "1.3.5",
+		"@logtape/pretty": "2.0.0"
 	},
 	"devDependencies": {
 		"@edge-runtime/vm": "5.0.0",
