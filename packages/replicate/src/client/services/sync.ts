@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { getLogger } from "$/client/logger";
+import { getLogger } from "$/shared/logger";
 
 const logger = getLogger(["replicate", "sync"]);
 

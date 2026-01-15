@@ -22,7 +22,7 @@ import { isDoc, fragmentFromJSON } from "$/client/merge";
 import { createDocumentManager, serializeDocument, extractAllDocuments } from "$/client/documents";
 import { createDeleteDelta, applyDeleteMarkerToDoc } from "$/client/deltas";
 import * as prose from "$/client/prose";
-import { getLogger } from "$/client/logger";
+import { getLogger } from "$/shared/logger";
 import {
 	initContext,
 	getContext,

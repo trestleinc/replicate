@@ -724,20 +724,38 @@ class ChromeStorageAdapter implements StorageAdapter {
 const chromePersistence = persistence.custom(new ChromeStorageAdapter());
 ```
 
-### Logging Configuration
+### Logging
 
-Configure logging for debugging and development using LogTape:
+Replicate uses a unified LogTape logger with ANSI colored console output. The logger is automatically configured when the library loads.
+
+**Internal usage (for library contributors):**
+
+```typescript
+// Import from shared, not client or component
+import { getLogger } from '$/shared/logger';
+
+const logger = getLogger(['sync']);  // Category: replicate:sync
+logger.debug('Processing changes');
+logger.info('Sync complete');
+logger.warn('Retrying operation');
+logger.error('Failed to connect');
+```
+
+**Custom configuration (optional):**
+
+If you need to customize logging in your app, you can reconfigure LogTape:
 
 ```typescript
 // src/routes/__root.tsx or app entry point
 import { configure, getConsoleSink } from '@logtape/logtape';
 
 await configure({
+  reset: true,  // Override library defaults
   sinks: { console: getConsoleSink() },
   loggers: [
     {
-      category: ['convex-replicate'],
-      lowestLevel: 'debug',  // 'debug' | 'info' | 'warn' | 'error'
+      category: ['replicate'],
+      lowestLevel: 'info',  // 'debug' | 'info' | 'warn' | 'error'
       sinks: ['console']
     }
   ],
@@ -1106,7 +1124,8 @@ A full-featured offline-first issue tracker built with Replicate, demonstrating 
 ```
 packages/replicate/src/
 ├── shared/
-│   └── index.ts         # All validators, types, Duration utilities
+│   ├── index.ts         # All validators, types, Duration utilities, logger export
+│   └── logger.ts        # Unified LogTape logger with ANSI colored output
 ├── client/
 │   └── index.ts         # Collection factory, persistence providers, error types
 ├── server/

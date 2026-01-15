@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import { v } from "convex/values";
 import { mutation, query } from "$/component/_generated/server";
 import { api } from "$/component/_generated/api";
-import { getLogger } from "$/component/logger";
+import { getLogger } from "$/shared/logger";
 import { OperationType } from "$/shared";
 import {
 	profileValidator,

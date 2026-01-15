@@ -50,7 +50,6 @@ src/
 │   ├── prose.ts             # Rich text field binding
 │   ├── subdocs.ts           # Yjs subdoc management
 │   ├── errors.ts            # Error classes
-│   ├── logger.ts            # LogTape logger
 │   ├── persistence/         # Swappable storage backends
 │   │   ├── types.ts         # Persistence, KeyValueStore interfaces
 │   │   ├── sqlite/          # SQLite backends
@@ -70,8 +69,9 @@ src/
 │   ├── convex.config.ts     # Component config
 │   ├── schema.ts            # Event log schema
 │   └── mutations.ts         # Component API
-└── shared/                  # Shared types
-    └── types.ts             # ProseFields, XmlFragmentJSON, OperationType
+└── shared/                  # Shared types and utilities
+    ├── index.ts             # Public exports (validators, types, logger)
+    └── logger.ts            # Unified LogTape logger with ANSI colored output
 ```
 
 ### Sync Architecture
@@ -263,7 +263,7 @@ const unsubscribe = sync.onPendingChange((pending) => {
 - **Simple sync manager** - Per-document sync handlers with setTimeout debouncing
 - **Debounce batching** - Rapid local changes coalesced into single sync (200ms default)
 - **Hard deletes** - Documents physically removed from main table, history kept in component
-- **LogTape logging** - Use LogTape, not console.\*
+- **Unified LogTape logging** - Import from `$/shared/logger`, not client or component. Use `getLogger(["category"])` for a LogTape Logger with ANSI colored console output
 - **Import types** - Use `import type` for type-only imports
 - **bun for commands** - Use `bun run` not `pnpm run` for all commands
 - **No external deps for sync** - Sync system uses plain JavaScript (no Effect.ts)

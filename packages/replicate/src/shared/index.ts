@@ -319,3 +319,5 @@ export function parseDuration(s: Duration): number {
 	const [, num, unit] = match;
 	return parseInt(num) * DURATION_MULTIPLIERS[unit.toLowerCase() as DurationUnit];
 }
+
+export { getLogger, type Logger } from "./logger";

@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import type { Collection } from "@tanstack/db";
-import { getLogger } from "$/client/logger";
+import { getLogger } from "$/shared/logger";
 import { serializeYMapValue } from "$/client/merge";
 import { getContext, hasContext } from "$/client/services/context";
 import { createSyncManager, type SyncManager } from "$/client/services/sync";
