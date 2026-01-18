@@ -29,7 +29,7 @@
 		"@tiptap/extension-placeholder": "^3.15.3",
 		"@tiptap/pm": "^3.15.3",
 		"@tiptap/starter-kit": "^3.15.3",
-		"@trestleinc/replicate": "2.0.0-preview.0",
+		"@trestleinc/replicate": "workspace:*",
 		"better-auth": "1.4.12",
 		"convex": "^1.31.4",
 		"convex-svelte": "^0.0.12",
