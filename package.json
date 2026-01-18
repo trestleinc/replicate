@@ -1,43 +1,26 @@
 {
-  "name": "@convex-replicate",
-  "version": "0.1.0",
-  "license": "Apache-2.0",
-  "private": true,
-  "workspaces": [
-    "packages/*",
-    "examples/*"
-  ],
-  "resolutions": {
-    "convex": "1.28.0"
-  },
-  "scripts": {
-    "build": "bun run build:component && bun run build:core",
-    "build:component": "cd packages/component && bun run build",
-    "build:core": "cd packages/core && bun run build",
-    "clean": "rm -rf packages/*/dist",
-    "typecheck": "bun run typecheck:component && bun run typecheck:core",
-    "typecheck:component": "cd packages/component && bun run typecheck",
-    "typecheck:core": "cd packages/core && tsc --noEmit",
-    "dev:example": "cd examples/tanstack-start && bun run dev",
-    "build:example": "cd examples/tanstack-start && bun run build",
-    "lint": "biome lint .",
-    "lint:fix": "biome lint --write .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "check": "biome check .",
-    "check:fix": "biome check --write .",
-    "release": "./scripts/release.sh"
-  },
-  "dependencies": {
-    "@automerge/automerge": "3.1.2",
-    "@automerge/automerge-repo-storage-indexeddb": "2.4.0",
-    "@logtape/logtape": "1.1.2",
-    "zod": "4.1.12"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.3.2",
-    "@types/node": "22.18.12",
-    "convex": "1.28.0",
-    "typescript": "5.9.3"
-  }
+	"name": "replicate-monorepo",
+	"private": true,
+	"workspaces": [
+		"packages/*",
+		"examples/*"
+	],
+	"scripts": {
+		"build": "bun run --filter @trestleinc/replicate build",
+		"dev": "bun run --filter @trestleinc/replicate dev",
+		"test": "bun run --filter @trestleinc/replicate test",
+		"clean": "bun run --filter @trestleinc/replicate clean",
+		"dev:tanstack": "bun run --filter interval dev",
+		"dev:expo": "bun run --filter interval-expo start",
+		"dev:sveltekit": "bun run --filter svinterval dev"
+	},
+	"devDependencies": {
+		"typescript": "5.9.3"
+	},
+	"resolutions": {
+		"convex": "^1.31.4"
+	},
+	"dependencies": {
+		"convex": "1.31.4"
+	}
 }

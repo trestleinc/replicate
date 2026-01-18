@@ -1,0 +1,32 @@
+{
+	"$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "import"],
+	"jsPlugins": ["@trestleinc/convex-oxlint"],
+	"rules": {
+		"no-console": "warn",
+		"no-debugger": "error",
+		"eqeqeq": "error",
+		"no-var": "error",
+		"prefer-const": "error",
+		"no-undef": "off",
+		"typescript/no-explicit-any": "off",
+		"typescript/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+		"convex/no-old-registered-function-syntax": "error",
+		"convex/require-args-validator": "error",
+		"convex/explicit-table-ids": "error"
+	},
+	"ignorePatterns": [
+		"**/dist/**",
+		"**/build/**",
+		"**/_generated/**",
+		"**/*.d.ts",
+		"**/node_modules/**",
+		".svelte-kit/**"
+	],
+	"overrides": [
+		{
+			"files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts"],
+			"rules": { "no-console": "off" }
+		}
+	]
+}
