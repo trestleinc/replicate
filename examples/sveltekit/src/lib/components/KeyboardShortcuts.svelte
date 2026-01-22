@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { intervals } from '$collections/useIntervals';
-	import { schema } from '@trestleinc/replicate/client';
+	import { goto } from "$app/navigation";
+	import { getIntervalsContext } from "$lib/contexts/intervals.svelte";
+	import { schema } from "@trestleinc/replicate/client";
 
 	type Props = {
 		onsearchopen: () => void;
@@ -10,50 +9,48 @@
 
 	const { onsearchopen }: Props = $props();
 
-	const collection = intervals.get();
+	// Get collection from context for mutations
+	const intervalsCtx = getIntervalsContext();
 
 	function createInterval() {
 		const id = crypto.randomUUID();
 		const now = Date.now();
-		collection.insert({
+		intervalsCtx.collection.insert({
 			id,
 			isPublic: true,
-			title: 'New Interval',
+			title: "New Interval",
 			description: schema.prose.empty(),
-			status: 'backlog',
-			priority: 'none',
+			status: "backlog",
+			priority: "none",
 			createdAt: now,
-			updatedAt: now
+			updatedAt: now,
 		});
 		goto(`/intervals/${id}`);
 	}
 
-	onMount(() => {
+	// Use $effect for event listeners (Svelte 5 pattern)
+	$effect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
 			// Don't trigger shortcuts when typing in inputs/textareas
 			const target = e.target as HTMLElement;
-			if (
-				target.tagName === 'INPUT' ||
-				target.tagName === 'TEXTAREA' ||
-				target.isContentEditable
-			) {
+			if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
 				return;
 			}
 
 			// Cmd+K or Ctrl+K: Open search
-			if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+			if ((e.metaKey || e.ctrlKey) && e.key === "k") {
 				e.preventDefault();
 				onsearchopen();
 			}
 
 			// Option+N (Alt+N): Create new interval
-			if (e.altKey && e.code === 'KeyN') {
+			if (e.altKey && e.code === "KeyN") {
 				e.preventDefault();
 				createInterval();
 			}
 		}
 
-		document.addEventListener('keydown', handleKeyDown);
-		return () => document.removeEventListener('keydown', handleKeyDown);
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
 	});
 </script>

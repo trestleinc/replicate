@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+bun.lock
+**/node_modules/
+**/.svelte-kit/
+**/dist/
+**/build/
+**/_generated/

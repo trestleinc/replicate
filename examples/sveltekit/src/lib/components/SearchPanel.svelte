@@ -1,14 +1,13 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { useLiveQuery } from '@tanstack/svelte-db';
-	import { Search, Plus } from '@lucide/svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import StatusIcon from './StatusIcon.svelte';
-	import { cn } from '$lib/utils';
-	import { intervals as intervalsCollection, type Interval } from '$collections/useIntervals';
-	import { schema } from '@trestleinc/replicate/client';
+	import { goto } from "$app/navigation";
+	import { Search, Plus } from "@lucide/svelte";
+	import * as Dialog from "$lib/components/ui/dialog";
+	import { Input } from "$lib/components/ui/input";
+	import { ScrollArea } from "$lib/components/ui/scroll-area";
+	import StatusIcon from "./StatusIcon.svelte";
+	import { cn } from "$lib/utils";
+	import { getIntervalsContext } from "$lib/contexts/intervals.svelte";
+	import { schema } from "@trestleinc/replicate/client";
 
 	type Props = {
 		open: boolean;
@@ -17,16 +16,16 @@
 
 	let { open = $bindable(), onclose }: Props = $props();
 
-	const collection = intervalsCollection.get();
-	const intervalsQuery = useLiveQuery(collection);
+	// Get data from context (single source of truth)
+	const intervalsCtx = getIntervalsContext();
 
-	let query = $state('');
+	let query = $state("");
 	let selectedIndex = $state(-1);
 	let inputRef = $state<HTMLInputElement | null>(null);
 
-	const intervals = $derived((intervalsQuery.data ?? []) as Interval[]);
-
-	const results = $derived(() => {
+	// PERFORMANCE FIX: Use $derived.by directly, not $derived returning a function
+	const results = $derived.by(() => {
+		const intervals = intervalsCtx.data;
 		const sorted = [...intervals].sort((a, b) => b.updatedAt - a.updatedAt);
 		if (!query.trim()) {
 			return sorted.slice(0, 10);
@@ -37,7 +36,7 @@
 
 	$effect(() => {
 		if (open) {
-			query = '';
+			query = "";
 			selectedIndex = -1;
 			setTimeout(() => inputRef?.focus(), 50);
 		}
@@ -46,15 +45,15 @@
 	function createInterval() {
 		const id = crypto.randomUUID();
 		const now = Date.now();
-		collection.insert({
+		intervalsCtx.collection.insert({
 			id,
 			isPublic: true,
-			title: 'New Interval',
+			title: "New Interval",
 			description: schema.prose.empty(),
-			status: 'backlog',
-			priority: 'none',
+			status: "backlog",
+			priority: "none",
 			createdAt: now,
-			updatedAt: now
+			updatedAt: now,
 		});
 		goto(`/intervals/${id}`);
 		onclose();
@@ -66,22 +65,21 @@
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
-		const list = results();
 		switch (e.key) {
-			case 'ArrowDown':
+			case "ArrowDown":
 				e.preventDefault();
-				selectedIndex = Math.min(selectedIndex + 1, list.length - 1);
+				selectedIndex = Math.min(selectedIndex + 1, results.length - 1);
 				break;
-			case 'ArrowUp':
+			case "ArrowUp":
 				e.preventDefault();
 				selectedIndex = Math.max(selectedIndex - 1, -1);
 				break;
-			case 'Enter':
+			case "Enter":
 				e.preventDefault();
 				if (selectedIndex === -1) {
 					createInterval();
-				} else if (list[selectedIndex]) {
-					handleSelect(list[selectedIndex].id);
+				} else if (results[selectedIndex]) {
+					handleSelect(results[selectedIndex].id);
 				}
 				break;
 		}
@@ -89,9 +87,7 @@
 </script>
 
 <Dialog.Root bind:open onOpenChange={(o) => !o && onclose()}>
-	<Dialog.Content
-		class="w-[85vw] max-w-[85vw] sm:max-w-[520px] h-auto max-h-[80vh] sm:max-h-[85vh] p-0 gap-0 rounded-none"
-	>
+	<Dialog.Content class="w-[85vw] max-w-[85vw] sm:max-w-[520px] h-auto max-h-[80vh] sm:max-h-[85vh] p-0 gap-0">
 		<Dialog.Header class="sr-only">
 			<Dialog.Title>Search intervals</Dialog.Title>
 		</Dialog.Header>
@@ -110,7 +106,7 @@
 			<button
 				type="button"
 				onclick={onclose}
-				class="sm:hidden text-sm text-muted-foreground hover:text-foreground"
+				class="sm:hidden text-sm text-muted-foreground hover:text-foreground transition-fast"
 			>
 				Cancel
 			</button>
@@ -123,37 +119,36 @@
 				<button
 					type="button"
 					class={cn(
-						'w-full flex items-center gap-3 py-2.5 px-3 text-left cursor-pointer',
-						'transition-colors hover:bg-muted hover:text-foreground border-l-2 border-transparent',
-						selectedIndex === -1 && 'bg-muted text-foreground border-l-2 border-sidebar-accent'
+						"w-full flex items-center gap-3 py-2.5 px-3 text-left cursor-pointer",
+						"transition-fast hover:bg-muted hover:text-foreground border-l-2 border-transparent",
+						selectedIndex === -1 && "bg-muted text-foreground border-primary"
 					)}
 					onclick={createInterval}
 					onmouseenter={() => (selectedIndex = -1)}
 				>
 					<Plus class="w-4 h-4 shrink-0 text-primary" />
 					<span class="text-sm font-medium">New Interval</span>
-					<span class="ml-auto text-xs text-muted-foreground">⌥N</span>
+					<span class="ml-auto font-mono text-xs text-muted-foreground">⌥N</span>
 				</button>
 
 				<!-- Divider -->
-				{#if results().length > 0}
+				{#if results.length > 0}
 					<div class="h-px bg-border my-1"></div>
 				{/if}
 
 				<!-- Interval results -->
-				{#if results().length === 0 && query.trim()}
+				{#if results.length === 0 && query.trim()}
 					<div class="py-6 text-center text-muted-foreground text-sm">
 						<p>No intervals found for "{query}"</p>
 					</div>
 				{:else}
-					{#each results() as interval, index (interval.id)}
+					{#each results as interval, index (interval.id)}
 						<button
 							type="button"
 							class={cn(
-								'w-full flex items-center gap-3 py-2.5 px-3 text-left group cursor-pointer',
-								'transition-colors hover:bg-muted hover:text-foreground border-l-2 border-transparent',
-								index === selectedIndex &&
-									'bg-muted text-foreground border-l-2 border-sidebar-accent'
+								"w-full flex items-center gap-3 py-2.5 px-3 text-left group cursor-pointer",
+								"transition-fast hover:bg-muted hover:text-foreground border-l-2 border-transparent",
+								index === selectedIndex && "bg-muted text-foreground border-primary"
 							)}
 							onclick={() => handleSelect(interval.id)}
 							onmouseenter={() => (selectedIndex = index)}
@@ -161,7 +156,7 @@
 							<StatusIcon status={interval.status} size={14} class="shrink-0" />
 							<div class="flex-1 min-w-0">
 								<span class="block text-sm font-medium truncate">
-									{interval.title || 'Untitled'}
+									{interval.title || "Untitled"}
 								</span>
 							</div>
 						</button>
@@ -169,7 +164,7 @@
 				{/if}
 
 				<!-- Empty state hint -->
-				{#if results().length === 0 && !query.trim()}
+				{#if results.length === 0 && !query.trim()}
 					<div class="py-6 text-center text-muted-foreground text-sm">
 						<p>No intervals yet</p>
 						<p class="mt-1 text-xs">Create your first interval above</p>
@@ -179,28 +174,17 @@
 		</ScrollArea>
 
 		<!-- Keyboard hints -->
-		<div
-			class="hidden sm:flex items-center justify-center gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground"
-		>
+		<div class="hidden sm:flex items-center justify-center gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground">
 			<span>
-				<kbd
-					class="px-1.5 py-0.5 mx-0.5 font-mono text-[0.6875rem] bg-background border border-border rounded-sm"
-					>↑↓</kbd
-				>
+				<kbd class="kbd-key">↑↓</kbd>
 				navigate
 			</span>
 			<span>
-				<kbd
-					class="px-1.5 py-0.5 mx-0.5 font-mono text-[0.6875rem] bg-background border border-border rounded-sm"
-					>↵</kbd
-				>
+				<kbd class="kbd-key">↵</kbd>
 				select
 			</span>
 			<span>
-				<kbd
-					class="px-1.5 py-0.5 mx-0.5 font-mono text-[0.6875rem] bg-background border border-border rounded-sm"
-					>esc</kbd
-				>
+				<kbd class="kbd-key">esc</kbd>
 				close
 			</span>
 		</div>

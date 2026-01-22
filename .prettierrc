@@ -3,5 +3,10 @@
 	"semi": true,
 	"singleQuote": true,
 	"trailingComma": "es5",
-	"printWidth": 100
+	"printWidth": 100,
+	"plugins": ["prettier-plugin-svelte", "prettier-plugin-tailwindcss"],
+	"overrides": [
+		{ "files": "*.svelte", "options": { "parser": "svelte" } },
+		{ "files": "*.jsonc", "options": { "trailingComma": "none" } }
+	]
 }

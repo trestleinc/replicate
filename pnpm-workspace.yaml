@@ -1,0 +1,92 @@
+packages:
+  - packages/*
+  - examples/*
+
+catalog:
+  # Core
+  typescript: ^5.9.3
+  convex: ^1.31.5
+  zod: ^4.3.5
+
+  # Logging
+  '@logtape/logtape': ^2.0.1
+  '@logtape/pretty': ^2.0.1
+
+  # Svelte ecosystem (versions from ledger)
+  svelte: ^5.46.1
+  svelte-check: ^4.3.5
+  '@sveltejs/kit': ^2.49.4
+  '@sveltejs/adapter-auto': ^7.0.0
+  '@sveltejs/adapter-node': ^5.5.0
+  '@sveltejs/adapter-cloudflare': ^7.2.4
+  '@sveltejs/vite-plugin-svelte': ^6.2.4
+  convex-svelte: ^0.0.11
+
+  # Tailwind
+  tailwindcss: ^4.1.18
+  '@tailwindcss/vite': ^4.1.18
+  '@tailwindcss/forms': ^0.5.11
+  '@tailwindcss/typography': ^0.5.19
+  tailwind-merge: ^3.4.0
+
+  # UI
+  bits-ui: ^2.15.4
+  clsx: ^2.1.1
+
+  # ESLint
+  eslint: ^9.39.2
+  '@eslint/js': ^9.39.2
+  '@eslint/compat': ^1.4.1
+  typescript-eslint: ^8.52.0
+  eslint-config-prettier: ^10.1.8
+  eslint-plugin-svelte: ^3.14.0
+  '@convex-dev/eslint-plugin': ^1.1.1
+  globals: ^16.5.0
+
+  # Prettier
+  prettier: ^3.7.4
+  prettier-plugin-svelte: ^3.4.1
+  prettier-plugin-tailwindcss: ^0.7.2
+
+  # Build tools
+  vite: ^7.3.1
+  '@types/node': ^25
+
+  # React ecosystem (for tanstack-start)
+  react: ^19.2.3
+  react-dom: ^19.2.3
+  '@types/react': ^19.2.7
+  '@types/react-dom': ^19.2.3
+  '@vitejs/plugin-react': ^5.1.2
+  eslint-plugin-react: ^7.37.5
+  eslint-plugin-react-hooks: ^7.0.1
+
+  # TanStack
+  '@tanstack/db': ^0.5.20
+  '@tanstack/react-db': ^0.1.59
+  '@tanstack/svelte-db': ^0.1.58
+  '@tanstack/react-query': ^5.90.12
+  '@tanstack/react-router': ^1.143.3
+  '@tanstack/react-router-devtools': ^1.143.3
+  '@tanstack/react-start': ^1.143.3
+  '@tanstack/router-plugin': ^1.143.3
+  '@tanstack/react-table': ^8.21.3
+  '@tanstack/svelte-virtual': ^3.13.18
+  '@tanstack/table-core': ^8.21.3
+
+  # Testing
+  vitest: ^4.0.17
+  '@vitest/browser': ^4.0.17
+  '@vitest/browser-playwright': ^4.0.17
+  playwright: ^1.57.0
+  convex-test: ^0.0.41
+
+  # Yjs
+  yjs: ^13.6.29
+  y-protocols: ^1.0.7
+  lib0: ^0.2.117
+
+nodeLinker: hoisted
+
+onlyBuiltDependencies:
+  - esbuild
