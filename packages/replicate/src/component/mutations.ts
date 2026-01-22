@@ -226,16 +226,9 @@ export const mark = mutation({
 		client: v.string(),
 		vector: v.optional(v.bytes()),
 		seq: v.optional(v.number()),
-		// Security: Require internal call marker to prevent direct client calls
-		_internal: v.optional(v.literal(true)),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		// Require internal call marker - prevents direct client calls to component mutations
-		if (args._internal !== true) {
-			throw new ConvexError('Unauthorized: Direct component mutation calls are not allowed');
-		}
-
 		const now = Date.now();
 
 		const existing = await ctx.db
@@ -958,16 +951,9 @@ export const presence = mutation({
 		cursor: v.optional(cursorValidator),
 		interval: v.optional(v.number()),
 		vector: v.optional(v.bytes()),
-		// Security: Require internal call marker to prevent direct client calls
-		_internal: v.optional(v.literal(true)),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		// Require internal call marker - prevents direct client calls to component mutations
-		if (args._internal !== true) {
-			throw new ConvexError('Unauthorized: Direct component mutation calls are not allowed');
-		}
-
 		const existing = await ctx.db
 			.query('sessions')
 			.withIndex('by_client', (q) =>
