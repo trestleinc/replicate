@@ -52,6 +52,8 @@ export const schema = {
 	},
 } as const;
 
+export { preloadLinks, injectPreloadLinks } from '$/client/persistence/sqlite/preload';
+
 export {
 	persistence,
 	type StorageAdapter,

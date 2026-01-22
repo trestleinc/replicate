@@ -10,6 +10,7 @@
 	import { getConvexClient } from '$lib/convex';
 	import PersistenceGate from '$lib/components/PersistenceGate.svelte';
 	import { getPublicEnvError } from '$lib/env';
+	import { preloadLinks } from '@trestleinc/replicate/client';
 
 	let { children } = $props();
 
@@ -32,7 +33,10 @@
 	});
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<link rel="icon" href={favicon} />
+	{@html preloadLinks()}
+</svelte:head>
 
 {#if envError}
 	<div class="bg-destructive/10 flex min-h-screen items-center justify-center p-4">

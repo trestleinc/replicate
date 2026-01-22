@@ -109,7 +109,7 @@ binding = "WA_SQLITE_BUCKET"
 bucket_name = "wa-sqlite-cdn"
 
 [routes]
-pattern = "cdn.yourdomain.com/*"
+pattern = "wa-sqlite.trestle.inc/*"
 ```
 
 ```bash
@@ -159,7 +159,7 @@ Update the worker to use your CDN:
 
 ```typescript
 // src/client/persistence/sqlite/worker.ts
-const CDN_BASE = 'https://wa-sqlite.robelest.com/v1.0.0';
+const CDN_BASE = 'https://wa-sqlite.trestle.inc/v1.0.0';
 ```
 
 ### User-Configurable CDN
@@ -199,7 +199,7 @@ export const persistence = {
 ### Pinning Strategy
 
 ```
-cdn.yourdomain.com/wa-sqlite/
+wa-sqlite.trestle.inc/
 ├── v1.0.0/          # Pinned version (immutable)
 │   ├── dist/
 │   └── src/
@@ -267,7 +267,7 @@ headers.set('Link', '</v1.0.0/dist/wa-sqlite-async.wasm>; rel=preload; as=fetch'
 In Cloudflare Dashboard → Caching → Cache Rules:
 
 ```
-Match: hostname eq "cdn.yourdomain.com" and starts_with(http.request.uri.path, "/wa-sqlite/v")
+Match: hostname eq "wa-sqlite.trestle.inc" and starts_with(http.request.uri.path, "/v")
 Cache TTL: 1 year (immutable versioned content)
 ```
 
@@ -312,7 +312,7 @@ View logs: `wrangler tail wa-sqlite-cdn`
 - [ ] Set up R2 bucket `wa-sqlite-cdn`
 - [ ] Upload wa-sqlite files with version prefix
 - [ ] Deploy CDN worker with CORS + cache headers
-- [ ] Configure custom domain `cdn.yourdomain.com`
+- [ ] Configure custom domain `wa-sqlite.trestle.inc`
 - [ ] Update replicate worker.ts with new CDN_BASE
 - [ ] Test in development and production
 - [ ] Set up monitoring/alerts

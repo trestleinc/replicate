@@ -1,6 +1,6 @@
 import { initSchema, type Executor } from './schema.js';
 
-const CDN_BASE = 'https://wa-sqlite.robelest.com/v1.0.0';
+const CDN_BASE = 'https://wa-sqlite.trestle.inc/v1.0.0';
 
 const INIT = 0;
 const EXECUTE = 1;
