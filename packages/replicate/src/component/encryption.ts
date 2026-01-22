@@ -1,5 +1,5 @@
-import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { mutation, query } from './_generated/server';
+import { v } from 'convex/values';
 
 export const registerDevice = mutation({
 	args: {
@@ -11,9 +11,9 @@ export const registerDevice = mutation({
 	},
 	handler: async (ctx, args) => {
 		const existing = await ctx.db
-			.query("devices")
-			.withIndex("by_device", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("deviceId", args.deviceId),
+			.query('devices')
+			.withIndex('by_device', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('deviceId', args.deviceId)
 			)
 			.first();
 
@@ -27,13 +27,13 @@ export const registerDevice = mutation({
 		}
 
 		const userDevices = await ctx.db
-			.query("devices")
-			.withIndex("by_user", q => q.eq("collection", args.collection).eq("userId", args.userId))
+			.query('devices')
+			.withIndex('by_user', (q) => q.eq('collection', args.collection).eq('userId', args.userId))
 			.collect();
 
 		const isFirstDevice = userDevices.length === 0;
 
-		const id = await ctx.db.insert("devices", {
+		const id = await ctx.db.insert('devices', {
 			collection: args.collection,
 			userId: args.userId,
 			deviceId: args.deviceId,
@@ -55,8 +55,8 @@ export const listDevices = query({
 	},
 	handler: async (ctx, args) => {
 		return ctx.db
-			.query("devices")
-			.withIndex("by_user", q => q.eq("collection", args.collection).eq("userId", args.userId))
+			.query('devices')
+			.withIndex('by_user', (q) => q.eq('collection', args.collection).eq('userId', args.userId))
 			.collect();
 	},
 });
@@ -68,11 +68,11 @@ export const getPendingDevices = query({
 	},
 	handler: async (ctx, args) => {
 		const devices = await ctx.db
-			.query("devices")
-			.withIndex("by_user", q => q.eq("collection", args.collection).eq("userId", args.userId))
+			.query('devices')
+			.withIndex('by_user', (q) => q.eq('collection', args.collection).eq('userId', args.userId))
 			.collect();
 
-		return devices.filter(d => !d.approved);
+		return devices.filter((d) => !d.approved);
 	},
 });
 
@@ -85,29 +85,29 @@ export const approveDevice = mutation({
 	},
 	handler: async (ctx, args) => {
 		const device = await ctx.db
-			.query("devices")
-			.withIndex("by_device", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("deviceId", args.deviceId),
+			.query('devices')
+			.withIndex('by_device', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('deviceId', args.deviceId)
 			)
 			.first();
 
 		if (!device) {
-			throw new Error("Device not found");
+			throw new Error('Device not found');
 		}
 
 		await ctx.db.patch(device._id, { approved: true });
 
 		const existingKey = await ctx.db
-			.query("wrappedKeys")
-			.withIndex("by_device", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("deviceId", args.deviceId),
+			.query('wrappedKeys')
+			.withIndex('by_device', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('deviceId', args.deviceId)
 			)
 			.first();
 
 		if (existingKey) {
 			await ctx.db.patch(existingKey._id, { wrappedUmk: args.wrappedUmk });
 		} else {
-			await ctx.db.insert("wrappedKeys", {
+			await ctx.db.insert('wrappedKeys', {
 				collection: args.collection,
 				userId: args.userId,
 				deviceId: args.deviceId,
@@ -128,9 +128,9 @@ export const getWrappedUmk = query({
 	},
 	handler: async (ctx, args) => {
 		const key = await ctx.db
-			.query("wrappedKeys")
-			.withIndex("by_device", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("deviceId", args.deviceId),
+			.query('wrappedKeys')
+			.withIndex('by_device', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('deviceId', args.deviceId)
 			)
 			.first();
 
@@ -147,9 +147,9 @@ export const storeDocKey = mutation({
 	},
 	handler: async (ctx, args) => {
 		const existing = await ctx.db
-			.query("docKeys")
-			.withIndex("by_user_doc", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("document", args.document),
+			.query('docKeys')
+			.withIndex('by_user_doc', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('document', args.document)
 			)
 			.first();
 
@@ -158,7 +158,7 @@ export const storeDocKey = mutation({
 			return { id: existing._id };
 		}
 
-		const id = await ctx.db.insert("docKeys", {
+		const id = await ctx.db.insert('docKeys', {
 			collection: args.collection,
 			document: args.document,
 			userId: args.userId,
@@ -178,9 +178,9 @@ export const getDocKey = query({
 	},
 	handler: async (ctx, args) => {
 		const key = await ctx.db
-			.query("docKeys")
-			.withIndex("by_user_doc", q =>
-				q.eq("collection", args.collection).eq("userId", args.userId).eq("document", args.document),
+			.query('docKeys')
+			.withIndex('by_user_doc', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId).eq('document', args.document)
 			)
 			.first();
 
@@ -195,8 +195,10 @@ export const getDocKeysForUser = query({
 	},
 	handler: async (ctx, args) => {
 		return ctx.db
-			.query("docKeys")
-			.withIndex("by_user_doc", q => q.eq("collection", args.collection).eq("userId", args.userId))
+			.query('docKeys')
+			.withIndex('by_user_doc', (q) =>
+				q.eq('collection', args.collection).eq('userId', args.userId)
+			)
 			.collect();
 	},
 });

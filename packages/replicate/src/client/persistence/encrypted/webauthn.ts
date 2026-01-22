@@ -9,10 +9,10 @@ export interface PRFResult {
 	key: Uint8Array;
 }
 
-const REPLICATE_RP_NAME = "Replicate Encryption";
+const REPLICATE_RP_NAME = 'Replicate Encryption';
 
 function getRpId(): string {
-	if (typeof window === "undefined") return "localhost";
+	if (typeof window === 'undefined') return 'localhost';
 	return window.location.hostname;
 }
 
@@ -25,13 +25,13 @@ function generateUserId(): Uint8Array {
 }
 
 export async function isPRFSupported(): Promise<boolean> {
-	if (typeof window === "undefined") return false;
-	if (typeof PublicKeyCredential === "undefined") return false;
+	if (typeof window === 'undefined') return false;
+	if (typeof PublicKeyCredential === 'undefined') return false;
 
-	if (typeof PublicKeyCredential.getClientCapabilities === "function") {
+	if (typeof PublicKeyCredential.getClientCapabilities === 'function') {
 		try {
 			const caps = await PublicKeyCredential.getClientCapabilities();
-			return caps["extension:prf"] === true;
+			return caps['extension:prf'] === true;
 		} catch {
 			return false;
 		}
@@ -43,7 +43,7 @@ export async function isPRFSupported(): Promise<boolean> {
 export async function createPRFCredential(userName: string): Promise<PRFCredential> {
 	const supported = await isPRFSupported();
 	if (!supported) {
-		throw new Error("WebAuthn PRF not supported");
+		throw new Error('WebAuthn PRF not supported');
 	}
 
 	let credential: PublicKeyCredential | null;
@@ -62,12 +62,12 @@ export async function createPRFCredential(userName: string): Promise<PRFCredenti
 				},
 				challenge: crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer,
 				pubKeyCredParams: [
-					{ alg: -7, type: "public-key" },
-					{ alg: -257, type: "public-key" },
+					{ alg: -7, type: 'public-key' },
+					{ alg: -257, type: 'public-key' },
 				],
 				authenticatorSelection: {
-					residentKey: "required",
-					userVerification: "required",
+					residentKey: 'required',
+					userVerification: 'required',
 				},
 				extensions: { prf: {} },
 			},
@@ -75,14 +75,14 @@ export async function createPRFCredential(userName: string): Promise<PRFCredenti
 	} catch (err) {
 		if (err instanceof DOMException) {
 			switch (err.name) {
-				case "NotAllowedError":
-					throw new Error("Setup cancelled or denied");
-				case "SecurityError":
+				case 'NotAllowedError':
+					throw new Error('Setup cancelled or denied');
+				case 'SecurityError':
 					throw new Error("Security error: ensure you're using HTTPS");
-				case "AbortError":
-					throw new Error("Setup timed out");
-				case "InvalidStateError":
-					throw new Error("Credential already exists for this account");
+				case 'AbortError':
+					throw new Error('Setup timed out');
+				case 'InvalidStateError':
+					throw new Error('Credential already exists for this account');
 				default:
 					throw new Error(`WebAuthn error: ${err.message}`);
 			}
@@ -91,13 +91,13 @@ export async function createPRFCredential(userName: string): Promise<PRFCredenti
 	}
 
 	if (!credential) {
-		throw new Error("Credential creation cancelled");
+		throw new Error('Credential creation cancelled');
 	}
 
 	const prfEnabled = (credential.getClientExtensionResults() as { prf?: { enabled?: boolean } }).prf
 		?.enabled;
 	if (!prfEnabled) {
-		throw new Error("PRF extension not enabled - authenticator may not support PRF");
+		throw new Error('PRF extension not enabled - authenticator may not support PRF');
 	}
 
 	return {
@@ -117,7 +117,7 @@ export async function getPRFKey(credential: PRFCredential): Promise<Uint8Array> 
 				allowCredentials: [
 					{
 						id: credential.rawId.buffer as ArrayBuffer,
-						type: "public-key",
+						type: 'public-key',
 					},
 				],
 				extensions: {
@@ -125,20 +125,20 @@ export async function getPRFKey(credential: PRFCredential): Promise<Uint8Array> 
 						eval: { first: credential.salt.buffer as ArrayBuffer },
 					},
 				},
-				userVerification: "required",
+				userVerification: 'required',
 			},
 		})) as PublicKeyCredential | null;
 	} catch (err) {
 		if (err instanceof DOMException) {
 			switch (err.name) {
-				case "NotAllowedError":
-					throw new Error("Authentication cancelled or denied");
-				case "SecurityError":
+				case 'NotAllowedError':
+					throw new Error('Authentication cancelled or denied');
+				case 'SecurityError':
 					throw new Error("Security error: ensure you're using HTTPS");
-				case "AbortError":
-					throw new Error("Authentication timed out");
-				case "InvalidStateError":
-					throw new Error("Authenticator not available");
+				case 'AbortError':
+					throw new Error('Authentication timed out');
+				case 'InvalidStateError':
+					throw new Error('Authenticator not available');
 				default:
 					throw new Error(`WebAuthn error: ${err.message}`);
 			}
@@ -147,7 +147,7 @@ export async function getPRFKey(credential: PRFCredential): Promise<Uint8Array> 
 	}
 
 	if (!assertion) {
-		throw new Error("Authentication cancelled");
+		throw new Error('Authentication cancelled');
 	}
 
 	const prfResults = (
@@ -157,7 +157,7 @@ export async function getPRFKey(credential: PRFCredential): Promise<Uint8Array> 
 	).prf?.results?.first;
 
 	if (!prfResults) {
-		throw new Error("PRF output not available - authenticator may not support PRF");
+		throw new Error('PRF output not available - authenticator may not support PRF');
 	}
 
 	return new Uint8Array(prfResults);
@@ -165,23 +165,23 @@ export async function getPRFKey(credential: PRFCredential): Promise<Uint8Array> 
 
 export async function deriveEncryptionKey(prfOutput: Uint8Array, info: string): Promise<CryptoKey> {
 	const keyMaterial = await crypto.subtle.importKey(
-		"raw",
+		'raw',
 		prfOutput.buffer as ArrayBuffer,
-		"HKDF",
+		'HKDF',
 		false,
-		["deriveKey"],
+		['deriveKey']
 	);
 
 	return crypto.subtle.deriveKey(
 		{
-			name: "HKDF",
-			hash: "SHA-256",
+			name: 'HKDF',
+			hash: 'SHA-256',
 			salt: new Uint8Array(32),
 			info: new TextEncoder().encode(info),
 		},
 		keyMaterial,
-		{ name: "AES-GCM", length: 256 },
+		{ name: 'AES-GCM', length: 256 },
 		false,
-		["encrypt", "decrypt"],
+		['encrypt', 'decrypt']
 	);
 }

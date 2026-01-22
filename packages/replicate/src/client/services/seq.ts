@@ -1,4 +1,4 @@
-import type { KeyValueStore } from "$/client/persistence/types";
+import type { KeyValueStore } from '$/client/persistence/types';
 
 export type Seq = number;
 

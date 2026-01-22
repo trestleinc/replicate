@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { FunctionReference } from "convex/server";
+import type { FunctionReference } from 'convex/server';
 
 /**
  * A utility for referencing a Convex component's exposed API.
@@ -24,8 +24,8 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> = {
 	encryption: {
 		approveDevice: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				collection: string;
 				deviceId: string;
@@ -36,43 +36,43 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		getDocKey: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; document: string; userId: string },
 			any,
 			Name
 		>;
 		getDocKeysForUser: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; userId: string },
 			any,
 			Name
 		>;
 		getPendingDevices: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; userId: string },
 			any,
 			Name
 		>;
 		getWrappedUmk: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; deviceId: string; userId: string },
 			any,
 			Name
 		>;
 		listDevices: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; userId: string },
 			any,
 			Name
 		>;
 		registerDevice: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				collection: string;
 				deviceId: string;
@@ -84,8 +84,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		storeDocKey: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				collection: string;
 				document: string;
@@ -98,15 +98,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 	};
 	mutations: {
 		compact: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{ collection: string; document: string },
 			{ removed: number; retained: number; size: number; success: boolean },
 			Name
 		>;
 		deleteDocument: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				bytes: ArrayBuffer;
 				collection: string;
@@ -119,22 +119,22 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		disconnect: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{ client: string; collection: string; document: string },
 			null,
 			Name
 		>;
 		getDocumentState: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; document: string },
 			{ bytes: ArrayBuffer; seq: number } | null,
 			Name
 		>;
 		insertDocument: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				bytes: ArrayBuffer;
 				collection: string;
@@ -147,8 +147,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		mark: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				client: string;
 				collection: string;
@@ -160,10 +160,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		presence: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
-				action: "join" | "leave";
+				action: 'join' | 'leave';
 				client: string;
 				collection: string;
 				cursor?: { anchor: any; field?: string; head: any };
@@ -177,22 +177,22 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		recovery: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; document: string; vector: ArrayBuffer },
 			{ diff?: ArrayBuffer; vector: ArrayBuffer },
 			Name
 		>;
 		runCompaction: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{ id: string; retain?: number; timeout?: number },
 			null | { removed: number; retained: number },
 			Name
 		>;
 		scheduleCompaction: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				collection: string;
 				document: string;
@@ -201,13 +201,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			},
 			{
 				id?: string;
-				status: "scheduled" | "already_running" | "already_pending";
+				status: 'scheduled' | 'already_running' | 'already_pending';
 			},
 			Name
 		>;
 		sessions: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{
 				collection: string;
 				connected?: boolean;
@@ -225,8 +225,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		stream: FunctionReference<
-			"query",
-			"internal",
+			'query',
+			'internal',
 			{ collection: string; limit?: number; seq: number; threshold?: number },
 			{
 				changes: Array<{
@@ -242,8 +242,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
 			Name
 		>;
 		updateDocument: FunctionReference<
-			"mutation",
-			"internal",
+			'mutation',
+			'internal',
 			{
 				bytes: ArrayBuffer;
 				collection: string;

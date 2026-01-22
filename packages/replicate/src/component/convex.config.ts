@@ -1,5 +1,5 @@
-import { defineComponent } from "convex/server";
+import { defineComponent } from 'convex/server';
 
-const component = defineComponent("replicate");
+const component = defineComponent('replicate');
 
 export default component;

@@ -5,19 +5,19 @@
  * Runs SQLite migrations and Yjs document updates.
  */
 
-import type { SchemaDiff, SchemaDiffOperation, VersionedSchema } from "$/server/migration";
-import type { GenericValidator } from "convex/values";
-import type { MigrationDatabase } from "$/client/persistence/types";
+import type { SchemaDiff, SchemaDiffOperation, VersionedSchema } from '$/server/migration';
+import type { GenericValidator } from 'convex/values';
+import type { MigrationDatabase } from '$/client/persistence/types';
 
 // Re-export MigrationDatabase from types
-export type { MigrationDatabase } from "$/client/persistence/types";
+export type { MigrationDatabase } from '$/client/persistence/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Migration Error Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Error codes for migration failures */
-export type MigrationErrorCode = "SCHEMA_MISMATCH" | "SQLITE_ERROR" | "YJS_ERROR" | "NETWORK_ERROR";
+export type MigrationErrorCode = 'SCHEMA_MISMATCH' | 'SQLITE_ERROR' | 'YJS_ERROR' | 'NETWORK_ERROR';
 
 /** Error details for migration failures */
 export interface MigrationError {
@@ -41,15 +41,15 @@ export interface RecoveryContext {
 
 /** Available recovery actions */
 export type RecoveryAction =
-	| { action: "reset" }
-	| { action: "keep-old-schema" }
-	| { action: "retry" }
-	| { action: "custom"; handler: () => Promise<void> };
+	| { action: 'reset' }
+	| { action: 'keep-old-schema' }
+	| { action: 'retry' }
+	| { action: 'custom'; handler: () => Promise<void> };
 
 /** Handler for migration errors */
 export type MigrationErrorHandler = (
 	error: MigrationError,
-	context: RecoveryContext,
+	context: RecoveryContext
 ) => Promise<RecoveryAction>;
 
 /** Yjs document info for migrations */
@@ -63,7 +63,7 @@ export interface ClientMigrationContext {
 	/** Documents that need migration */
 	dirtyDocs: MigrationDoc[];
 	/** Get Yjs document for a specific ID */
-	getYDoc(id: string): import("yjs").Doc | null;
+	getYDoc(id: string): import('yjs').Doc | null;
 	/** Schema diff being applied */
 	diff: SchemaDiff;
 }
@@ -71,7 +71,7 @@ export interface ClientMigrationContext {
 /** Custom client migration function */
 export type ClientMigrationFn = (
 	db: MigrationDatabase,
-	ctx: ClientMigrationContext,
+	ctx: ClientMigrationContext
 ) => Promise<void>;
 
 /** Map of version numbers to custom client migrations */
@@ -86,7 +86,7 @@ export interface VersionedCollectionOptions<T extends object> {
 	/** Versioned schema definition */
 	schema: VersionedSchema<GenericValidator>;
 	/** Persistence provider factory */
-	persistence: () => Promise<import("$/client/persistence/types").Persistence>;
+	persistence: () => Promise<import('$/client/persistence/types').Persistence>;
 	/** Collection configuration */
 	config: () => VersionedCollectionConfig<T>;
 	/** Custom client migrations (override auto-generated) */
@@ -98,19 +98,19 @@ export interface VersionedCollectionOptions<T extends object> {
 /** Configuration for versioned collection */
 export interface VersionedCollectionConfig<T extends object> {
 	/** Convex client instance */
-	convexClient: import("convex/browser").ConvexClient;
+	convexClient: import('convex/browser').ConvexClient;
 	/** Collection API endpoints */
 	api: {
-		material: import("convex/server").FunctionReference<"query">;
-		delta: import("convex/server").FunctionReference<"query">;
-		replicate: import("convex/server").FunctionReference<"mutation">;
-		presence: import("convex/server").FunctionReference<"mutation">;
-		session: import("convex/server").FunctionReference<"query">;
+		material: import('convex/server').FunctionReference<'query'>;
+		delta: import('convex/server').FunctionReference<'query'>;
+		replicate: import('convex/server').FunctionReference<'mutation'>;
+		presence: import('convex/server').FunctionReference<'mutation'>;
+		session: import('convex/server').FunctionReference<'query'>;
 	};
 	/** Get document key */
 	getKey: (doc: T) => string | number;
 	/** User identity provider */
-	user?: () => import("$/client/identity").UserIdentity | undefined;
+	user?: () => import('$/client/identity').UserIdentity | undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,12 +129,12 @@ export interface SchemaMetadata {
  */
 export async function getStoredSchemaVersion(
 	db: MigrationDatabase,
-	collection: string,
+	collection: string
 ): Promise<number | null> {
 	try {
 		const result = await db.get<{ version: number }>(
 			`SELECT version FROM __replicate_schema WHERE collection = ?`,
-			[collection],
+			[collection]
 		);
 		return result?.version ?? null;
 	} catch {
@@ -149,7 +149,7 @@ export async function getStoredSchemaVersion(
 export async function setStoredSchemaVersion(
 	db: MigrationDatabase,
 	collection: string,
-	version: number,
+	version: number
 ): Promise<void> {
 	await db.exec(`
 		CREATE TABLE IF NOT EXISTS __replicate_schema (
@@ -161,7 +161,7 @@ export async function setStoredSchemaVersion(
 
 	await db.run(
 		`INSERT OR REPLACE INTO __replicate_schema (collection, version, migratedAt) VALUES (?, ?, ?)`,
-		[collection, version, Date.now()],
+		[collection, version, Date.now()]
 	);
 }
 
@@ -171,7 +171,7 @@ export async function setStoredSchemaVersion(
 export async function runAutoMigration(
 	db: MigrationDatabase,
 	tableName: string,
-	diff: SchemaDiff,
+	diff: SchemaDiff
 ): Promise<void> {
 	for (const sql of diff.generatedSQL) {
 		const resolvedSql = sql.replace(/%TABLE%/g, `"${tableName}"`);
@@ -187,7 +187,7 @@ export function createMigrationError(
 	message: string,
 	fromVersion: number,
 	toVersion: number,
-	operation?: SchemaDiffOperation,
+	operation?: SchemaDiffOperation
 ): MigrationError {
 	return { code, message, fromVersion, toVersion, operation };
 }
@@ -209,7 +209,7 @@ export interface RunMigrationsOptions<_T extends object = object> {
 	/** Handler for migration errors */
 	onError?: MigrationErrorHandler;
 	/** Get Yjs document for a specific ID (for custom migrations) */
-	getYDoc?: (id: string) => import("yjs").Doc | null;
+	getYDoc?: (id: string) => import('yjs').Doc | null;
 	/** List all document IDs in the collection */
 	listDocuments?: () => Promise<string[]>;
 }
@@ -278,15 +278,15 @@ export async function runMigrations(options: RunMigrationsOptions): Promise<Migr
 		diff = schema.diff(storedVersion, targetVersion);
 	} catch (err) {
 		const error = createMigrationError(
-			"SCHEMA_MISMATCH",
+			'SCHEMA_MISMATCH',
 			`Failed to compute schema diff: ${err instanceof Error ? err.message : String(err)}`,
 			storedVersion,
-			targetVersion,
+			targetVersion
 		);
 
 		if (onError) {
 			const recovery = await handleMigrationError(error, db, collection, onError);
-			if (recovery.action === "keep-old-schema") {
+			if (recovery.action === 'keep-old-schema') {
 				return {
 					migrated: false,
 					fromVersion: storedVersion,
@@ -311,7 +311,7 @@ export async function runMigrations(options: RunMigrationsOptions): Promise<Migr
 
 			// Build dirtyDocs list from document IDs
 			// Note: field data must be populated by getYDoc if needed
-			const dirtyDocs: MigrationDoc[] = docIds.map(id => ({
+			const dirtyDocs: MigrationDoc[] = docIds.map((id) => ({
 				id,
 				fields: new Map(),
 			}));
@@ -340,15 +340,15 @@ export async function runMigrations(options: RunMigrationsOptions): Promise<Migr
 		};
 	} catch (err) {
 		const error = createMigrationError(
-			"SQLITE_ERROR",
+			'SQLITE_ERROR',
 			`Migration failed: ${err instanceof Error ? err.message : String(err)}`,
 			storedVersion,
-			targetVersion,
+			targetVersion
 		);
 
 		if (onError) {
 			const recovery = await handleMigrationError(error, db, collection, onError);
-			if (recovery.action === "keep-old-schema") {
+			if (recovery.action === 'keep-old-schema') {
 				return {
 					migrated: false,
 					fromVersion: storedVersion,
@@ -357,7 +357,7 @@ export async function runMigrations(options: RunMigrationsOptions): Promise<Migr
 					error,
 				};
 			}
-			if (recovery.action === "reset") {
+			if (recovery.action === 'reset') {
 				// Clear all data and set to target version
 				await clearCollectionData(db, collection);
 				await setStoredSchemaVersion(db, collection, targetVersion);
@@ -369,7 +369,7 @@ export async function runMigrations(options: RunMigrationsOptions): Promise<Migr
 					error,
 				};
 			}
-			if (recovery.action === "custom" && recovery.handler) {
+			if (recovery.action === 'custom' && recovery.handler) {
 				await recovery.handler();
 				return {
 					migrated: true,
@@ -391,14 +391,14 @@ async function handleMigrationError(
 	error: MigrationError,
 	db: MigrationDatabase,
 	collection: string,
-	onError: MigrationErrorHandler,
+	onError: MigrationErrorHandler
 ): Promise<RecoveryAction> {
 	// Check for pending changes by looking at deltas table
 	let pendingChanges = 0;
 	try {
 		const result = await db.get<{ count: number }>(
 			`SELECT COUNT(*) as count FROM deltas WHERE collection LIKE ?`,
-			[`${collection}:%`],
+			[`${collection}:%`]
 		);
 		pendingChanges = result?.count ?? 0;
 	} catch {

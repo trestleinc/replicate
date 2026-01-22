@@ -1,54 +1,54 @@
-import * as Y from "yjs";
-import { Awareness } from "y-protocols/awareness";
-import type { ConvexClient } from "convex/browser";
-import type { FunctionReference } from "convex/server";
-import type { AnonymousPresenceConfig, UserIdentity } from "$/client/identity";
+import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
+import type { ConvexClient } from 'convex/browser';
+import type { FunctionReference } from 'convex/server';
+import type { AnonymousPresenceConfig, UserIdentity } from '$/client/identity';
 
 const DEFAULT_HEARTBEAT_MS = 10000;
 const DEFAULT_THROTTLE_MS = 50;
 
 const DEFAULT_ADJECTIVES = [
-	"Swift",
-	"Bright",
-	"Calm",
-	"Bold",
-	"Keen",
-	"Quick",
-	"Warm",
-	"Cool",
-	"Sharp",
-	"Gentle",
+	'Swift',
+	'Bright',
+	'Calm',
+	'Bold',
+	'Keen',
+	'Quick',
+	'Warm',
+	'Cool',
+	'Sharp',
+	'Gentle',
 ];
 
 const DEFAULT_NOUNS = [
-	"Fox",
-	"Owl",
-	"Bear",
-	"Wolf",
-	"Hawk",
-	"Deer",
-	"Lynx",
-	"Crow",
-	"Hare",
-	"Seal",
+	'Fox',
+	'Owl',
+	'Bear',
+	'Wolf',
+	'Hawk',
+	'Deer',
+	'Lynx',
+	'Crow',
+	'Hare',
+	'Seal',
 ];
 
 const DEFAULT_COLORS = [
-	"#9F5944",
-	"#A9704D",
-	"#B08650",
-	"#8A7D3F",
-	"#6E7644",
-	"#8C4A42",
-	"#9E7656",
-	"#9A5240",
-	"#987C4A",
-	"#7A8B6E",
+	'#9F5944',
+	'#A9704D',
+	'#B08650',
+	'#8A7D3F',
+	'#6E7644',
+	'#8C4A42',
+	'#9E7656',
+	'#9A5240',
+	'#987C4A',
+	'#7A8B6E',
 ];
 
 interface PresenceApi {
-	presence: FunctionReference<"mutation">;
-	session: FunctionReference<"query">;
+	presence: FunctionReference<'mutation'>;
+	session: FunctionReference<'query'>;
 }
 
 export interface PresenceState {
@@ -82,10 +82,10 @@ export interface PresenceProvider extends Presence {
 	destroy(): void;
 }
 
-type PresenceLifecycleState = "idle" | "joining" | "active" | "leaving" | "destroyed";
+type PresenceLifecycleState = 'idle' | 'joining' | 'active' | 'leaving' | 'destroyed';
 
 interface PresencePayload {
-	action: "join" | "leave";
+	action: 'join' | 'leave';
 	cursor?: unknown;
 	user?: string;
 	profile?: { name?: string; color?: string; avatar?: string };
@@ -140,10 +140,10 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 	const resolvedUser = userGetter?.();
 
 	if (resolvedUser) {
-		awareness.setLocalStateField("user", resolvedUser);
+		awareness.setLocalStateField('user', resolvedUser);
 	}
 
-	let state: PresenceLifecycleState = "idle";
+	let state: PresenceLifecycleState = 'idle';
 	let visible = true;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	let throttleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -165,7 +165,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 	};
 
 	const extractCursorFromState = (
-		awarenessState: Record<string, unknown> | null,
+		awarenessState: Record<string, unknown> | null
 	): { anchor: unknown; head: unknown } | undefined => {
 		if (!awarenessState) return undefined;
 
@@ -186,7 +186,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 	};
 
 	const extractUserFromState = (
-		awarenessState: Record<string, unknown> | null,
+		awarenessState: Record<string, unknown> | null
 	): {
 		user?: string;
 		profile?: { name?: string; color?: string; avatar?: string };
@@ -203,14 +203,14 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 				profile?: { name?: string; color?: string; avatar?: string };
 			} = {};
 
-			if (typeof userState.id === "string") {
+			if (typeof userState.id === 'string') {
 				result.user = userState.id;
 			}
 
 			const profile: { name?: string; color?: string; avatar?: string } = {};
-			if (typeof userState.name === "string") profile.name = userState.name;
-			if (typeof userState.color === "string") profile.color = userState.color;
-			if (typeof userState.avatar === "string") profile.avatar = userState.avatar;
+			if (typeof userState.name === 'string') profile.name = userState.name;
+			if (typeof userState.color === 'string') profile.color = userState.color;
+			if (typeof userState.avatar === 'string') profile.avatar = userState.avatar;
 
 			if (Object.keys(profile).length > 0) {
 				result.profile = profile;
@@ -229,7 +229,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		const vector = getVector();
 
 		return {
-			action: "join",
+			action: 'join',
 			cursor,
 			user: userId,
 			profile,
@@ -245,12 +245,12 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 			cursor: payload.cursor,
 			user: payload.user,
 			profile: payload.profile,
-			interval: payload.action === "join" ? heartbeatMs : undefined,
+			interval: payload.action === 'join' ? heartbeatMs : undefined,
 			vector: payload.vector,
 		});
 	};
 
-	const isDestroyed = (): boolean => state === "destroyed";
+	const isDestroyed = (): boolean => state === 'destroyed';
 
 	const sendWithSingleFlight = async (payload: PresencePayload): Promise<void> => {
 		if (isDestroyed()) return;
@@ -280,10 +280,10 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 
 	const transitionTo = (newState: PresenceLifecycleState): boolean => {
 		const validTransitions: Record<PresenceLifecycleState, PresenceLifecycleState[]> = {
-			idle: ["joining", "destroyed"],
-			joining: ["active", "leaving", "destroyed"],
-			active: ["leaving", "destroyed"],
-			leaving: ["idle", "joining", "destroyed"],
+			idle: ['joining', 'destroyed'],
+			joining: ['active', 'leaving', 'destroyed'],
+			active: ['leaving', 'destroyed'],
+			leaving: ['idle', 'joining', 'destroyed'],
 			destroyed: [],
 		};
 
@@ -297,7 +297,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 
 	const notifySubscribers = (): void => {
 		const presenceState = getPresenceState();
-		subscribers.forEach(cb => cb(presenceState));
+		subscribers.forEach((cb) => cb(presenceState));
 	};
 
 	const getPresenceState = (): PresenceState => {
@@ -322,36 +322,36 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 	};
 
 	const joinPresence = (cursorOverride?: unknown): void => {
-		if (state === "destroyed" || !visible) return;
+		if (state === 'destroyed' || !visible) return;
 
-		if (state === "idle" || state === "leaving") {
-			transitionTo("joining");
+		if (state === 'idle' || state === 'leaving') {
+			transitionTo('joining');
 		}
 
 		const payload = buildJoinPayload(cursorOverride);
 		sendWithSingleFlight(payload).then(() => {
-			if (state === "joining") {
-				transitionTo("active");
+			if (state === 'joining') {
+				transitionTo('active');
 			}
 		});
 	};
 
 	const leavePresence = (): void => {
-		if (state === "destroyed") return;
-		if (state === "idle") return;
+		if (state === 'destroyed') return;
+		if (state === 'idle') return;
 
-		transitionTo("leaving");
+		transitionTo('leaving');
 
-		sendWithSingleFlight({ action: "leave" }).then(() => {
-			if (state === "leaving") {
-				transitionTo("idle");
+		sendWithSingleFlight({ action: 'leave' }).then(() => {
+			if (state === 'leaving') {
+				transitionTo('idle');
 			}
 		});
 	};
 
 	const throttledJoin = (): void => {
 		if (throttleTimer) return;
-		if (state === "destroyed") return;
+		if (state === 'destroyed') return;
 
 		throttleTimer = setTimeout(() => {
 			throttleTimer = null;
@@ -363,10 +363,10 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 
 	const onLocalAwarenessUpdate = (
 		changes: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
+		origin: unknown
 	): void => {
-		if (origin === "remote") return;
-		if (state === "destroyed") return;
+		if (origin === 'remote') return;
+		if (state === 'destroyed') return;
 
 		const localClientId = awareness.clientID;
 		if (changes.added.includes(localClientId) || changes.updated.includes(localClientId)) {
@@ -385,11 +385,11 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 					user?: string;
 					profile?: { name?: string; color?: string; avatar?: string };
 					cursor?: { anchor: unknown; head: unknown; field?: string };
-				}[],
+				}[]
 			) => {
-				if (state === "destroyed") return;
+				if (state === 'destroyed') return;
 
-				const validRemotes = remotes.filter(r => r.document === document);
+				const validRemotes = remotes.filter((r) => r.document === document);
 				const currentRemotes = new Set<string>();
 
 				for (const remote of validRemotes) {
@@ -428,63 +428,63 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 					}
 				}
 
-				awareness.emit("update", [
+				awareness.emit('update', [
 					{ added: [], updated: Array.from(remoteClientIds.values()), removed: [] },
-					"remote",
+					'remote',
 				]);
 
 				notifySubscribers();
-			},
+			}
 		);
 	};
 
 	const setupVisibilityHandler = (): void => {
-		if (typeof globalThis.document === "undefined") return;
+		if (typeof globalThis.document === 'undefined') return;
 
 		const handler = (): void => {
-			if (state === "destroyed") return;
+			if (state === 'destroyed') return;
 
 			const wasVisible = visible;
-			visible = globalThis.document.visibilityState === "visible";
+			visible = globalThis.document.visibilityState === 'visible';
 
 			if (wasVisible && !visible) {
 				leavePresence();
-			} else if (!wasVisible && visible && state === "active") {
+			} else if (!wasVisible && visible && state === 'active') {
 				joinPresence();
 			}
 		};
 
-		globalThis.document.addEventListener("visibilitychange", handler);
+		globalThis.document.addEventListener('visibilitychange', handler);
 		unsubscribeVisibility = () => {
-			globalThis.document.removeEventListener("visibilitychange", handler);
+			globalThis.document.removeEventListener('visibilitychange', handler);
 		};
 	};
 
 	const setupPageHideHandler = (): void => {
-		if (typeof globalThis.window === "undefined") return;
+		if (typeof globalThis.window === 'undefined') return;
 
 		const handler = (e: PageTransitionEvent): void => {
 			if (e.persisted) return;
-			if (state === "destroyed") return;
+			if (state === 'destroyed') return;
 
 			convexClient.mutation(api.presence, {
 				document,
 				client,
-				action: "leave" as const,
+				action: 'leave' as const,
 			});
 		};
 
-		globalThis.window.addEventListener("pagehide", handler);
+		globalThis.window.addEventListener('pagehide', handler);
 		unsubscribePageHide = () => {
-			globalThis.window.removeEventListener("pagehide", handler);
+			globalThis.window.removeEventListener('pagehide', handler);
 		};
 	};
 
 	const startHeartbeat = (): void => {
-		if (state === "destroyed") return;
+		if (state === 'destroyed') return;
 
 		heartbeatTimer = setInterval(() => {
-			if (state !== "destroyed" && visible && state === "active") {
+			if (state !== 'destroyed' && visible && state === 'active') {
 				joinPresence();
 			}
 		}, heartbeatMs);
@@ -497,7 +497,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		}
 	};
 
-	awareness.on("update", onLocalAwarenessUpdate);
+	awareness.on('update', onLocalAwarenessUpdate);
 	subscribeToPresence();
 	setupVisibilityHandler();
 	setupPageHideHandler();
@@ -506,7 +506,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		if (syncReady) {
 			await syncReady;
 		}
-		if (state !== "destroyed") {
+		if (state !== 'destroyed') {
 			startHeartbeat();
 		}
 	};
@@ -527,8 +527,8 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		},
 
 		update(options: { cursor?: unknown }): void {
-			if (state === "destroyed") return;
-			awareness.setLocalStateField("cursor", options.cursor);
+			if (state === 'destroyed') return;
+			awareness.setLocalStateField('cursor', options.cursor);
 		},
 
 		get(): PresenceState {
@@ -542,8 +542,8 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		},
 
 		destroy(): void {
-			if (state === "destroyed") return;
-			transitionTo("destroyed");
+			if (state === 'destroyed') return;
+			transitionTo('destroyed');
 
 			if (startTimeout) {
 				clearTimeout(startTimeout);
@@ -558,7 +558,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 			subscribers.clear();
 
 			stopHeartbeat();
-			awareness.off("update", onLocalAwarenessUpdate);
+			awareness.off('update', onLocalAwarenessUpdate);
 			unsubscribeCursors?.();
 			unsubscribeVisibility?.();
 			unsubscribePageHide?.();
@@ -567,12 +567,12 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 				awareness.states.delete(clientId);
 			}
 			remoteClientIds.clear();
-			awareness.emit("update", [{ added: [], updated: [], removed: [] }, "remote"]);
+			awareness.emit('update', [{ added: [], updated: [], removed: [] }, 'remote']);
 
 			convexClient.mutation(api.presence, {
 				document,
 				client,
-				action: "leave" as const,
+				action: 'leave' as const,
 			});
 
 			awareness.destroy();

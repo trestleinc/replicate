@@ -1,6 +1,6 @@
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
-import { profileValidator, cursorValidator } from "$/shared";
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+import { profileValidator, cursorValidator } from '$/shared';
 
 export default defineSchema({
 	devices: defineTable({
@@ -13,8 +13,8 @@ export default defineSchema({
 		lastSeen: v.number(),
 		approved: v.boolean(),
 	})
-		.index("by_user", ["collection", "userId"])
-		.index("by_device", ["collection", "userId", "deviceId"]),
+		.index('by_user', ['collection', 'userId'])
+		.index('by_device', ['collection', 'userId', 'deviceId']),
 
 	wrappedKeys: defineTable({
 		collection: v.string(),
@@ -23,8 +23,8 @@ export default defineSchema({
 		wrappedUmk: v.bytes(),
 		created: v.number(),
 	})
-		.index("by_user", ["collection", "userId"])
-		.index("by_device", ["collection", "userId", "deviceId"]),
+		.index('by_user', ['collection', 'userId'])
+		.index('by_device', ['collection', 'userId', 'deviceId']),
 
 	docKeys: defineTable({
 		collection: v.string(),
@@ -33,8 +33,8 @@ export default defineSchema({
 		wrappedKey: v.bytes(),
 		created: v.number(),
 	})
-		.index("by_document", ["collection", "document"])
-		.index("by_user_doc", ["collection", "userId", "document"]),
+		.index('by_document', ['collection', 'document'])
+		.index('by_user_doc', ['collection', 'userId', 'document']),
 
 	deltas: defineTable({
 		collection: v.string(),
@@ -42,16 +42,16 @@ export default defineSchema({
 		bytes: v.bytes(),
 		seq: v.number(),
 	})
-		.index("by_collection", ["collection"])
-		.index("by_document", ["collection", "document"])
-		.index("by_seq", ["collection", "seq"]),
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_seq', ['collection', 'seq']),
 
 	// Tracks delta count per document for O(1) compaction threshold checks
 	deltaCounts: defineTable({
 		collection: v.string(),
 		document: v.string(),
 		count: v.number(),
-	}).index("by_document", ["collection", "document"]),
+	}).index('by_document', ['collection', 'document']),
 
 	snapshots: defineTable({
 		collection: v.string(),
@@ -60,7 +60,7 @@ export default defineSchema({
 		vector: v.bytes(),
 		seq: v.number(),
 		created: v.number(),
-	}).index("by_document", ["collection", "document"]),
+	}).index('by_document', ['collection', 'document']),
 
 	sessions: defineTable({
 		collection: v.string(),
@@ -73,21 +73,21 @@ export default defineSchema({
 		user: v.optional(v.string()),
 		profile: v.optional(profileValidator),
 		cursor: v.optional(cursorValidator),
-		timeout: v.optional(v.id("_scheduled_functions")),
+		timeout: v.optional(v.id('_scheduled_functions')),
 	})
-		.index("by_collection", ["collection"])
-		.index("by_document", ["collection", "document"])
-		.index("by_client", ["collection", "document", "client"])
-		.index("by_connected", ["collection", "document", "connected"]),
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_client', ['collection', 'document', 'client'])
+		.index('by_connected', ['collection', 'document', 'connected']),
 
 	compaction: defineTable({
 		collection: v.string(),
 		document: v.string(),
 		status: v.union(
-			v.literal("pending"),
-			v.literal("running"),
-			v.literal("done"),
-			v.literal("failed"),
+			v.literal('pending'),
+			v.literal('running'),
+			v.literal('done'),
+			v.literal('failed')
 		),
 		started: v.number(),
 		completed: v.optional(v.number()),
@@ -95,6 +95,6 @@ export default defineSchema({
 		timeout: v.optional(v.number()),
 		error: v.optional(v.string()),
 	})
-		.index("by_document", ["collection", "document", "status"])
-		.index("by_status", ["status", "started"]),
+		.index('by_document', ['collection', 'document', 'status'])
+		.index('by_status', ['status', 'started']),
 });

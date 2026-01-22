@@ -3,8 +3,8 @@
  *
  * State is not persisted across sessions - useful for tests and development.
  */
-import type * as Y from "yjs";
-import type { Persistence, PersistenceProvider, KeyValueStore } from "./types.js";
+import type * as Y from 'yjs';
+import type { Persistence, PersistenceProvider, KeyValueStore } from './types.js';
 
 /**
  * In-memory key-value store.

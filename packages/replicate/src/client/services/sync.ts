@@ -1,7 +1,7 @@
-import * as Y from "yjs";
-import { getLogger } from "$/shared/logger";
+import * as Y from 'yjs';
+import { getLogger } from '$/shared/logger';
 
-const logger = getLogger(["replicate", "sync"]);
+const logger = getLogger(['replicate', 'sync']);
 
 export interface DocumentSync {
 	onLocalChange(): void;
@@ -18,7 +18,7 @@ export function createDocumentSync(
 	documentId: string,
 	ydoc: Y.Doc,
 	syncFn: () => Promise<void>,
-	debounceMs = 50,
+	debounceMs = 50
 ): DocumentSync {
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 	let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -30,7 +30,7 @@ export function createDocumentSync(
 	const setPending = (value: boolean) => {
 		if (pending !== value) {
 			pending = value;
-			pendingListeners.forEach(cb => cb(value));
+			pendingListeners.forEach((cb) => cb(value));
 		}
 	};
 
@@ -39,7 +39,7 @@ export function createDocumentSync(
 
 		// Validate Y.Doc before sync
 		if (!ydoc || (ydoc as unknown as { destroyed?: boolean }).destroyed) {
-			logger.error("Cannot sync - Y.Doc is destroyed", { documentId });
+			logger.error('Cannot sync - Y.Doc is destroyed', { documentId });
 			setPending(false);
 			return;
 		}
@@ -49,7 +49,7 @@ export function createDocumentSync(
 			retryCount = 0; // Reset on success
 			setPending(false);
 		} catch (error) {
-			logger.error("Sync failed", {
+			logger.error('Sync failed', {
 				documentId,
 				error: error instanceof Error ? error.message : String(error),
 				retryCount,
@@ -59,12 +59,12 @@ export function createDocumentSync(
 			if (retryCount < MAX_RETRIES) {
 				retryCount++;
 				const delay = RETRY_DELAY_MS * retryCount; // Exponential backoff
-				logger.debug("Scheduling retry", { documentId, retryCount, delayMs: delay });
+				logger.debug('Scheduling retry', { documentId, retryCount, delayMs: delay });
 				retryTimeoutId = setTimeout(performSync, delay);
 				// Keep pending = true during retries
 			} else {
 				// All retries exhausted - will retry on next local change
-				logger.warn("Sync retries exhausted, will retry on next change", { documentId });
+				logger.warn('Sync retries exhausted, will retry on next change', { documentId });
 				setPending(false);
 				retryCount = 0;
 			}
@@ -130,14 +130,14 @@ export function createSyncManager(collection: string) {
 			documentId: string,
 			ydoc: Y.Doc,
 			syncFn: () => Promise<void>,
-			debounceMs?: number,
+			debounceMs?: number
 		): DocumentSync {
 			const existing = syncs.get(documentId);
 			if (existing) return existing;
 
 			const sync = createDocumentSync(documentId, ydoc, syncFn, debounceMs);
 			syncs.set(documentId, sync);
-			logger.debug("Sync registered", { collection, documentId });
+			logger.debug('Sync registered', { collection, documentId });
 			return sync;
 		},
 
@@ -150,7 +150,7 @@ export function createSyncManager(collection: string) {
 			if (sync) {
 				sync.destroy();
 				syncs.delete(documentId);
-				logger.debug("Sync unregistered", { collection, documentId });
+				logger.debug('Sync unregistered', { collection, documentId });
 			}
 		},
 
@@ -160,7 +160,7 @@ export function createSyncManager(collection: string) {
 			}
 			syncs.clear();
 			collectionSyncs.delete(collection);
-			logger.debug("Sync manager destroyed", { collection });
+			logger.debug('Sync manager destroyed', { collection });
 		},
 	};
 }

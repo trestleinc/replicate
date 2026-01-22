@@ -1,6 +1,6 @@
-import * as Y from "yjs";
-import type { PersistenceProvider } from "$/client/persistence/types";
-import { fragmentToJSON } from "$/client/merge";
+import * as Y from 'yjs';
+import type { PersistenceProvider } from '$/client/persistence/types';
+import { fragmentToJSON } from '$/client/merge';
 
 export type DocPersistenceFactory = (document: string, ydoc: Y.Doc) => PersistenceProvider;
 
@@ -73,7 +73,7 @@ export function createDocumentManager(collection: string): DocumentManager {
 
 		getFields(id: string): Y.Map<unknown> | null {
 			const doc = docs.get(id);
-			return doc ? doc.getMap("fields") : null;
+			return doc ? doc.getMap('fields') : null;
 		},
 
 		getFragment(id: string, field: string): Y.XmlFragment | null {
@@ -112,10 +112,10 @@ export function createDocumentManager(collection: string): DocumentManager {
 		transactWithDelta(
 			id: string,
 			fn: (fields: Y.Map<unknown>) => void,
-			origin?: string,
+			origin?: string
 		): Uint8Array {
 			const doc = this.getOrCreate(id);
-			const fields = doc.getMap<unknown>("fields");
+			const fields = doc.getMap<unknown>('fields');
 			const beforeVector = Y.encodeStateVector(doc);
 
 			doc.transact(() => fn(fields), origin);
@@ -160,7 +160,7 @@ export function createDocumentManager(collection: string): DocumentManager {
 
 export function serializeDocument(
 	manager: DocumentManager,
-	id: string,
+	id: string
 ): Record<string, unknown> | null {
 	const fields = manager.getFields(id);
 	if (!fields) return null;
@@ -185,8 +185,8 @@ export function serializeDocument(
 export function isDocumentDeleted(manager: DocumentManager, id: string): boolean {
 	const doc = manager.get(id);
 	if (!doc) return false;
-	const meta = doc.getMap("_meta");
-	return meta.get("_deleted") === true;
+	const meta = doc.getMap('_meta');
+	return meta.get('_deleted') === true;
 }
 
 export function extractAllDocuments(manager: DocumentManager): Record<string, unknown>[] {

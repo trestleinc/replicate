@@ -1,4 +1,4 @@
-import type * as Y from "yjs";
+import type * as Y from 'yjs';
 
 /**
  * Low-level storage adapter for custom backends (Chrome extension, localStorage, cloud).

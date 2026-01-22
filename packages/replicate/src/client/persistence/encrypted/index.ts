@@ -6,10 +6,10 @@ export type {
 	PassphraseConfig,
 	RecoveryConfig,
 	LockConfig,
-} from "./types.js";
+} from './types.js';
 
-export { createWebEncryptionPersistence } from "./web.js";
-export { isPRFSupported } from "./webauthn.js";
+export { createWebEncryptionPersistence } from './web.js';
+export { isPRFSupported } from './webauthn.js';
 export {
 	createEncryptionManager,
 	type EncryptionManager,
@@ -17,4 +17,4 @@ export {
 	type EncryptionManagerState,
 	type EncryptionManagerHooks,
 	type EncryptionPreference,
-} from "./manager.js";
+} from './manager.js';

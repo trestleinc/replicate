@@ -7,7 +7,7 @@
 
 export interface ReplicateParams {
 	readonly begin: () => void;
-	readonly write: (message: { type: "insert" | "update" | "delete"; value: unknown }) => void;
+	readonly write: (message: { type: 'insert' | 'update' | 'delete'; value: unknown }) => void;
 	readonly commit: () => void;
 	readonly truncate: () => void;
 }
@@ -41,7 +41,7 @@ export function createReplicateOps<T>(params: ReplicateParams): BoundReplicateOp
 		insert(items: T[]): void {
 			params.begin();
 			for (const item of items) {
-				params.write({ type: "insert", value: item });
+				params.write({ type: 'insert', value: item });
 			}
 			params.commit();
 		},
@@ -49,7 +49,7 @@ export function createReplicateOps<T>(params: ReplicateParams): BoundReplicateOp
 		delete(items: T[]): void {
 			params.begin();
 			for (const item of items) {
-				params.write({ type: "delete", value: item });
+				params.write({ type: 'delete', value: item });
 			}
 			params.commit();
 		},
@@ -57,7 +57,7 @@ export function createReplicateOps<T>(params: ReplicateParams): BoundReplicateOp
 		upsert(items: T[]): void {
 			params.begin();
 			for (const item of items) {
-				params.write({ type: "update", value: item });
+				params.write({ type: 'update', value: item });
 			}
 			params.commit();
 		},
@@ -66,7 +66,7 @@ export function createReplicateOps<T>(params: ReplicateParams): BoundReplicateOp
 			params.begin();
 			params.truncate();
 			for (const item of items) {
-				params.write({ type: "insert", value: item });
+				params.write({ type: 'insert', value: item });
 			}
 			params.commit();
 		},

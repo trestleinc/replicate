@@ -4,7 +4,7 @@
  * Provides state encoding and merge operations.
  */
 
-import * as Y from "yjs";
+import * as Y from 'yjs';
 
 /**
  * Apply a binary update to a Yjs document.
@@ -35,7 +35,7 @@ export function yjsTransact<A>(doc: Y.Doc, fn: () => A, origin?: string): A {
 export function transactWithDelta<A>(
 	doc: Y.Doc,
 	fn: () => A,
-	origin?: string,
+	origin?: string
 ): { result: A; delta: Uint8Array } {
 	const beforeVector = Y.encodeStateVector(doc);
 	const result = doc.transact(fn, origin);
@@ -58,10 +58,10 @@ export function transactWithDelta<A>(
  * and have these properties regardless of which module instance created them.
  */
 function isYjsAbstractType(value: unknown): boolean {
-	if (value === null || typeof value !== "object") return false;
+	if (value === null || typeof value !== 'object') return false;
 	const v = value as Record<string, unknown>;
 	// AbstractType has: doc (Doc|null), _map (Map), _eH (event handler)
-	return "_map" in v && "_eH" in v && "doc" in v;
+	return '_map' in v && '_eH' in v && 'doc' in v;
 }
 
 /**
@@ -71,7 +71,7 @@ function isYjsAbstractType(value: unknown): boolean {
 function isYMap(value: unknown): boolean {
 	if (!isYjsAbstractType(value)) return false;
 	const v = value as Record<string, unknown>;
-	return typeof v.keys === "function" && typeof v.get === "function";
+	return typeof v.keys === 'function' && typeof v.get === 'function';
 }
 
 /**
@@ -80,7 +80,7 @@ function isYMap(value: unknown): boolean {
 function isYArray(value: unknown): boolean {
 	if (!isYjsAbstractType(value)) return false;
 	const v = value as Record<string, unknown>;
-	return typeof v.toArray === "function" && typeof v.get !== "function";
+	return typeof v.toArray === 'function' && typeof v.get !== 'function';
 }
 
 /**
@@ -91,7 +91,7 @@ function isYXmlFragment(value: unknown): value is Y.XmlFragment {
 	if (!isYjsAbstractType(value)) return false;
 	const v = value as Record<string, unknown>;
 	// XmlFragment has toArray() but NOT keys() - keys() is unique to Y.Map
-	return typeof v.toArray === "function" && typeof v.keys !== "function";
+	return typeof v.toArray === 'function' && typeof v.keys !== 'function';
 }
 
 /**
@@ -101,7 +101,7 @@ function isYXmlFragment(value: unknown): value is Y.XmlFragment {
 function serialize(value: unknown): unknown {
 	// Primitives pass through
 	if (value === null || value === undefined) return value;
-	if (typeof value !== "object") return value;
+	if (typeof value !== 'object') return value;
 
 	// Check for XmlFragment first (converts to ProseMirror JSON)
 	if (isYXmlFragment(value)) {
@@ -139,7 +139,7 @@ export function serializeYMap(ymap: Y.Map<unknown>): Record<string, unknown> {
  */
 export function extractItems<T>(ymap: Y.Map<unknown>): T[] {
 	const items: T[] = [];
-	ymap.forEach(value => {
+	ymap.forEach((value) => {
 		if (isYMap(value)) {
 			items.push(serialize(value) as T);
 		}
@@ -158,7 +158,7 @@ export function extractItem<T>(ymap: Y.Map<unknown>, key: string): T | null {
 	return null;
 }
 
-import type { XmlFragmentJSON, XmlNodeJSON } from "$/shared";
+import type { XmlFragmentJSON, XmlNodeJSON } from '$/shared';
 
 /**
  * Check if a value looks like ProseMirror/BlockNote JSON document.
@@ -166,10 +166,10 @@ import type { XmlFragmentJSON, XmlNodeJSON } from "$/shared";
  */
 export function isDoc(value: unknown): value is XmlFragmentJSON {
 	return (
-		typeof value === "object" &&
+		typeof value === 'object' &&
 		value !== null &&
-		"type" in value &&
-		(value as { type: unknown }).type === "doc"
+		'type' in value &&
+		(value as { type: unknown }).type === 'doc'
 	);
 }
 
@@ -186,7 +186,7 @@ export function fragmentToJSON(fragment: Y.XmlFragment): XmlFragmentJSON {
 			const textContent = xmlTextToJSON(child);
 			if (textContent.length > 0) {
 				content.push({
-					type: "paragraph",
+					type: 'paragraph',
 					content: textContent,
 				});
 			}
@@ -194,8 +194,8 @@ export function fragmentToJSON(fragment: Y.XmlFragment): XmlFragmentJSON {
 	}
 
 	return {
-		type: "doc",
-		content: content.length > 0 ? content : [{ type: "paragraph" }],
+		type: 'doc',
+		content: content.length > 0 ? content : [{ type: 'paragraph' }],
 	};
 }
 
@@ -230,16 +230,16 @@ function xmlTextToJSON(text: Y.XmlText): XmlNodeJSON[] {
 	const delta = text.toDelta();
 
 	for (const op of delta) {
-		if (typeof op.insert === "string") {
+		if (typeof op.insert === 'string') {
 			const node: XmlNodeJSON = {
-				type: "text",
+				type: 'text',
 				text: op.insert,
 			};
 
 			if (op.attributes && Object.keys(op.attributes).length > 0) {
 				node.marks = Object.entries(op.attributes).map(([type, attrs]) => ({
 					type,
-					attrs: typeof attrs === "object" ? (attrs as Record<string, unknown>) : undefined,
+					attrs: typeof attrs === 'object' ? (attrs as Record<string, unknown>) : undefined,
 				}));
 			}
 
@@ -266,23 +266,23 @@ export function fragmentFromJSON(fragment: Y.XmlFragment, json: XmlFragmentJSON)
  * Handles various content structures defensively for search and display.
  */
 export function extract(content: unknown): string {
-	if (!content || typeof content !== "object") return "";
+	if (!content || typeof content !== 'object') return '';
 
 	const doc = content as { content?: unknown; type?: string };
 
 	// Handle XmlFragmentJSON format - content must be an array
-	if (!doc.content || !Array.isArray(doc.content)) return "";
+	if (!doc.content || !Array.isArray(doc.content)) return '';
 
 	return doc.content
 		.map((block: { content?: unknown }) => {
-			if (!block.content || !Array.isArray(block.content)) return "";
-			return block.content.map((node: { text?: string }) => node.text || "").join("");
+			if (!block.content || !Array.isArray(block.content)) return '';
+			return block.content.map((node: { text?: string }) => node.text || '').join('');
 		})
-		.join(" ");
+		.join(' ');
 }
 
 function appendNodeToFragment(parent: Y.XmlFragment | Y.XmlElement, node: XmlNodeJSON): void {
-	if (node.type === "text") {
+	if (node.type === 'text') {
 		const text = new Y.XmlText();
 		if (node.text) {
 			const attrs: Record<string, unknown> = {};
@@ -328,7 +328,7 @@ export function serializeYMapValue(value: unknown): unknown {
 export function getFragmentFromYMap(
 	ymap: Y.Map<unknown>,
 	document: string,
-	field: string,
+	field: string
 ): Y.XmlFragment | null {
 	const doc = ymap.get(document);
 	if (!isYMap(doc)) {

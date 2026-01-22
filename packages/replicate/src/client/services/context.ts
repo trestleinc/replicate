@@ -1,16 +1,16 @@
-import type { ConvexClient } from "convex/browser";
-import type { FunctionReference } from "convex/server";
-import type { Collection } from "@tanstack/db";
-import type { Persistence } from "$/client/persistence/types";
-import type { DocumentManager } from "$/client/documents";
-import type { AnonymousPresenceConfig, UserIdentity } from "$/client/identity";
+import type { ConvexClient } from 'convex/browser';
+import type { FunctionReference } from 'convex/server';
+import type { Collection } from '@tanstack/db';
+import type { Persistence } from '$/client/persistence/types';
+import type { DocumentManager } from '$/client/documents';
+import type { AnonymousPresenceConfig, UserIdentity } from '$/client/identity';
 
 interface ConvexCollectionApi {
-	material: FunctionReference<"query">;
-	delta: FunctionReference<"query">;
-	replicate: FunctionReference<"mutation">;
-	presence: FunctionReference<"mutation">;
-	session: FunctionReference<"query">;
+	material: FunctionReference<'query'>;
+	delta: FunctionReference<'query'>;
+	replicate: FunctionReference<'mutation'>;
+	presence: FunctionReference<'mutation'>;
+	session: FunctionReference<'query'>;
 }
 
 export interface CollectionContext {
@@ -46,17 +46,17 @@ export function hasContext(collection: string): boolean {
 
 type InitContextConfig = Omit<
 	CollectionContext,
-	"fragmentObservers" | "cleanup" | "clientId" | "ref"
+	'fragmentObservers' | 'cleanup' | 'clientId' | 'ref'
 >;
 
 export function initContext(config: InitContextConfig): CollectionContext {
 	let resolver: () => void;
-	const synced = new Promise<void>(r => {
+	const synced = new Promise<void>((r) => {
 		resolver = r;
 	});
 
 	let actorResolver: () => void;
-	const actorReady = new Promise<void>(r => {
+	const actorReady = new Promise<void>((r) => {
 		actorResolver = r;
 	});
 
@@ -97,11 +97,11 @@ export function deleteContext(collection: string): void {
 	contexts.delete(collection);
 }
 
-type UpdateableFields = "clientId" | "ref" | "cleanup";
+type UpdateableFields = 'clientId' | 'ref' | 'cleanup';
 
 export function updateContext(
 	collection: string,
-	updates: Partial<Pick<CollectionContext, UpdateableFields>>,
+	updates: Partial<Pick<CollectionContext, UpdateableFields>>
 ): CollectionContext {
 	const ctx = getContext(collection);
 	Object.assign(ctx, updates);

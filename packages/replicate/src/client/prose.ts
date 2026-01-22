@@ -1,14 +1,14 @@
-import * as Y from "yjs";
-import type { Collection } from "@tanstack/db";
-import { getLogger } from "$/shared/logger";
-import { serializeYMapValue } from "$/client/merge";
-import { getContext, hasContext } from "$/client/services/context";
-import { createSyncManager, type SyncManager } from "$/client/services/sync";
+import * as Y from 'yjs';
+import type { Collection } from '@tanstack/db';
+import { getLogger } from '$/shared/logger';
+import { serializeYMapValue } from '$/client/merge';
+import { getContext, hasContext } from '$/client/services/context';
+import { createSyncManager, type SyncManager } from '$/client/services/sync';
 
-const SERVER_ORIGIN = "server";
+const SERVER_ORIGIN = 'server';
 const noop = (): void => undefined;
 
-const logger = getLogger(["replicate", "prose"]);
+const logger = getLogger(['replicate', 'prose']);
 
 // Per-collection sync managers
 const syncManagers = new Map<string, SyncManager>();
@@ -37,7 +37,7 @@ function createSyncFn(
 	document: string,
 	ydoc: Y.Doc,
 	ymap: Y.Map<unknown>,
-	collectionRef: Collection<any>,
+	collectionRef: Collection<any>
 ): () => Promise<void> {
 	return async () => {
 		const material = serializeYMapValue(ymap);
@@ -52,7 +52,7 @@ function createSyncFn(
 			{ metadata: { contentSync: { bytes, material } } },
 			(draft: any) => {
 				draft.timestamp = Date.now();
-			},
+			}
 		);
 	};
 }
@@ -61,7 +61,7 @@ export function observeFragment(config: ProseObserverConfig): () => void {
 	const { collection, document, field, fragment, ydoc, ymap, collectionRef, debounceMs } = config;
 
 	if (!hasContext(collection)) {
-		logger.warn("Cannot observe fragment - collection not initialized", { collection, document });
+		logger.warn('Cannot observe fragment - collection not initialized', { collection, document });
 		return noop;
 	}
 
@@ -69,7 +69,7 @@ export function observeFragment(config: ProseObserverConfig): () => void {
 
 	const existingCleanup = ctx.fragmentObservers.get(document);
 	if (existingCleanup) {
-		logger.debug("Fragment already being observed", { collection, document, field });
+		logger.debug('Fragment already being observed', { collection, document, field });
 		return existingCleanup;
 	}
 
@@ -78,7 +78,7 @@ export function observeFragment(config: ProseObserverConfig): () => void {
 
 	// Register sync - this is synchronous, no error handling needed
 	const sync = syncManager.register(document, ydoc, syncFn, debounceMs);
-	logger.debug("Fragment observer registered", { collection, document, field });
+	logger.debug('Fragment observer registered', { collection, document, field });
 
 	const observerHandler = (_events: Y.YEvent<any>[], transaction: Y.Transaction) => {
 		if (transaction.origin === SERVER_ORIGIN) {
@@ -95,7 +95,7 @@ export function observeFragment(config: ProseObserverConfig): () => void {
 		fragment.unobserveDeep(observerHandler);
 		syncManager.unregister(document);
 		ctx.fragmentObservers.delete(document);
-		logger.debug("Fragment observer cleaned up", { collection, document, field });
+		logger.debug('Fragment observer cleaned up', { collection, document, field });
 	};
 
 	ctx.fragmentObservers.set(document, cleanup);
@@ -114,7 +114,7 @@ export function isPending(collection: string, document: string): boolean {
 export function subscribePending(
 	collection: string,
 	document: string,
-	callback: (pending: boolean) => void,
+	callback: (pending: boolean) => void
 ): () => void {
 	const syncManager = syncManagers.get(collection);
 	if (!syncManager) return noop;
@@ -140,5 +140,5 @@ export function cleanup(collection: string): void {
 	}
 	ctx.fragmentObservers.clear();
 
-	logger.debug("Prose cleanup complete", { collection });
+	logger.debug('Prose cleanup complete', { collection });
 }

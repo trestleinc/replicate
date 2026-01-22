@@ -9,7 +9,7 @@
  * 3. No duplicate interfaces - types come from validators
  */
 
-import { type Infer, v } from "convex/values";
+import { type Infer, v } from 'convex/values';
 
 // ============================================================================
 // Core Validators (used across component, server, client)
@@ -40,7 +40,7 @@ export const cursorValidator = v.object({
  * Used for collaborative rich text editing fields.
  */
 export const proseValidator = v.object({
-	type: v.literal("doc"),
+	type: v.literal('doc'),
 	content: v.optional(v.array(v.any())),
 });
 
@@ -79,7 +79,7 @@ export const streamResultValidator = v.object({
 	compact: v.optional(
 		v.object({
 			documents: v.array(v.string()),
-		}),
+		})
 	),
 });
 
@@ -93,7 +93,7 @@ export const streamResultWithExistsValidator = v.object({
 	compact: v.optional(
 		v.object({
 			documents: v.array(v.string()),
-		}),
+		})
 	),
 });
 
@@ -118,7 +118,7 @@ export const sessionValidator = v.object({
  * Presence action (join or leave).
  * @deprecated Use sessionActionValidator instead
  */
-export const presenceActionValidator = v.union(v.literal("join"), v.literal("leave"));
+export const presenceActionValidator = v.union(v.literal('join'), v.literal('leave'));
 
 // ============================================================================
 // New API Validators (Phase 1: signals.md migration)
@@ -128,19 +128,19 @@ export const presenceActionValidator = v.union(v.literal("join"), v.literal("lea
  * Replicate mutation type - combines insert/update/delete.
  */
 export const replicateTypeValidator = v.union(
-	v.literal("insert"),
-	v.literal("update"),
-	v.literal("delete"),
+	v.literal('insert'),
+	v.literal('update'),
+	v.literal('delete')
 );
 
 /**
  * Session action - combines presence (join/leave) and mark (mark/signal).
  */
 export const sessionActionValidator = v.union(
-	v.literal("join"),
-	v.literal("leave"),
-	v.literal("mark"),
-	v.literal("signal"),
+	v.literal('join'),
+	v.literal('leave'),
+	v.literal('mark'),
+	v.literal('signal')
 );
 
 // ============================================================================
@@ -181,7 +181,7 @@ export const documentStateValidator = v.union(
 		bytes: v.bytes(),
 		seq: v.number(),
 	}),
-	v.null(),
+	v.null()
 );
 
 // ============================================================================
@@ -200,8 +200,8 @@ export const materialResultValidator = v.object({
 			v.object({
 				bytes: v.bytes(),
 				seq: v.number(),
-			}),
-		),
+			})
+		)
 	),
 	cursor: v.optional(v.number()),
 });
@@ -268,7 +268,7 @@ export interface FragmentValue {
 }
 
 export interface XmlFragmentJSON {
-	type: "doc";
+	type: 'doc';
 	content?: XmlNodeJSON[];
 }
 
@@ -282,8 +282,8 @@ export interface XmlNodeJSON {
 
 /** Operation type for streaming changes */
 export enum OperationType {
-	Delta = "delta",
-	Snapshot = "snapshot",
+	Delta = 'delta',
+	Snapshot = 'snapshot',
 }
 
 /**
@@ -298,7 +298,7 @@ export type ProseFields<T> = {
 // Duration Utilities
 // ============================================================================
 
-type DurationUnit = "m" | "h" | "d";
+type DurationUnit = 'm' | 'h' | 'd';
 export type Duration = `${number}${DurationUnit}`;
 
 export interface CompactionConfig {
@@ -320,4 +320,4 @@ export function parseDuration(s: Duration): number {
 	return parseInt(num) * DURATION_MULTIPLIERS[unit.toLowerCase() as DurationUnit];
 }
 
-export { getLogger, type Logger } from "./logger";
+export { getLogger, type Logger } from './logger';

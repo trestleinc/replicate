@@ -1,9 +1,9 @@
-import * as Y from "yjs";
-import { v } from "convex/values";
-import { mutation, query } from "$/component/_generated/server";
-import { api } from "$/component/_generated/api";
-import { getLogger } from "$/shared/logger";
-import { OperationType } from "$/shared";
+import * as Y from 'yjs';
+import { v } from 'convex/values';
+import { mutation, query } from '$/component/_generated/server';
+import { api } from '$/component/_generated/api';
+import { getLogger } from '$/shared/logger';
+import { OperationType } from '$/shared';
 import {
 	profileValidator,
 	cursorValidator,
@@ -14,7 +14,7 @@ import {
 	compactResultValidator,
 	recoveryResultValidator,
 	documentStateValidator,
-} from "$/shared";
+} from '$/shared';
 
 export { OperationType };
 
@@ -24,9 +24,9 @@ const MAX_RETRIES = 3;
 
 async function getNextSeq(ctx: any, collection: string): Promise<number> {
 	const latest = await ctx.db
-		.query("deltas")
-		.withIndex("by_seq", (q: any) => q.eq("collection", collection))
-		.order("desc")
+		.query('deltas')
+		.withIndex('by_seq', (q: any) => q.eq('collection', collection))
+		.order('desc')
 		.first();
 	return (latest?.seq ?? 0) + 1;
 }
@@ -35,11 +35,11 @@ async function getNextSeq(ctx: any, collection: string): Promise<number> {
 async function incrementDeltaCount(
 	ctx: any,
 	collection: string,
-	document: string,
+	document: string
 ): Promise<number> {
 	const existing = await ctx.db
-		.query("deltaCounts")
-		.withIndex("by_document", (q: any) => q.eq("collection", collection).eq("document", document))
+		.query('deltaCounts')
+		.withIndex('by_document', (q: any) => q.eq('collection', collection).eq('document', document))
 		.first();
 
 	if (existing) {
@@ -48,7 +48,7 @@ async function incrementDeltaCount(
 		return newCount;
 	}
 
-	await ctx.db.insert("deltaCounts", { collection, document, count: 1 });
+	await ctx.db.insert('deltaCounts', { collection, document, count: 1 });
 	return 1;
 }
 
@@ -57,11 +57,11 @@ async function decrementDeltaCount(
 	ctx: any,
 	collection: string,
 	document: string,
-	amount: number,
+	amount: number
 ): Promise<void> {
 	const existing = await ctx.db
-		.query("deltaCounts")
-		.withIndex("by_document", (q: any) => q.eq("collection", collection).eq("document", document))
+		.query('deltaCounts')
+		.withIndex('by_document', (q: any) => q.eq('collection', collection).eq('document', document))
 		.first();
 
 	if (existing) {
@@ -78,7 +78,7 @@ async function scheduleCompactionIfNeeded(
 	currentCount: number,
 	threshold: number = DEFAULT_THRESHOLD,
 	timeout: number = DEFAULT_TIMEOUT,
-	retain: number = 0,
+	retain: number = 0
 ): Promise<void> {
 	if (currentCount >= threshold) {
 		await ctx.runMutation(api.mutations.scheduleCompaction, {
@@ -103,7 +103,7 @@ export const insertDocument = mutation({
 	handler: async (ctx, args) => {
 		const seq = await getNextSeq(ctx, args.collection);
 
-		await ctx.db.insert("deltas", {
+		await ctx.db.insert('deltas', {
 			collection: args.collection,
 			document: args.document,
 			bytes: args.bytes,
@@ -119,7 +119,7 @@ export const insertDocument = mutation({
 			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0,
+			args.retain ?? 0
 		);
 
 		return { success: true, seq };
@@ -139,7 +139,7 @@ export const updateDocument = mutation({
 	handler: async (ctx, args) => {
 		const seq = await getNextSeq(ctx, args.collection);
 
-		await ctx.db.insert("deltas", {
+		await ctx.db.insert('deltas', {
 			collection: args.collection,
 			document: args.document,
 			bytes: args.bytes,
@@ -155,7 +155,7 @@ export const updateDocument = mutation({
 			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0,
+			args.retain ?? 0
 		);
 
 		return { success: true, seq };
@@ -175,7 +175,7 @@ export const deleteDocument = mutation({
 	handler: async (ctx, args) => {
 		const seq = await getNextSeq(ctx, args.collection);
 
-		await ctx.db.insert("deltas", {
+		await ctx.db.insert('deltas', {
 			collection: args.collection,
 			document: args.document,
 			bytes: args.bytes,
@@ -191,7 +191,7 @@ export const deleteDocument = mutation({
 			count,
 			args.threshold ?? DEFAULT_THRESHOLD,
 			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0,
+			args.retain ?? 0
 		);
 
 		return { success: true, seq };
@@ -213,9 +213,9 @@ export const mark = mutation({
 		const now = Date.now();
 
 		const existing = await ctx.db
-			.query("sessions")
-			.withIndex("by_client", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document).eq("client", args.client),
+			.query('sessions')
+			.withIndex('by_client', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
 			)
 			.first();
 
@@ -231,7 +231,7 @@ export const mark = mutation({
 		if (existing) {
 			await ctx.db.patch(existing._id, updates);
 		} else {
-			await ctx.db.insert("sessions", {
+			await ctx.db.insert('sessions', {
 				collection: args.collection,
 				document: args.document,
 				client: args.client,
@@ -253,13 +253,13 @@ export const compact = mutation({
 	},
 	returns: compactResultValidator,
 	handler: async (ctx, args) => {
-		const logger = getLogger(["compaction"]);
+		const logger = getLogger(['compaction']);
 		const now = Date.now();
 
 		const deltas = await ctx.db
-			.query("deltas")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('deltas')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.collect();
 
@@ -268,9 +268,9 @@ export const compact = mutation({
 		}
 
 		const existing = await ctx.db
-			.query("snapshots")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('snapshots')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.first();
 
@@ -284,18 +284,18 @@ export const compact = mutation({
 		const vector = Y.encodeStateVectorFromUpdateV2(merged);
 
 		const sessions = await ctx.db
-			.query("sessions")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('sessions')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
-			.filter((q: any) => q.eq(q.field("connected"), true))
+			.filter((q: any) => q.eq(q.field('connected'), true))
 			.collect();
 
 		let canDeleteAll = true;
 		for (const session of sessions) {
 			if (!session.vector) {
 				canDeleteAll = false;
-				logger.warn("Session without vector, skipping full compaction", {
+				logger.warn('Session without vector, skipping full compaction', {
 					client: session.client,
 				});
 				break;
@@ -306,7 +306,7 @@ export const compact = mutation({
 
 			if (missing.byteLength > 2) {
 				canDeleteAll = false;
-				logger.debug("Session still needs data", {
+				logger.debug('Session still needs data', {
 					client: session.client,
 					missingSize: missing.byteLength,
 				});
@@ -324,7 +324,7 @@ export const compact = mutation({
 				created: now,
 			});
 		} else {
-			await ctx.db.insert("snapshots", {
+			await ctx.db.insert('snapshots', {
 				collection: args.collection,
 				document: args.document,
 				bytes: merged.buffer as ArrayBuffer,
@@ -346,13 +346,13 @@ export const compact = mutation({
 				await decrementDeltaCount(ctx, args.collection, args.document, removed);
 			}
 
-			logger.info("Full compaction completed", {
+			logger.info('Full compaction completed', {
 				document: args.document,
 				removed,
 				size: merged.byteLength,
 			});
 		} else {
-			logger.info("Snapshot created, deltas retained (clients still syncing)", {
+			logger.info('Snapshot created, deltas retained (clients still syncing)', {
 				document: args.document,
 				deltaCount: deltas.length,
 				activeCount: sessions.length,
@@ -360,11 +360,11 @@ export const compact = mutation({
 		}
 
 		const disconnected = await ctx.db
-			.query("sessions")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('sessions')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
-			.filter((q: any) => q.eq(q.field("connected"), false))
+			.filter((q: any) => q.eq(q.field('connected'), false))
 			.collect();
 
 		let cleaned = 0;
@@ -385,7 +385,7 @@ export const compact = mutation({
 		}
 
 		if (cleaned > 0) {
-			logger.info("Cleaned up disconnected sessions", {
+			logger.info('Cleaned up disconnected sessions', {
 				document: args.document,
 				cleaned,
 			});
@@ -408,40 +408,40 @@ export const scheduleCompaction = mutation({
 		retain: v.optional(v.number()),
 	},
 	returns: v.object({
-		id: v.optional(v.id("compaction")),
+		id: v.optional(v.id('compaction')),
 		status: v.union(
-			v.literal("scheduled"),
-			v.literal("already_running"),
-			v.literal("already_pending"),
+			v.literal('scheduled'),
+			v.literal('already_running'),
+			v.literal('already_pending')
 		),
 	}),
 	handler: async (ctx, args) => {
 		const existing = await ctx.db
-			.query("compaction")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document).eq("status", "running"),
+			.query('compaction')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('status', 'running')
 			)
 			.first();
 
 		if (existing) {
-			return { id: existing._id, status: "already_running" as const };
+			return { id: existing._id, status: 'already_running' as const };
 		}
 
 		const pending = await ctx.db
-			.query("compaction")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document).eq("status", "pending"),
+			.query('compaction')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('status', 'pending')
 			)
 			.first();
 
 		if (pending) {
-			return { id: pending._id, status: "already_pending" as const };
+			return { id: pending._id, status: 'already_pending' as const };
 		}
 
-		const id = await ctx.db.insert("compaction", {
+		const id = await ctx.db.insert('compaction', {
 			collection: args.collection,
 			document: args.document,
-			status: "pending",
+			status: 'pending',
 			started: Date.now(),
 			retries: 0,
 		});
@@ -452,26 +452,26 @@ export const scheduleCompaction = mutation({
 			retain: args.retain,
 		});
 
-		return { id, status: "scheduled" as const };
+		return { id, status: 'scheduled' as const };
 	},
 });
 
 export const runCompaction = mutation({
 	args: {
-		id: v.id("compaction"),
+		id: v.id('compaction'),
 		timeout: v.optional(v.number()),
 		retain: v.optional(v.number()),
 	},
 	returns: v.union(v.null(), v.object({ removed: v.number(), retained: v.number() })),
 	handler: async (ctx, args) => {
-		const logger = getLogger(["compaction"]);
+		const logger = getLogger(['compaction']);
 		const job = await ctx.db.get(args.id);
 
-		if (!job || job.status === "done") {
+		if (!job || job.status === 'done') {
 			return null;
 		}
 
-		await ctx.db.patch(args.id, { status: "running" });
+		await ctx.db.patch(args.id, { status: 'running' });
 
 		const now = Date.now();
 		const timeout = args.timeout ?? DEFAULT_TIMEOUT;
@@ -479,21 +479,21 @@ export const runCompaction = mutation({
 
 		try {
 			const deltas = await ctx.db
-				.query("deltas")
-				.withIndex("by_document", (q: any) =>
-					q.eq("collection", job.collection).eq("document", job.document),
+				.query('deltas')
+				.withIndex('by_document', (q: any) =>
+					q.eq('collection', job.collection).eq('document', job.document)
 				)
 				.collect();
 
 			if (deltas.length === 0) {
-				await ctx.db.patch(args.id, { status: "done", completed: now });
+				await ctx.db.patch(args.id, { status: 'done', completed: now });
 				return { removed: 0, retained: 0 };
 			}
 
 			const snapshot = await ctx.db
-				.query("snapshots")
-				.withIndex("by_document", (q: any) =>
-					q.eq("collection", job.collection).eq("document", job.document),
+				.query('snapshots')
+				.withIndex('by_document', (q: any) =>
+					q.eq('collection', job.collection).eq('document', job.document)
 				)
 				.first();
 
@@ -507,9 +507,9 @@ export const runCompaction = mutation({
 			const vector = Y.encodeStateVectorFromUpdateV2(merged);
 
 			const sessions = await ctx.db
-				.query("sessions")
-				.withIndex("by_document", (q: any) =>
-					q.eq("collection", job.collection).eq("document", job.document),
+				.query('sessions')
+				.withIndex('by_document', (q: any) =>
+					q.eq('collection', job.collection).eq('document', job.document)
 				)
 				.collect();
 
@@ -520,7 +520,7 @@ export const runCompaction = mutation({
 
 				if (!session.vector) {
 					canDeleteAll = false;
-					logger.warn("Active session without vector, skipping full compaction", {
+					logger.warn('Active session without vector, skipping full compaction', {
 						client: session.client,
 					});
 					break;
@@ -531,7 +531,7 @@ export const runCompaction = mutation({
 
 				if (missing.byteLength > 2) {
 					canDeleteAll = false;
-					logger.debug("Active session still needs data", {
+					logger.debug('Active session still needs data', {
 						client: session.client,
 						missingSize: missing.byteLength,
 					});
@@ -549,7 +549,7 @@ export const runCompaction = mutation({
 					created: now,
 				});
 			} else {
-				await ctx.db.insert("snapshots", {
+				await ctx.db.insert('snapshots', {
 					collection: job.collection,
 					document: job.document,
 					bytes: merged.buffer as ArrayBuffer,
@@ -578,14 +578,14 @@ export const runCompaction = mutation({
 					await decrementDeltaCount(ctx, job.collection, job.document, removed);
 				}
 
-				logger.info("Compaction completed", {
+				logger.info('Compaction completed', {
 					document: job.document,
 					removed,
 					retained: deltasToRetain.length,
 					size: merged.byteLength,
 				});
 			} else {
-				logger.info("Snapshot created, deltas retained (clients still syncing)", {
+				logger.info('Snapshot created, deltas retained (clients still syncing)', {
 					document: job.document,
 					deltaCount: deltas.length,
 					activeCount: sessions.filter((s: any) => s.connected || now - s.seen < timeout).length,
@@ -596,35 +596,35 @@ export const runCompaction = mutation({
 				if (session.connected) continue;
 				if (now - session.seen > timeout) {
 					await ctx.db.delete(session._id);
-					logger.debug("Cleaned up stale session", { client: session.client });
+					logger.debug('Cleaned up stale session', { client: session.client });
 				}
 			}
 
-			await ctx.db.patch(args.id, { status: "done", completed: now });
+			await ctx.db.patch(args.id, { status: 'done', completed: now });
 			return { removed, retained: deltas.length - removed };
 		} catch (error) {
 			const retries = (job.retries ?? 0) + 1;
 
 			if (retries < MAX_RETRIES) {
-				await ctx.db.patch(args.id, { status: "pending", retries });
+				await ctx.db.patch(args.id, { status: 'pending', retries });
 				const backoff = Math.pow(2, retries) * 1000;
 				await ctx.scheduler.runAfter(backoff, api.mutations.runCompaction, {
 					id: args.id,
 					timeout: args.timeout,
 					retain: args.retain,
 				});
-				logger.warn("Compaction failed, scheduling retry", {
+				logger.warn('Compaction failed, scheduling retry', {
 					document: job.document,
 					retries,
 					backoff,
 				});
 			} else {
 				await ctx.db.patch(args.id, {
-					status: "failed",
+					status: 'failed',
 					error: String(error),
 					completed: now,
 				});
-				logger.error("Compaction failed after max retries", {
+				logger.error('Compaction failed after max retries', {
 					document: job.document,
 					error: String(error),
 				});
@@ -648,9 +648,9 @@ export const stream = query({
 		// (compaction check moved to write mutations for O(1) performance)
 
 		const documents = await ctx.db
-			.query("deltas")
-			.withIndex("by_seq", (q: any) => q.eq("collection", args.collection).gt("seq", args.seq))
-			.order("asc")
+			.query('deltas')
+			.withIndex('by_seq', (q: any) => q.eq('collection', args.collection).gt('seq', args.seq))
+			.order('asc')
 			.take(limit);
 
 		if (documents.length > 0) {
@@ -676,21 +676,21 @@ export const stream = query({
 		}
 
 		const oldest = await ctx.db
-			.query("deltas")
-			.withIndex("by_seq", (q: any) => q.eq("collection", args.collection))
-			.order("asc")
+			.query('deltas')
+			.withIndex('by_seq', (q: any) => q.eq('collection', args.collection))
+			.order('asc')
 			.first();
 
 		if (oldest && args.seq < oldest.seq) {
 			const snapshots = await ctx.db
-				.query("snapshots")
-				.withIndex("by_document", (q: any) => q.eq("collection", args.collection))
+				.query('snapshots')
+				.withIndex('by_document', (q: any) => q.eq('collection', args.collection))
 				.collect();
 
 			if (snapshots.length === 0) {
 				throw new Error(
 					`Disparity detected but no snapshots available for collection: ${args.collection}. ` +
-						`Client seq: ${args.seq}, Oldest delta seq: ${oldest.seq}`,
+						`Client seq: ${args.seq}, Oldest delta seq: ${oldest.seq}`
 				);
 			}
 
@@ -729,16 +729,16 @@ export const recovery = query({
 	returns: recoveryResultValidator,
 	handler: async (ctx, args) => {
 		const snapshot = await ctx.db
-			.query("snapshots")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('snapshots')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.first();
 
 		const deltas = await ctx.db
-			.query("deltas")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('deltas')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.collect();
 
@@ -781,16 +781,16 @@ export const getDocumentState = query({
 	returns: documentStateValidator,
 	handler: async (ctx, args) => {
 		const snapshot = await ctx.db
-			.query("snapshots")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('snapshots')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.first();
 
 		const deltas = await ctx.db
-			.query("deltas")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('deltas')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.collect();
 
@@ -830,13 +830,13 @@ export const sessions = query({
 	returns: v.array(sessionValidator),
 	handler: async (ctx, args) => {
 		let query = ctx.db
-			.query("sessions")
-			.withIndex("by_document", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document),
+			.query('sessions')
+			.withIndex('by_document', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document)
 			);
 
 		if (args.connected !== undefined) {
-			query = query.filter((q: any) => q.eq(q.field("connected"), args.connected));
+			query = query.filter((q: any) => q.eq(q.field('connected'), args.connected));
 		}
 
 		const records = await query.collect();
@@ -874,9 +874,9 @@ export const disconnect = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const existing = await ctx.db
-			.query("sessions")
-			.withIndex("by_client", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document).eq("client", args.client),
+			.query('sessions')
+			.withIndex('by_client', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
 			)
 			.first();
 
@@ -907,13 +907,13 @@ export const presence = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const existing = await ctx.db
-			.query("sessions")
-			.withIndex("by_client", (q: any) =>
-				q.eq("collection", args.collection).eq("document", args.document).eq("client", args.client),
+			.query('sessions')
+			.withIndex('by_client', (q: any) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
 			)
 			.first();
 
-		if (args.action === "leave") {
+		if (args.action === 'leave') {
 			if (existing?.timeout) {
 				await ctx.scheduler.cancel(existing.timeout);
 			}
@@ -954,7 +954,7 @@ export const presence = mutation({
 		if (existing) {
 			await ctx.db.patch(existing._id, updates);
 		} else {
-			await ctx.db.insert("sessions", {
+			await ctx.db.insert('sessions', {
 				collection: args.collection,
 				document: args.document,
 				client: args.client,

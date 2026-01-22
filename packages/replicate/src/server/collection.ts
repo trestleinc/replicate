@@ -1,6 +1,6 @@
-import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from "convex/server";
-import { Replicate, type ViewFunction } from "$/server";
-import type { CompactionConfig } from "$/shared";
+import type { GenericMutationCtx, GenericQueryCtx, GenericDataModel } from 'convex/server';
+import { Replicate, type ViewFunction } from '$/server';
+import type { CompactionConfig } from '$/shared';
 
 export interface CollectionOptions<T extends object> {
 	compaction?: Partial<CompactionConfig>;
@@ -10,7 +10,7 @@ export interface CollectionOptions<T extends object> {
 		evalRemove?: (ctx: GenericMutationCtx<GenericDataModel>, docId: string) => void | Promise<void>;
 		evalSession?: (
 			ctx: GenericMutationCtx<GenericDataModel>,
-			client: string,
+			client: string
 		) => void | Promise<void>;
 		onDelta?: (ctx: GenericQueryCtx<GenericDataModel>, result: any) => void | Promise<void>;
 		onInsert?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
@@ -23,7 +23,7 @@ export interface CollectionOptions<T extends object> {
 function createCollection<T extends object>(
 	component: any,
 	name: string,
-	options?: CollectionOptions<T>,
+	options?: CollectionOptions<T>
 ) {
 	return createCollectionInternal<T>(component, name, options);
 }
@@ -35,7 +35,7 @@ export const collection = {
 function createCollectionInternal<T extends object>(
 	component: any,
 	name: string,
-	options?: CollectionOptions<T>,
+	options?: CollectionOptions<T>
 ) {
 	const storage = new Replicate<T>(component, name, options?.compaction);
 

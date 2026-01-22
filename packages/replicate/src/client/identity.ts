@@ -1,4 +1,4 @@
-import { getStableAnonColor, getStableAnonName } from "$/client/services/presence";
+import { getStableAnonColor, getStableAnonName } from '$/client/services/presence';
 
 /**
  * User identity for presence and collaborative features.

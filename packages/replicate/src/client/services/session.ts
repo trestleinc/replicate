@@ -1,11 +1,11 @@
-import type { KeyValueStore } from "$/client/persistence/types";
+import type { KeyValueStore } from '$/client/persistence/types';
 
-const SESSION_CLIENT_ID_KEY = "replicate:sessionClientId";
+const SESSION_CLIENT_ID_KEY = 'replicate:sessionClientId';
 
 let cachedSessionClientId: string | null = null;
 
 function generateSessionClientId(): string {
-	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+	if (typeof crypto !== 'undefined' && crypto.randomUUID) {
 		return crypto.randomUUID();
 	}
 	return String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));

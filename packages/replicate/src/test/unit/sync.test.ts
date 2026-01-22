@@ -1,6 +1,6 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import * as Y from "yjs";
-import { createDocumentSync, createSyncManager } from "$/client/services/sync";
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as Y from 'yjs';
+import { createDocumentSync, createSyncManager } from '$/client/services/sync';
 
 // Helper to create a mock Y.Doc
 function createMockYDoc(): Y.Doc {
@@ -25,7 +25,7 @@ function createMockSyncFn(options: { failCount?: number } = {}) {
 	};
 }
 
-describe("createDocumentSync", () => {
+describe('createDocumentSync', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -34,11 +34,11 @@ describe("createDocumentSync", () => {
 		vi.useRealTimers();
 	});
 
-	describe("debounce mechanism", () => {
-		test("debounces multiple calls within window", async () => {
+	describe('debounce mechanism', () => {
+		test('debounces multiple calls within window', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			// Call onLocalChange multiple times rapidly
 			sync.onLocalChange();
@@ -56,10 +56,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("restarts debounce on each call", async () => {
+		test('restarts debounce on each call', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.onLocalChange();
 			await vi.advanceTimersByTimeAsync(150);
@@ -77,10 +77,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("respects custom debounceMs", async () => {
+		test('respects custom debounceMs', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 500);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 500);
 
 			sync.onLocalChange();
 			await vi.advanceTimersByTimeAsync(400);
@@ -93,10 +93,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("uses default debounce of 50ms when not provided", async () => {
+		test('uses default debounce of 50ms when not provided', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			sync.onLocalChange();
 			await vi.advanceTimersByTimeAsync(49);
@@ -110,11 +110,11 @@ describe("createDocumentSync", () => {
 		});
 	});
 
-	describe("pending state", () => {
-		test("isPending returns false initially", () => {
+	describe('pending state', () => {
+		test('isPending returns false initially', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			expect(sync.isPending()).toBe(false);
 
@@ -122,10 +122,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("isPending returns true after onLocalChange", () => {
+		test('isPending returns true after onLocalChange', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			sync.onLocalChange();
 			expect(sync.isPending()).toBe(true);
@@ -134,10 +134,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("isPending returns false after sync completes", async () => {
+		test('isPending returns false after sync completes', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.onLocalChange();
 			expect(sync.isPending()).toBe(true);
@@ -149,13 +149,13 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("transitions correctly through full cycle", async () => {
+		test('transitions correctly through full cycle', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const states: boolean[] = [];
 
-			sync.onPendingChange(pending => states.push(pending));
+			sync.onPendingChange((pending) => states.push(pending));
 
 			expect(sync.isPending()).toBe(false);
 
@@ -169,11 +169,11 @@ describe("createDocumentSync", () => {
 		});
 	});
 
-	describe("listeners", () => {
-		test("onPendingChange calls callback on state transition", async () => {
+	describe('listeners', () => {
+		test('onPendingChange calls callback on state transition', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback = vi.fn();
 
 			sync.onPendingChange(callback);
@@ -189,22 +189,22 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("onPendingChange returns unsubscribe function", () => {
+		test('onPendingChange returns unsubscribe function', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			const unsubscribe = sync.onPendingChange(() => {});
-			expect(typeof unsubscribe).toBe("function");
+			expect(typeof unsubscribe).toBe('function');
 
 			sync.destroy();
 			ydoc.destroy();
 		});
 
-		test("unsubscribe stops callbacks after called", async () => {
+		test('unsubscribe stops callbacks after called', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback = vi.fn();
 
 			const unsubscribe = sync.onPendingChange(callback);
@@ -219,10 +219,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("multiple listeners all receive updates", async () => {
+		test('multiple listeners all receive updates', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback1 = vi.fn();
 			const callback2 = vi.fn();
 			const callback3 = vi.fn();
@@ -242,10 +242,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("only calls callback when state actually changes", () => {
+		test('only calls callback when state actually changes', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback = vi.fn();
 
 			sync.onPendingChange(callback);
@@ -263,11 +263,11 @@ describe("createDocumentSync", () => {
 		});
 	});
 
-	describe("error handling", () => {
-		test("sync error does not crash, continues working", async () => {
+	describe('error handling', () => {
+		test('sync error does not crash, continues working', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn({ failCount: 1 });
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			// First sync will fail
 			sync.onLocalChange();
@@ -283,10 +283,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("sync error resets pending state to false after retries exhausted", async () => {
+		test('sync error resets pending state to false after retries exhausted', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn({ failCount: 100 });
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.onLocalChange();
 			expect(sync.isPending()).toBe(true);
@@ -312,10 +312,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("sync error calls listeners with false after retries exhausted", async () => {
+		test('sync error calls listeners with false after retries exhausted', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn({ failCount: 100 });
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback = vi.fn();
 
 			sync.onPendingChange(callback);
@@ -338,11 +338,11 @@ describe("createDocumentSync", () => {
 		});
 	});
 
-	describe("destroy", () => {
-		test("destroy clears timeout if pending", async () => {
+	describe('destroy', () => {
+		test('destroy clears timeout if pending', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.onLocalChange();
 			sync.destroy();
@@ -354,10 +354,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("destroy prevents future syncs", async () => {
+		test('destroy prevents future syncs', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.destroy();
 			sync.onLocalChange();
@@ -368,10 +368,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("destroy clears all listeners", async () => {
+		test('destroy clears all listeners', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 			const callback = vi.fn();
 
 			sync.onPendingChange(callback);
@@ -384,10 +384,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("onLocalChange is no-op after destroy", () => {
+		test('onLocalChange is no-op after destroy', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			sync.destroy();
 			sync.onLocalChange();
@@ -399,11 +399,11 @@ describe("createDocumentSync", () => {
 		});
 	});
 
-	describe("onServerUpdate", () => {
-		test("onServerUpdate is no-op and does not affect pending", () => {
+	describe('onServerUpdate', () => {
+		test('onServerUpdate is no-op and does not affect pending', () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn);
+			const sync = createDocumentSync('doc1', ydoc, syncFn);
 
 			sync.onServerUpdate();
 			expect(sync.isPending()).toBe(false);
@@ -412,10 +412,10 @@ describe("createDocumentSync", () => {
 			ydoc.destroy();
 		});
 
-		test("onServerUpdate does not trigger sync", async () => {
+		test('onServerUpdate does not trigger sync', async () => {
 			const ydoc = createMockYDoc();
 			const { fn: syncFn, getCallCount } = createMockSyncFn();
-			const sync = createDocumentSync("doc1", ydoc, syncFn, 200);
+			const sync = createDocumentSync('doc1', ydoc, syncFn, 200);
 
 			sync.onServerUpdate();
 			sync.onServerUpdate();
@@ -430,7 +430,7 @@ describe("createDocumentSync", () => {
 	});
 });
 
-describe("createSyncManager", () => {
+describe('createSyncManager', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -439,29 +439,29 @@ describe("createSyncManager", () => {
 		vi.useRealTimers();
 	});
 
-	test("register creates DocumentSync and returns it", () => {
-		const manager = createSyncManager("collection1");
+	test('register creates DocumentSync and returns it', () => {
+		const manager = createSyncManager('collection1');
 		const ydoc = createMockYDoc();
 		const { fn: syncFn } = createMockSyncFn();
 
-		const sync = manager.register("doc1", ydoc, syncFn);
+		const sync = manager.register('doc1', ydoc, syncFn);
 
 		expect(sync).toBeDefined();
-		expect(typeof sync.onLocalChange).toBe("function");
-		expect(typeof sync.isPending).toBe("function");
-		expect(typeof sync.destroy).toBe("function");
+		expect(typeof sync.onLocalChange).toBe('function');
+		expect(typeof sync.isPending).toBe('function');
+		expect(typeof sync.destroy).toBe('function');
 
 		manager.destroy();
 		ydoc.destroy();
 	});
 
-	test("register returns same instance for same document", () => {
-		const manager = createSyncManager("collection1");
+	test('register returns same instance for same document', () => {
+		const manager = createSyncManager('collection1');
 		const ydoc = createMockYDoc();
 		const { fn: syncFn } = createMockSyncFn();
 
-		const sync1 = manager.register("doc1", ydoc, syncFn);
-		const sync2 = manager.register("doc1", ydoc, syncFn);
+		const sync1 = manager.register('doc1', ydoc, syncFn);
+		const sync2 = manager.register('doc1', ydoc, syncFn);
 
 		expect(sync1).toBe(sync2);
 
@@ -469,21 +469,21 @@ describe("createSyncManager", () => {
 		ydoc.destroy();
 	});
 
-	test("get returns null for unregistered document", () => {
-		const manager = createSyncManager("collection1");
+	test('get returns null for unregistered document', () => {
+		const manager = createSyncManager('collection1');
 
-		expect(manager.get("unknown")).toBeNull();
+		expect(manager.get('unknown')).toBeNull();
 
 		manager.destroy();
 	});
 
-	test("get returns DocumentSync for registered document", () => {
-		const manager = createSyncManager("collection1");
+	test('get returns DocumentSync for registered document', () => {
+		const manager = createSyncManager('collection1');
 		const ydoc = createMockYDoc();
 		const { fn: syncFn } = createMockSyncFn();
 
-		const registered = manager.register("doc1", ydoc, syncFn);
-		const retrieved = manager.get("doc1");
+		const registered = manager.register('doc1', ydoc, syncFn);
+		const retrieved = manager.get('doc1');
 
 		expect(retrieved).toBe(registered);
 
@@ -491,18 +491,18 @@ describe("createSyncManager", () => {
 		ydoc.destroy();
 	});
 
-	test("unregister destroys sync and removes from manager", () => {
-		const manager = createSyncManager("collection1");
+	test('unregister destroys sync and removes from manager', () => {
+		const manager = createSyncManager('collection1');
 		const ydoc = createMockYDoc();
 		const { fn: syncFn, getCallCount } = createMockSyncFn();
 
-		const sync = manager.register("doc1", ydoc, syncFn, 200);
+		const sync = manager.register('doc1', ydoc, syncFn, 200);
 		sync.onLocalChange();
 
-		manager.unregister("doc1");
+		manager.unregister('doc1');
 
 		// Should be removed
-		expect(manager.get("doc1")).toBeNull();
+		expect(manager.get('doc1')).toBeNull();
 
 		// Sync should be destroyed (timeout cleared)
 		vi.advanceTimersByTime(200);
@@ -512,17 +512,17 @@ describe("createSyncManager", () => {
 		ydoc.destroy();
 	});
 
-	test("unregister is safe for unknown document", () => {
-		const manager = createSyncManager("collection1");
+	test('unregister is safe for unknown document', () => {
+		const manager = createSyncManager('collection1');
 
 		// Should not throw
-		expect(() => manager.unregister("unknown")).not.toThrow();
+		expect(() => manager.unregister('unknown')).not.toThrow();
 
 		manager.destroy();
 	});
 
-	test("destroy destroys all syncs and clears manager", async () => {
-		const manager = createSyncManager("collection1");
+	test('destroy destroys all syncs and clears manager', async () => {
+		const manager = createSyncManager('collection1');
 		const ydoc1 = createMockYDoc();
 		const ydoc2 = createMockYDoc();
 		const ydoc3 = createMockYDoc();
@@ -530,9 +530,9 @@ describe("createSyncManager", () => {
 		const { fn: syncFn2, getCallCount: getCount2 } = createMockSyncFn();
 		const { fn: syncFn3, getCallCount: getCount3 } = createMockSyncFn();
 
-		const sync1 = manager.register("doc1", ydoc1, syncFn1, 200);
-		const sync2 = manager.register("doc2", ydoc2, syncFn2, 200);
-		const sync3 = manager.register("doc3", ydoc3, syncFn3, 200);
+		const sync1 = manager.register('doc1', ydoc1, syncFn1, 200);
+		const sync2 = manager.register('doc2', ydoc2, syncFn2, 200);
+		const sync3 = manager.register('doc3', ydoc3, syncFn3, 200);
 
 		sync1.onLocalChange();
 		sync2.onLocalChange();
@@ -541,9 +541,9 @@ describe("createSyncManager", () => {
 		manager.destroy();
 
 		// All should be removed
-		expect(manager.get("doc1")).toBeNull();
-		expect(manager.get("doc2")).toBeNull();
-		expect(manager.get("doc3")).toBeNull();
+		expect(manager.get('doc1')).toBeNull();
+		expect(manager.get('doc2')).toBeNull();
+		expect(manager.get('doc3')).toBeNull();
 
 		// All timeouts should be cleared
 		await vi.advanceTimersByTimeAsync(200);
@@ -556,17 +556,17 @@ describe("createSyncManager", () => {
 		ydoc3.destroy();
 	});
 
-	test("separate collections have independent syncs", async () => {
-		const manager1 = createSyncManager("collection1");
-		const manager2 = createSyncManager("collection2");
+	test('separate collections have independent syncs', async () => {
+		const manager1 = createSyncManager('collection1');
+		const manager2 = createSyncManager('collection2');
 		const ydoc1 = createMockYDoc();
 		const ydoc2 = createMockYDoc();
 		const { fn: syncFn1, getCallCount: getCount1 } = createMockSyncFn();
 		const { fn: syncFn2, getCallCount: getCount2 } = createMockSyncFn();
 
 		// Register same docId in different collections
-		const sync1 = manager1.register("doc1", ydoc1, syncFn1, 200);
-		const sync2 = manager2.register("doc1", ydoc2, syncFn2, 200);
+		const sync1 = manager1.register('doc1', ydoc1, syncFn1, 200);
+		const sync2 = manager2.register('doc1', ydoc2, syncFn2, 200);
 
 		expect(sync1).not.toBe(sync2);
 
@@ -582,23 +582,23 @@ describe("createSyncManager", () => {
 		ydoc2.destroy();
 	});
 
-	test("destroy cleans up global map allowing reuse", async () => {
-		const manager1 = createSyncManager("collection1");
+	test('destroy cleans up global map allowing reuse', async () => {
+		const manager1 = createSyncManager('collection1');
 		const ydoc1 = createMockYDoc();
 		const { fn: syncFn1 } = createMockSyncFn();
 
-		manager1.register("doc1", ydoc1, syncFn1);
+		manager1.register('doc1', ydoc1, syncFn1);
 		manager1.destroy();
 
 		// Create new manager for same collection
-		const manager2 = createSyncManager("collection1");
+		const manager2 = createSyncManager('collection1');
 		const ydoc2 = createMockYDoc();
 		const { fn: syncFn2 } = createMockSyncFn();
 
 		// Should start fresh (no remnants from old manager)
-		expect(manager2.get("doc1")).toBeNull();
+		expect(manager2.get('doc1')).toBeNull();
 
-		const sync = manager2.register("doc1", ydoc2, syncFn2);
+		const sync = manager2.register('doc1', ydoc2, syncFn2);
 		expect(sync).toBeDefined();
 
 		manager2.destroy();

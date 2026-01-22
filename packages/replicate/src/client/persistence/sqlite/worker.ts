@@ -1,6 +1,6 @@
-import { initSchema, type Executor } from "./schema.js";
+import { initSchema, type Executor } from './schema.js';
 
-const CDN_BASE = "https://wa-sqlite.robelest.com/v1.0.0";
+const CDN_BASE = 'https://wa-sqlite.robelest.com/v1.0.0';
 
 const INIT = 0;
 const EXECUTE = 1;
@@ -44,9 +44,9 @@ async function init(name: string): Promise<void> {
 
 	db = await sqlite3.open_v2(name);
 
-	await sqlite3.exec(db, "PRAGMA cache_size = -8000;");
-	await sqlite3.exec(db, "PRAGMA synchronous = NORMAL;");
-	await sqlite3.exec(db, "PRAGMA temp_store = MEMORY;");
+	await sqlite3.exec(db, 'PRAGMA cache_size = -8000;');
+	await sqlite3.exec(db, 'PRAGMA synchronous = NORMAL;');
+	await sqlite3.exec(db, 'PRAGMA temp_store = MEMORY;');
 
 	const executor: Executor = {
 		async execute(sql, params) {

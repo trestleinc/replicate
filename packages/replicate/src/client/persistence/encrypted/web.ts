@@ -1,25 +1,25 @@
-import * as Y from "yjs";
-import type { Persistence, PersistenceProvider, KeyValueStore } from "../types.js";
-import type { WebEncryptionConfig, EncryptionPersistence, EncryptionState } from "./types.js";
+import * as Y from 'yjs';
+import type { Persistence, PersistenceProvider, KeyValueStore } from '../types.js';
+import type { WebEncryptionConfig, EncryptionPersistence, EncryptionState } from './types.js';
 import {
 	isPRFSupported,
 	createPRFCredential,
 	getPRFKey,
 	deriveEncryptionKey,
 	type PRFCredential,
-} from "./webauthn.js";
+} from './webauthn.js';
 import {
 	encrypt,
 	decrypt,
 	generateSalt,
 	generateRecoveryKey,
 	deriveKeyFromPassphrase,
-} from "./crypto.js";
+} from './crypto.js';
 
-const CREDENTIAL_KEY = "webauthn:credential";
-const SALT_KEY = "encryption:salt";
-const SETUP_KEY = "encryption:setup";
-const DOC_PREFIX = "enc:doc:";
+const CREDENTIAL_KEY = 'webauthn:credential';
+const SALT_KEY = 'encryption:salt';
+const SETUP_KEY = 'encryption:setup';
+const DOC_PREFIX = 'enc:doc:';
 
 interface StoredCredential {
 	id: string;
@@ -46,7 +46,7 @@ function deserializeCredential(stored: StoredCredential): PRFCredential {
 class EncryptedKeyValueStore implements KeyValueStore {
 	constructor(
 		private inner: KeyValueStore,
-		private getKey: () => CryptoKey | null,
+		private getKey: () => CryptoKey | null
 	) {}
 
 	async get<T>(key: string): Promise<T | undefined> {
@@ -66,7 +66,7 @@ class EncryptedKeyValueStore implements KeyValueStore {
 
 	async set<T>(key: string, value: T): Promise<void> {
 		const encryptionKey = this.getKey();
-		if (!encryptionKey) throw new Error("Encryption locked");
+		if (!encryptionKey) throw new Error('Encryption locked');
 
 		const data = new TextEncoder().encode(JSON.stringify(value));
 		const encrypted = await encrypt(encryptionKey, data);
@@ -87,22 +87,22 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 		private innerStorage: Persistence,
 		private collection: string,
 		private ydoc: Y.Doc,
-		private encryptionKey: CryptoKey,
+		private encryptionKey: CryptoKey
 	) {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== "encrypted-load") {
+			if (origin !== 'encrypted-load') {
 				const writePromise = this.saveUpdate(update).catch((err: Error) => {
-					console.error("[EncryptedPersistence] Save failed:", err);
+					console.error('[EncryptedPersistence] Save failed:', err);
 				});
 				this.pendingWrites.push(writePromise);
 				writePromise.finally(() => {
-					this.pendingWrites = this.pendingWrites.filter(p => p !== writePromise);
+					this.pendingWrites = this.pendingWrites.filter((p) => p !== writePromise);
 				});
 			}
 		};
-		this.ydoc.on("update", this.updateHandler);
+		this.ydoc.on('update', this.updateHandler);
 	}
 
 	private async loadState(): Promise<void> {
@@ -112,14 +112,14 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 		const encryptedSnapshot = await this.innerStorage.kv.get<number[]>(snapshotKey);
 		if (encryptedSnapshot) {
 			const decrypted = await decrypt(this.encryptionKey, new Uint8Array(encryptedSnapshot));
-			Y.applyUpdate(this.ydoc, decrypted, "encrypted-load");
+			Y.applyUpdate(this.ydoc, decrypted, 'encrypted-load');
 		}
 
 		const encryptedDeltas = await this.innerStorage.kv.get<number[][]>(deltasKey);
 		if (encryptedDeltas) {
 			for (const encDelta of encryptedDeltas) {
 				const decrypted = await decrypt(this.encryptionKey, new Uint8Array(encDelta));
-				Y.applyUpdate(this.ydoc, decrypted, "encrypted-load");
+				Y.applyUpdate(this.ydoc, decrypted, 'encrypted-load');
 			}
 		}
 	}
@@ -153,12 +153,12 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 	}
 
 	destroy(): void {
-		this.ydoc.off("update", this.updateHandler);
+		this.ydoc.off('update', this.updateHandler);
 	}
 }
 
 export async function createWebEncryptionPersistence(
-	config: WebEncryptionConfig,
+	config: WebEncryptionConfig
 ): Promise<EncryptionPersistence> {
 	const { storage, user, unlock, recovery, lock: lockConfig, onLock, onUnlock } = config;
 
@@ -166,7 +166,7 @@ export async function createWebEncryptionPersistence(
 	let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const isSetup = await storage.kv.get<boolean>(SETUP_KEY);
-	let state: EncryptionState = isSetup ? "locked" : "setup";
+	let state: EncryptionState = isSetup ? 'locked' : 'setup';
 
 	const resetIdleTimer = () => {
 		if (!lockConfig?.idle) return;
@@ -175,13 +175,13 @@ export async function createWebEncryptionPersistence(
 			() => {
 				void doLock();
 			},
-			lockConfig.idle * 60 * 1000,
+			lockConfig.idle * 60 * 1000
 		);
 	};
 
 	const doLock = async () => {
 		encryptionKey = null;
-		state = "locked";
+		state = 'locked';
 		if (idleTimer) {
 			clearTimeout(idleTimer);
 			idleTimer = null;
@@ -193,7 +193,7 @@ export async function createWebEncryptionPersistence(
 		const isSetup = await storage.kv.get<boolean>(SETUP_KEY);
 
 		if (!isSetup) {
-			state = "setup";
+			state = 'setup';
 
 			if (unlock.webauthn) {
 				const supported = await isPRFSupported();
@@ -211,7 +211,7 @@ export async function createWebEncryptionPersistence(
 							await recovery.onSetup(recoveryKey);
 						}
 
-						state = "unlocked";
+						state = 'unlocked';
 						resetIdleTimer();
 						onUnlock?.();
 						return;
@@ -225,19 +225,19 @@ export async function createWebEncryptionPersistence(
 
 			if (unlock.passphrase) {
 				const salt = generateSalt();
-				const passphrase = await unlock.passphrase.setup(recovery ? generateRecoveryKey() : "");
+				const passphrase = await unlock.passphrase.setup(recovery ? generateRecoveryKey() : '');
 				encryptionKey = await deriveKeyFromPassphrase(passphrase, salt);
 
 				await storage.kv.set(SALT_KEY, Array.from(salt));
 				await storage.kv.set(SETUP_KEY, true);
 
-				state = "unlocked";
+				state = 'unlocked';
 				resetIdleTimer();
 				onUnlock?.();
 				return;
 			}
 
-			throw new Error("No unlock method available");
+			throw new Error('No unlock method available');
 		}
 
 		if (unlock.webauthn) {
@@ -248,7 +248,7 @@ export async function createWebEncryptionPersistence(
 					const prfKey = await getPRFKey(credential);
 					encryptionKey = await deriveEncryptionKey(prfKey, `replicate:${user}`);
 
-					state = "unlocked";
+					state = 'unlocked';
 					resetIdleTimer();
 					onUnlock?.();
 					return;
@@ -258,26 +258,26 @@ export async function createWebEncryptionPersistence(
 					}
 				}
 			} else if (!unlock.passphrase) {
-				throw new Error("WebAuthn credential not found. Set up encryption again.");
+				throw new Error('WebAuthn credential not found. Set up encryption again.');
 			}
 		}
 
 		if (unlock.passphrase) {
 			const saltArray = await storage.kv.get<number[]>(SALT_KEY);
 			if (!saltArray) {
-				throw new Error("Encryption data not found. Set up encryption again.");
+				throw new Error('Encryption data not found. Set up encryption again.');
 			}
 			const salt = new Uint8Array(saltArray);
 			const passphrase = await unlock.passphrase.get();
 			encryptionKey = await deriveKeyFromPassphrase(passphrase, salt);
 
-			state = "unlocked";
+			state = 'unlocked';
 			resetIdleTimer();
 			onUnlock?.();
 			return;
 		}
 
-		throw new Error("No unlock method configured");
+		throw new Error('No unlock method configured');
 	};
 
 	const encryptedKv = new EncryptedKeyValueStore(storage.kv, () => encryptionKey);
@@ -304,7 +304,7 @@ export async function createWebEncryptionPersistence(
 
 		createDocPersistence(collection: string, ydoc: Y.Doc): PersistenceProvider {
 			if (!encryptionKey) {
-				throw new Error("Encryption locked - call unlock() first");
+				throw new Error('Encryption locked - call unlock() first');
 			}
 			return new EncryptedPersistenceProvider(storage, collection, ydoc, encryptionKey);
 		},

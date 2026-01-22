@@ -1,55 +1,55 @@
-import * as Y from "yjs";
-import type { Persistence, PersistenceProvider } from "$/client/persistence/types";
-import type { ConvexClient } from "convex/browser";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import * as Y from 'yjs';
+import type { Persistence, PersistenceProvider } from '$/client/persistence/types';
+import type { ConvexClient } from 'convex/browser';
+import { getFunctionName, type FunctionReference } from 'convex/server';
 import {
 	createCollection,
 	type CollectionConfig,
 	type Collection,
 	type NonSingleResult,
 	type BaseCollectionConfig,
-} from "@tanstack/db";
-import type { GenericValidator } from "convex/values";
-import type { VersionedSchema } from "$/server/migration";
-import type { MigrationErrorHandler, ClientMigrationMap } from "$/client/migration";
-import { runMigrations } from "$/client/migration";
-import { findProseFields } from "$/client/validators";
-import { ProseError, NonRetriableError } from "$/client/errors";
-import { createSeqService, type Seq } from "$/client/services/seq";
-import { getClientId } from "$/client/services/session";
-import { createReplicateOps, type BoundReplicateOps } from "$/client/ops";
-import { isDoc, fragmentFromJSON } from "$/client/merge";
-import { createDocumentManager, serializeDocument, extractAllDocuments } from "$/client/documents";
-import { createDeleteDelta, applyDeleteMarkerToDoc } from "$/client/deltas";
-import * as prose from "$/client/prose";
-import { getLogger } from "$/shared/logger";
+} from '@tanstack/db';
+import type { GenericValidator } from 'convex/values';
+import type { VersionedSchema } from '$/server/migration';
+import type { MigrationErrorHandler, ClientMigrationMap } from '$/client/migration';
+import { runMigrations } from '$/client/migration';
+import { findProseFields } from '$/client/validators';
+import { ProseError, NonRetriableError } from '$/client/errors';
+import { createSeqService, type Seq } from '$/client/services/seq';
+import { getClientId } from '$/client/services/session';
+import { createReplicateOps, type BoundReplicateOps } from '$/client/ops';
+import { isDoc, fragmentFromJSON } from '$/client/merge';
+import { createDocumentManager, serializeDocument, extractAllDocuments } from '$/client/documents';
+import { createDeleteDelta, applyDeleteMarkerToDoc } from '$/client/deltas';
+import * as prose from '$/client/prose';
+import { getLogger } from '$/shared/logger';
 import {
 	initContext,
 	getContext,
 	hasContext,
 	updateContext,
 	deleteContext,
-} from "$/client/services/context";
+} from '$/client/services/context';
 import {
 	createPresence,
 	type PresenceProvider,
 	type Presence,
 	type PresenceState,
-} from "$/client/services/presence";
+} from '$/client/services/presence';
 
 export type { Presence as DocumentPresence, PresenceState };
-import type { AnonymousPresenceConfig, UserIdentity } from "$/client/identity";
-import { Awareness } from "y-protocols/awareness";
+import type { AnonymousPresenceConfig, UserIdentity } from '$/client/identity';
+import { Awareness } from 'y-protocols/awareness';
 
 enum YjsOrigin {
-	Local = "local",
-	Fragment = "fragment",
-	Server = "server",
+	Local = 'local',
+	Fragment = 'fragment',
+	Server = 'server',
 }
 
-const logger = getLogger(["replicate", "collection"]);
+const logger = getLogger(['replicate', 'collection']);
 
-import type { ProseFields } from "$/shared";
+import type { ProseFields } from '$/shared';
 
 interface HttpError extends Error {
 	status?: number;
@@ -80,10 +80,10 @@ function handleMutationError(error: unknown): never {
 	const httpError = error as HttpError;
 
 	if (httpError?.status === 401 || httpError?.status === 403) {
-		throw new NonRetriableError("Authentication failed");
+		throw new NonRetriableError('Authentication failed');
 	}
 	if (httpError?.status === 422) {
-		throw new NonRetriableError("Validation error");
+		throw new NonRetriableError('Validation error');
 	}
 	throw error;
 }
@@ -112,7 +112,7 @@ export interface PaginationConfig {
 	pageSize?: number;
 }
 
-export type PaginationStatus = "idle" | "busy" | "done" | "error";
+export type PaginationStatus = 'idle' | 'busy' | 'done' | 'error';
 
 export interface PaginationState {
 	status: PaginationStatus;
@@ -122,16 +122,16 @@ export interface PaginationState {
 }
 
 interface ConvexCollectionApi {
-	material: FunctionReference<"query">;
-	delta: FunctionReference<"query">;
-	replicate: FunctionReference<"mutation">;
-	presence: FunctionReference<"mutation">;
-	session: FunctionReference<"query">;
+	material: FunctionReference<'query'>;
+	delta: FunctionReference<'query'>;
+	replicate: FunctionReference<'mutation'>;
+	presence: FunctionReference<'mutation'>;
+	session: FunctionReference<'query'>;
 }
 
 export interface ConvexCollectionConfig<T extends object = object> extends Omit<
 	BaseCollectionConfig<T, string, never>,
-	"schema"
+	'schema'
 > {
 	validator?: GenericValidator;
 	convexClient: ConvexClient;
@@ -225,7 +225,7 @@ interface ConvexCollectionExtensions<T extends object> {
 }
 
 export function convexCollectionOptions<T extends object = object>(
-	config: ConvexCollectionConfig<T>,
+	config: ConvexCollectionConfig<T>
 ): CollectionConfig<T, string, never, ConvexCollectionUtils<T>> & {
 	id: string;
 	utils: ConvexCollectionUtils<T>;
@@ -243,9 +243,9 @@ export function convexCollectionOptions<T extends object = object>(
 	} = config;
 
 	const functionPath = getFunctionName(api.delta);
-	const collection = functionPath.split(":")[0];
+	const collection = functionPath.split(':')[0];
 	if (!collection) {
-		throw new Error("Could not extract collection name from api.delta function reference");
+		throw new Error('Could not extract collection name from api.delta function reference');
 	}
 
 	const proseFields: string[] = validator ? findProseFields(validator) : [];
@@ -259,7 +259,7 @@ export function convexCollectionOptions<T extends object = object>(
 		async prose(
 			document: string,
 			field: ProseFields<DataType>,
-			options?: ProseOptions,
+			options?: ProseOptions
 		): Promise<EditorBinding> {
 			const fieldStr = field;
 
@@ -288,7 +288,7 @@ export function convexCollectionOptions<T extends object = object>(
 									document,
 									field: fieldStr,
 									collection,
-								}),
+								})
 							);
 						}
 					}, 10);
@@ -454,15 +454,15 @@ export function convexCollectionOptions<T extends object = object>(
 			{ connected: true },
 			(sessions: SessionInfo[]) => {
 				sessionCache = sessions;
-				sessionSubscribers.forEach(cb => cb(sessions));
-			},
+				sessionSubscribers.forEach((cb) => cb(sessions));
+			}
 		);
 	};
 
 	const sessionApi: SessionAPI = {
 		get(docId?: string): SessionInfo[] {
 			if (docId) {
-				return sessionCache.filter(s => s.document === docId);
+				return sessionCache.filter((s) => s.document === docId);
 			}
 			return sessionCache;
 		},
@@ -510,12 +510,12 @@ export function convexCollectionOptions<T extends object = object>(
 	const seqService = createSeqService(persistence.kv);
 
 	let resolvePersistenceReady: (() => void) | undefined;
-	const persistenceReadyPromise = new Promise<void>(resolve => {
+	const persistenceReadyPromise = new Promise<void>((resolve) => {
 		resolvePersistenceReady = resolve;
 	});
 
 	let resolveOptimisticReady: (() => void) | undefined;
-	const optimisticReadyPromise = new Promise<void>(resolve => {
+	const optimisticReadyPromise = new Promise<void>((resolve) => {
 		resolveOptimisticReady = resolve;
 	});
 
@@ -523,9 +523,9 @@ export function convexCollectionOptions<T extends object = object>(
 		const docIds = docManager.documents();
 		if (docIds.length === 0) return;
 
-		logger.debug("Starting recovery for documents", { collection, count: docIds.length });
+		logger.debug('Starting recovery for documents', { collection, count: docIds.length });
 
-		const recoveryPromises = docIds.map(async docId => {
+		const recoveryPromises = docIds.map(async (docId) => {
 			try {
 				const vector = docManager.encodeStateVector(docId);
 				const result = await convexClient.query(api.delta, {
@@ -533,10 +533,10 @@ export function convexCollectionOptions<T extends object = object>(
 					vector: vector.buffer as ArrayBuffer,
 				});
 
-				if (result.mode === "recovery" && result.diff) {
+				if (result.mode === 'recovery' && result.diff) {
 					const update = new Uint8Array(result.diff);
 					docManager.applyUpdate(docId, update, YjsOrigin.Server);
-					logger.debug("Applied server diff during recovery", { document: docId, collection });
+					logger.debug('Applied server diff during recovery', { document: docId, collection });
 				}
 
 				// Only push local state when explicitly requested (reconnection scenario)
@@ -552,14 +552,14 @@ export function convexCollectionOptions<T extends object = object>(
 								document: docId,
 								bytes: localState.buffer as ArrayBuffer,
 								material,
-								type: "update",
+								type: 'update',
 							});
-							logger.debug("Pushed local changes during recovery", { document: docId, collection });
+							logger.debug('Pushed local changes during recovery', { document: docId, collection });
 						}
 					}
 				}
 			} catch (error) {
-				logger.warn("Recovery failed for document", {
+				logger.warn('Recovery failed for document', {
 					document: docId,
 					collection,
 					error: error instanceof Error ? error.message : String(error),
@@ -568,7 +568,7 @@ export function convexCollectionOptions<T extends object = object>(
 		});
 
 		await Promise.all(recoveryPromises);
-		logger.debug("Recovery completed", { collection, count: docIds.length });
+		logger.debug('Recovery completed', { collection, count: docIds.length });
 	};
 
 	const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
@@ -578,7 +578,7 @@ export function convexCollectionOptions<T extends object = object>(
 			const document = String(mut.key);
 			const delta = docManager.transactWithDelta(
 				document,
-				fieldsMap => {
+				(fieldsMap) => {
 					Object.entries(mut.modified as Record<string, unknown>).forEach(([k, v]) => {
 						if (proseFieldSet.has(k) && isDoc(v)) {
 							const fragment = new Y.XmlFragment();
@@ -589,7 +589,7 @@ export function convexCollectionOptions<T extends object = object>(
 						}
 					});
 				},
-				YjsOrigin.Local,
+				YjsOrigin.Local
 			);
 			deltas.push(delta);
 		}
@@ -615,7 +615,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 			const delta = docManager.transactWithDelta(
 				document,
-				fields => {
+				(fields) => {
 					Object.entries(modifiedFields).forEach(([k, v]) => {
 						if (proseFieldSet.has(k)) {
 							return;
@@ -629,7 +629,7 @@ export function convexCollectionOptions<T extends object = object>(
 						fields.set(k, v);
 					});
 				},
-				YjsOrigin.Local,
+				YjsOrigin.Local
 			);
 			deltas.push(delta);
 		}
@@ -681,9 +681,9 @@ export function convexCollectionOptions<T extends object = object>(
 							document: document,
 							bytes: delta.buffer,
 							material: materializedDoc,
-							type: "insert",
+							type: 'insert',
 						});
-					}),
+					})
 				);
 			} catch (error) {
 				handleMutationError(error);
@@ -708,7 +708,7 @@ export function convexCollectionOptions<T extends object = object>(
 						document: documentKey,
 						bytes,
 						material,
-						type: "update",
+						type: 'update',
 					});
 					return;
 				}
@@ -727,9 +727,9 @@ export function convexCollectionOptions<T extends object = object>(
 								document: docId,
 								bytes: delta.buffer,
 								material: fullDoc,
-								type: "update",
+								type: 'update',
 							});
-						}),
+						})
 					);
 				}
 			} catch (error) {
@@ -744,7 +744,7 @@ export function convexCollectionOptions<T extends object = object>(
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 
 				const itemsToDelete = transaction.mutations
-					.map(mut => mut.original)
+					.map((mut) => mut.original)
 					.filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
 				ops.delete(itemsToDelete);
 
@@ -757,9 +757,9 @@ export function convexCollectionOptions<T extends object = object>(
 						await convexClient.mutation(api.replicate, {
 							document: String(mut.key),
 							bytes: delta.buffer,
-							type: "delete",
+							type: 'delete',
 						});
-					}),
+					})
 				);
 			} catch (error) {
 				handleMutationError(error);
@@ -767,7 +767,7 @@ export function convexCollectionOptions<T extends object = object>(
 		},
 
 		sync: {
-			rowUpdateMode: "partial",
+			rowUpdateMode: 'partial',
 			sync: (params: any) => {
 				const { markReady, collection: collectionInstance } = params;
 
@@ -847,7 +847,7 @@ export function convexCollectionOptions<T extends object = object>(
 						const handleSnapshotChange = (
 							bytes: ArrayBuffer,
 							document: string,
-							exists: boolean,
+							exists: boolean
 						): ChangeResult => {
 							const hadLocally = docManager.has(document);
 
@@ -873,7 +873,7 @@ export function convexCollectionOptions<T extends object = object>(
 								return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
 							} else if (hadLocally) {
 								// Serialization failed - log warning but don't return item
-								logger.warn("Document serialization returned null after snapshot update", {
+								logger.warn('Document serialization returned null after snapshot update', {
 									document,
 									collection,
 									hadFieldsAfter: !!docManager.getFields(document),
@@ -885,7 +885,7 @@ export function convexCollectionOptions<T extends object = object>(
 						const handleDeltaChange = (
 							bytes: ArrayBuffer,
 							document: string | undefined,
-							exists: boolean,
+							exists: boolean
 						): ChangeResult => {
 							if (!document) {
 								return null;
@@ -915,7 +915,7 @@ export function convexCollectionOptions<T extends object = object>(
 								return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
 							} else if (hadLocally) {
 								// Serialization failed - log warning but don't return item
-								logger.warn("Document serialization returned null after delta update", {
+								logger.warn('Document serialization returned null after delta update', {
 									document,
 									collection,
 									hadFieldsAfter: !!docManager.getFields(document),
@@ -946,7 +946,7 @@ export function convexCollectionOptions<T extends object = object>(
 								syncedDocuments.add(document);
 
 								const result =
-									type === "snapshot"
+									type === 'snapshot'
 										? handleSnapshotChange(bytes, document, exists ?? true)
 										: handleDeltaChange(bytes, document, exists ?? true);
 
@@ -972,18 +972,18 @@ export function convexCollectionOptions<T extends object = object>(
 								// Mark presence for synced documents - fire and forget but log errors
 								// Using void to explicitly acknowledge this is intentionally not awaited
 								// as presence marking is non-critical background work
-								const markPromises = Array.from(syncedDocuments).map(document => {
+								const markPromises = Array.from(syncedDocuments).map((document) => {
 									const vector = docManager.encodeStateVector(document);
 									return convexClient
 										.mutation(api.presence, {
 											document,
 											client: clientId,
-											action: "mark",
+											action: 'mark',
 											seq: newSeq,
 											vector: vector.buffer as ArrayBuffer,
 										})
 										.catch((error: Error) => {
-											logger.warn("Failed to mark presence", {
+											logger.warn('Failed to mark presence', {
 												document,
 												collection,
 												error: error.message,
@@ -999,22 +999,22 @@ export function convexCollectionOptions<T extends object = object>(
 							{ seq: cursor, limit: 1000 },
 							(response: any) => {
 								handleSubscriptionUpdate(response);
-							},
+							}
 						);
 
 						// Reconnection handling: when browser comes back online, resync local state
-						if (typeof globalThis.window !== "undefined") {
+						if (typeof globalThis.window !== 'undefined') {
 							let wasOffline = false;
 							const handleOffline = () => {
 								wasOffline = true;
-								logger.debug("Network offline detected", { collection });
+								logger.debug('Network offline detected', { collection });
 							};
 							const handleOnline = () => {
 								if (wasOffline) {
-									logger.info("Network online restored, running recovery sync", { collection });
+									logger.info('Network online restored, running recovery sync', { collection });
 									wasOffline = false;
 									recover(true).catch((error: Error) => {
-										logger.warn("Recovery sync failed after reconnection", {
+										logger.warn('Recovery sync failed after reconnection', {
 											collection,
 											error: error.message,
 										});
@@ -1022,14 +1022,14 @@ export function convexCollectionOptions<T extends object = object>(
 								}
 							};
 
-							globalThis.window.addEventListener("offline", handleOffline);
-							globalThis.window.addEventListener("online", handleOnline);
+							globalThis.window.addEventListener('offline', handleOffline);
+							globalThis.window.addEventListener('online', handleOnline);
 
 							// Store cleanup function in context for proper cleanup
 							const ctx = getContext(collection);
 							(ctx as any).cleanupReconnection = () => {
-								globalThis.window.removeEventListener("offline", handleOffline);
-								globalThis.window.removeEventListener("online", handleOnline);
+								globalThis.window.removeEventListener('offline', handleOffline);
+								globalThis.window.removeEventListener('online', handleOnline);
 							};
 						}
 
@@ -1037,7 +1037,7 @@ export function convexCollectionOptions<T extends object = object>(
 						// Subscription is background replication, not blocking
 					} catch (error) {
 						// Log error before marking ready to aid debugging sync failures
-						logger.error("Sync initialization failed", {
+						logger.error('Sync initialization failed', {
 							collection,
 							error: error instanceof Error ? error.message : String(error),
 							stack: error instanceof Error ? error.stack : undefined,
@@ -1068,7 +1068,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 type LazyCollectionConfig<T extends object> = Omit<
 	ConvexCollectionConfig<T>,
-	"persistence" | "material" | "validator"
+	'persistence' | 'material' | 'validator'
 >;
 
 export interface LazyCollection<T extends object> {
@@ -1116,32 +1116,32 @@ export interface CreateCollectionOptions<T extends object> {
  * Handles automatic client-side migrations when schema version changes.
  */
 function createVersionedCollection<T extends object>(
-	options: CreateCollectionOptions<T>,
+	options: CreateCollectionOptions<T>
 ): LazyCollection<T> {
 	const { schema: versionedSchema, clientMigrations, onMigrationError } = options;
 
 	let persistence: Persistence | null = null;
 	let resolvedConfig: LazyCollectionConfig<T> | null = null;
 	let material: Materialized<T> | undefined;
-	type Instance = LazyCollection<T>["get"] extends () => infer R ? R : never;
+	type Instance = LazyCollection<T>['get'] extends () => infer R ? R : never;
 	let instance: Instance | null = null;
 	let collectionName: string | null = null;
 
 	let paginationState: PaginationState = {
-		status: "idle",
+		status: 'idle',
 		count: 0,
 		cursor: null,
 	};
 	const listeners = new Set<(state: PaginationState) => void>();
 
 	const isPaginatedMaterial = (
-		mat: Materialized<T> | PaginatedMaterial<T> | undefined,
+		mat: Materialized<T> | PaginatedMaterial<T> | undefined
 	): mat is PaginatedMaterial<T> => {
-		return mat !== undefined && "pages" in mat && Array.isArray(mat.pages);
+		return mat !== undefined && 'pages' in mat && Array.isArray(mat.pages);
 	};
 
 	const convertPaginatedToMaterial = (paginated: PaginatedMaterial<T>): Materialized<T> => {
-		const allDocs = paginated.pages.flatMap(p => p.page);
+		const allDocs = paginated.pages.flatMap((p) => p.page);
 		return {
 			documents: allDocs,
 			count: allDocs.length,
@@ -1156,7 +1156,7 @@ function createVersionedCollection<T extends object>(
 
 				// Extract collection name from api.delta function path
 				const functionPath = getFunctionName(userConfig.api.delta);
-				collectionName = functionPath.split(":")[0] ?? "unknown";
+				collectionName = functionPath.split(':')[0] ?? 'unknown';
 
 				// Convert versioned config to legacy config format
 				resolvedConfig = {
@@ -1169,7 +1169,7 @@ function createVersionedCollection<T extends object>(
 				if (isPaginatedMaterial(mat)) {
 					material = convertPaginatedToMaterial(mat);
 					paginationState = {
-						status: mat.isDone ? "done" : "idle",
+						status: mat.isDone ? 'done' : 'idle',
 						count: mat.pages.reduce((sum, p) => sum + p.page.length, 0),
 						cursor: mat.cursor,
 					};
@@ -1193,7 +1193,7 @@ function createVersionedCollection<T extends object>(
 
 		get() {
 			if (!persistence || !resolvedConfig) {
-				throw new Error("Call init() before get()");
+				throw new Error('Call init() before get()');
 			}
 			if (!instance) {
 				const opts = convexCollectionOptions<T>({
@@ -1211,9 +1211,9 @@ function createVersionedCollection<T extends object>(
 		pagination: {
 			async load(): Promise<PaginatedPage<T> | null> {
 				if (!persistence || !resolvedConfig) {
-					throw new Error("Call init() before pagination.load()");
+					throw new Error('Call init() before pagination.load()');
 				}
-				if (paginationState.status === "done") {
+				if (paginationState.status === 'done') {
 					return null;
 				}
 				// TODO: Implement pagination for versioned collections
@@ -1223,7 +1223,7 @@ function createVersionedCollection<T extends object>(
 				return paginationState.status;
 			},
 			get canLoadMore() {
-				return paginationState.status !== "done" && paginationState.status !== "busy";
+				return paginationState.status !== 'done' && paginationState.status !== 'busy';
 			},
 			get count() {
 				return paginationState.count;

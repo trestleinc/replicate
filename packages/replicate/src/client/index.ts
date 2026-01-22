@@ -14,13 +14,13 @@ export {
 	type PresenceState,
 	type SessionInfo,
 	type SessionAPI,
-} from "$/client/collection";
+} from '$/client/collection';
 
-export type { DocFromSchema, TableNamesFromSchema, InferDoc } from "$/client/types";
+export type { DocFromSchema, TableNamesFromSchema, InferDoc } from '$/client/types';
 
-export { identity, type UserIdentity, type AnonymousPresenceConfig } from "$/client/identity";
+export { identity, type UserIdentity, type AnonymousPresenceConfig } from '$/client/identity';
 
-export { type Seq } from "$/client/services/seq";
+export { type Seq } from '$/client/services/seq';
 
 import {
 	NetworkError,
@@ -30,7 +30,7 @@ import {
 	ProseError,
 	CollectionNotReadyError,
 	NonRetriableError,
-} from "$/client/errors";
+} from '$/client/errors';
 
 export const errors = {
 	Network: NetworkError,
@@ -42,8 +42,8 @@ export const errors = {
 	NonRetriable: NonRetriableError,
 } as const;
 
-import { extract } from "$/client/merge";
-import { emptyProse } from "$/client/validators";
+import { extract } from '$/client/merge';
+import { emptyProse } from '$/client/validators';
 
 export const schema = {
 	prose: {
@@ -65,7 +65,7 @@ export {
 	type EncryptionManagerState,
 	type EncryptionManagerHooks,
 	type EncryptionPreference,
-} from "$/client/persistence/index";
+} from '$/client/persistence/index';
 
 // Migration types and functions
 export type {
@@ -84,7 +84,7 @@ export type {
 	SchemaMetadata,
 	RunMigrationsOptions,
 	MigrationResult,
-} from "$/client/migration";
+} from '$/client/migration';
 
 export {
 	runMigrations,
@@ -92,6 +92,6 @@ export {
 	setStoredSchemaVersion,
 	runAutoMigration,
 	createMigrationError,
-} from "$/client/migration";
+} from '$/client/migration';
 
-export { getLogger, type Logger } from "$/shared/logger";
+export { getLogger, type Logger } from '$/shared/logger';

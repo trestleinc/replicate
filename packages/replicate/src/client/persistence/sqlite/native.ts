@@ -1,5 +1,5 @@
-import { initSchema, createPersistenceFromExecutor, type Executor } from "./schema.js";
-import type { Persistence } from "../types.js";
+import { initSchema, createPersistenceFromExecutor, type Executor } from './schema.js';
+import type { Persistence } from '../types.js';
 
 interface OPSQLiteDatabase {
 	execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
@@ -21,7 +21,7 @@ class OPSqliteExecutor implements Executor {
 
 export async function createNativeSqlitePersistence(
 	db: OPSQLiteDatabase,
-	_dbName: string,
+	_dbName: string
 ): Promise<Persistence> {
 	const executor = new OPSqliteExecutor(db);
 	await initSchema(executor);

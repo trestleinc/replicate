@@ -18,9 +18,9 @@ interface ImportMeta {
  * Module declaration for y-leveldb.
  * The package has broken package.json exports, so we declare the module manually.
  */
-declare module "y-leveldb" {
-	import type { AbstractLevel } from "abstract-level";
-	import type * as Y from "yjs";
+declare module 'y-leveldb' {
+	import type { AbstractLevel } from 'abstract-level';
+	import type * as Y from 'yjs';
 
 	export class LeveldbPersistence {
 		constructor(location: string, options?: { level?: AbstractLevel<unknown, unknown> });

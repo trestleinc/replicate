@@ -4,7 +4,7 @@
  * Import from '@trestleinc/replicate/server' to use in Convex functions.
  */
 
-import { v } from "convex/values";
+import { v } from 'convex/values';
 import type {
 	GenericMutationCtx,
 	GenericQueryCtx,
@@ -13,8 +13,8 @@ import type {
 	QueryInitializer,
 	OrderedQuery,
 	Query,
-} from "convex/server";
-import { queryGeneric, mutationGeneric } from "convex/server";
+} from 'convex/server';
+import { queryGeneric, mutationGeneric } from 'convex/server';
 import {
 	type CompactionConfig,
 	parseDuration,
@@ -25,14 +25,14 @@ import {
 	successSeqValidator,
 	replicateTypeValidator,
 	sessionActionValidator,
-} from "$/shared";
+} from '$/shared';
 
 // ============================================================================
 // Re-exports
 // ============================================================================
 
-export { collection } from "$/server/collection";
-export type { CollectionOptions } from "$/server/collection";
+export { collection } from '$/server/collection';
+export type { CollectionOptions } from '$/server/collection';
 
 // Migration types
 export type {
@@ -45,10 +45,10 @@ export type {
 	SchemaDefinitionOptions,
 	VersionedSchema,
 	SchemaMigrations,
-} from "$/server/migration";
+} from '$/server/migration';
 
-import { table, prose } from "$/server/schema";
-import { define } from "$/server/migration";
+import { table, prose } from '$/server/schema';
+import { define } from '$/server/migration';
 
 export const schema = {
 	table,
@@ -79,7 +79,7 @@ type ViewQuery<TableInfo extends GenericTableInfo = GenericTableInfo> =
  */
 export type ViewFunction<TableInfo extends GenericTableInfo = GenericTableInfo> = (
 	ctx: GenericQueryCtx<GenericDataModel>,
-	query: QueryInitializer<TableInfo>,
+	query: QueryInitializer<TableInfo>
 ) => ViewQuery<TableInfo> | Promise<ViewQuery<TableInfo>>;
 
 // ============================================================================
@@ -97,7 +97,7 @@ export class Replicate<T extends object> {
 	constructor(
 		public component: any,
 		public collectionName: string,
-		compaction?: Partial<CompactionConfig>,
+		compaction?: Partial<CompactionConfig>
 	) {
 		this.threshold = compaction?.threshold ?? DEFAULT_THRESHOLD;
 		this.timeout = compaction?.timeout ? parseDuration(compaction.timeout) : DEFAULT_TIMEOUT_MS;
@@ -136,14 +136,14 @@ export class Replicate<T extends object> {
 				for (const docId of docIdSet) {
 					const doc = await ctx.db
 						.query(collection)
-						.withIndex("by_doc_id", (q: any) => q.eq("id", docId))
+						.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
 						.first();
 
 					if (!doc) continue;
 
 					if (opts?.view) {
 						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
-						const visible = await viewQuery.filter((q: any) => q.eq(q.field("id"), docId)).first();
+						const visible = await viewQuery.filter((q: any) => q.eq(q.field('id'), docId)).first();
 						if (visible) existingDocs.add(docId);
 					} else {
 						existingDocs.add(docId);
@@ -187,7 +187,7 @@ export class Replicate<T extends object> {
 			handler: async (ctx, args) => {
 				const query = opts?.view
 					? await opts.view(ctx, ctx.db.query(collection))
-					: ctx.db.query(collection).withIndex("by_timestamp").order("desc");
+					: ctx.db.query(collection).withIndex('by_timestamp').order('desc');
 
 				if (args.numItems !== undefined) {
 					const result = await query.paginate({
@@ -293,7 +293,7 @@ export class Replicate<T extends object> {
 
 				const existing = await ctx.db
 					.query(collection)
-					.withIndex("by_doc_id", q => q.eq("id", args.document))
+					.withIndex('by_doc_id', (q) => q.eq('id', args.document))
 					.first();
 
 				if (existing) {
@@ -345,7 +345,7 @@ export class Replicate<T extends object> {
 
 				const existing = await ctx.db
 					.query(collection)
-					.withIndex("by_doc_id", q => q.eq("id", args.document))
+					.withIndex('by_doc_id', (q) => q.eq('id', args.document))
 					.first();
 
 				if (existing) {
@@ -427,14 +427,14 @@ export class Replicate<T extends object> {
 			handler: async (ctx, args) => {
 				const { document, bytes, material, type } = args;
 
-				if (type === "delete") {
+				if (type === 'delete') {
 					if (opts?.evalRemove) {
 						await opts.evalRemove(ctx, document);
 					}
 
 					const existing = await ctx.db
 						.query(collection)
-						.withIndex("by_doc_id", q => q.eq("id", document))
+						.withIndex('by_doc_id', (q) => q.eq('id', document))
 						.first();
 
 					if (existing) {
@@ -462,7 +462,7 @@ export class Replicate<T extends object> {
 					await opts.evalWrite(ctx, doc);
 				}
 
-				if (type === "insert") {
+				if (type === 'insert') {
 					await ctx.db.insert(collection, {
 						id: document,
 						...(material as object),
@@ -487,7 +487,7 @@ export class Replicate<T extends object> {
 
 				const existing = await ctx.db
 					.query(collection)
-					.withIndex("by_doc_id", q => q.eq("id", document))
+					.withIndex('by_doc_id', (q) => q.eq('id', document))
 					.first();
 
 				if (existing) {
@@ -519,7 +519,7 @@ export class Replicate<T extends object> {
 		view?: ViewFunction;
 		evalSession?: (
 			ctx: GenericMutationCtx<GenericDataModel>,
-			client: string,
+			client: string
 		) => void | Promise<void>;
 	}) {
 		const component = this.component;
@@ -542,7 +542,7 @@ export class Replicate<T extends object> {
 				if (opts?.view) {
 					const viewQuery = await opts.view(ctx as any, ctx.db.query(collection));
 					const canAccess = await viewQuery
-						.filter((q: any) => q.eq(q.field("id"), args.document))
+						.filter((q: any) => q.eq(q.field('id'), args.document))
 						.first();
 					if (!canAccess) {
 						// Silently return for unauthorized documents (e.g., stale cached docs after logout)
@@ -556,7 +556,7 @@ export class Replicate<T extends object> {
 
 				const { action, document, client, user, profile, cursor, interval, vector, seq } = args;
 
-				if (action === "mark") {
+				if (action === 'mark') {
 					await ctx.runMutation(component.mutations.mark, {
 						collection,
 						document,
@@ -567,7 +567,7 @@ export class Replicate<T extends object> {
 					return null;
 				}
 
-				if (action === "signal") {
+				if (action === 'signal') {
 					if (seq !== undefined || vector !== undefined) {
 						await ctx.runMutation(component.mutations.mark, {
 							collection,
@@ -582,7 +582,7 @@ export class Replicate<T extends object> {
 						collection,
 						document,
 						client,
-						action: "join",
+						action: 'join',
 						user,
 						profile,
 						cursor,
@@ -592,7 +592,7 @@ export class Replicate<T extends object> {
 					return null;
 				}
 
-				const presenceAction = action === "join" || action === "leave" ? action : "join";
+				const presenceAction = action === 'join' || action === 'leave' ? action : 'join';
 				await ctx.runMutation(component.mutations.presence, {
 					collection,
 					document,
@@ -637,7 +637,7 @@ export class Replicate<T extends object> {
 						document: args.document,
 						vector: args.vector,
 					});
-					return { mode: "recovery" as const, ...recoveryResult };
+					return { mode: 'recovery' as const, ...recoveryResult };
 				}
 
 				const result = await ctx.runQuery(component.mutations.stream, {
@@ -657,14 +657,14 @@ export class Replicate<T extends object> {
 				for (const docId of docIdSet) {
 					const doc = await ctx.db
 						.query(collection)
-						.withIndex("by_doc_id", (q: any) => q.eq("id", docId))
+						.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
 						.first();
 
 					if (!doc) continue;
 
 					if (opts?.view) {
 						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
-						const visible = await viewQuery.filter((q: any) => q.eq(q.field("id"), docId)).first();
+						const visible = await viewQuery.filter((q: any) => q.eq(q.field('id'), docId)).first();
 						if (visible) existingDocs.add(docId);
 					} else {
 						existingDocs.add(docId);
@@ -682,7 +682,7 @@ export class Replicate<T extends object> {
 					exists: existingDocs.has(c.document),
 				}));
 
-				const enrichedResult = { mode: "stream" as const, ...result, changes: enrichedChanges };
+				const enrichedResult = { mode: 'stream' as const, ...result, changes: enrichedChanges };
 
 				if (opts?.onDelta) {
 					await opts.onDelta(ctx, enrichedResult);
@@ -708,7 +708,7 @@ export class Replicate<T extends object> {
 				if (opts?.view) {
 					const viewQuery = await opts.view(ctx, ctx.db.query(collection));
 					const canAccess = await viewQuery
-						.filter((q: any) => q.eq(q.field("id"), args.document))
+						.filter((q: any) => q.eq(q.field('id'), args.document))
 						.first();
 					if (!canAccess) {
 						// Return empty sessions for unauthorized documents

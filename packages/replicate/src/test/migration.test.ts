@@ -5,20 +5,20 @@
  * Each test verifies actual database state after operations.
  */
 
-import { test, expect } from "vitest";
-import { v } from "convex/values";
-import { define } from "$/server/migration";
+import { test, expect } from 'vitest';
+import { v } from 'convex/values';
+import { define } from '$/server/migration';
 import {
 	runMigrations,
 	getStoredSchemaVersion,
 	type MigrationErrorHandler,
 	type ClientMigrationFn,
-} from "$/client/migration";
+} from '$/client/migration';
 import {
 	createTestDatabase,
 	setupDatabaseAtVersion,
 	createTestTable,
-} from "./helpers/test-database";
+} from './helpers/test-database';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Schemas
@@ -51,12 +51,12 @@ const v3Schema = v.object({
 // Test 1: Fresh Database
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("migration_freshDatabase_storesVersionWithoutAlteringSchema", async () => {
+test('migration_freshDatabase_storesVersionWithoutAlteringSchema', async () => {
 	// Create versioned schema at v2
 	const taskSchema = define({
 		version: 2,
 		shape: v2Schema,
-		defaults: { priority: "medium" },
+		defaults: { priority: 'medium' },
 		history: { 1: v1Schema },
 	});
 
@@ -65,7 +65,7 @@ test("migration_freshDatabase_storesVersionWithoutAlteringSchema", async () => {
 
 	// Run migrations
 	const result = await runMigrations({
-		collection: "tasks",
+		collection: 'tasks',
 		schema: taskSchema,
 		db,
 	});
@@ -77,13 +77,13 @@ test("migration_freshDatabase_storesVersionWithoutAlteringSchema", async () => {
 	expect(result.diff).toBe(null);
 
 	// Verify: __replicate_schema table was created with version=2
-	expect(db.hasTable("__replicate_schema")).toBe(true);
-	const storedVersion = await getStoredSchemaVersion(db, "tasks");
+	expect(db.hasTable('__replicate_schema')).toBe(true);
+	const storedVersion = await getStoredSchemaVersion(db, 'tasks');
 	expect(storedVersion).toBe(2);
 
 	// Verify: No ALTER TABLE statements were executed
 	const sqlStatements = db.getExecutedSQL();
-	const alterStatements = sqlStatements.filter(sql => sql.includes("ALTER TABLE"));
+	const alterStatements = sqlStatements.filter((sql) => sql.includes('ALTER TABLE'));
 	expect(alterStatements).toHaveLength(0);
 });
 
@@ -91,30 +91,30 @@ test("migration_freshDatabase_storesVersionWithoutAlteringSchema", async () => {
 // Test 2: v1 → v2 Migration
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("migration_v1ToV2_addsColumnWithDefault", async () => {
+test('migration_v1ToV2_addsColumnWithDefault', async () => {
 	// Create versioned schema at v2
 	const taskSchema = define({
 		version: 2,
 		shape: v2Schema,
-		defaults: { priority: "medium" },
+		defaults: { priority: 'medium' },
 		history: { 1: v1Schema },
 	});
 
 	// Create database at v1 with existing table
 	const db = createTestDatabase();
-	await createTestTable(db, "tasks", {
-		id: "TEXT",
-		title: "TEXT",
-		completed: "INTEGER",
+	await createTestTable(db, 'tasks', {
+		id: 'TEXT',
+		title: 'TEXT',
+		completed: 'INTEGER',
 	});
 
 	// Manually set schema version to 1
-	await setupDatabaseAtVersion(db, "tasks", 1);
+	await setupDatabaseAtVersion(db, 'tasks', 1);
 	db.clearSQLHistory(); // Clear setup SQL
 
 	// Run migrations
 	const result = await runMigrations({
-		collection: "tasks",
+		collection: 'tasks',
 		schema: taskSchema,
 		db,
 	});
@@ -127,30 +127,30 @@ test("migration_v1ToV2_addsColumnWithDefault", async () => {
 	// Verify: Diff contains add_column for priority
 	expect(result.diff).not.toBe(null);
 	expect(result.diff!.operations).toContainEqual({
-		type: "add_column",
-		column: "priority",
-		fieldType: "string",
-		defaultValue: "medium",
+		type: 'add_column',
+		column: 'priority',
+		fieldType: 'string',
+		defaultValue: 'medium',
 	});
 
 	// Verify: Generated SQL includes ADD COLUMN
 	expect(result.diff!.generatedSQL).toContainEqual(
-		expect.stringContaining('ADD COLUMN "priority" TEXT DEFAULT'),
+		expect.stringContaining('ADD COLUMN "priority" TEXT DEFAULT')
 	);
 
 	// Verify: ALTER TABLE was executed
 	const sqlStatements = db.getExecutedSQL();
-	const alterStatements = sqlStatements.filter(sql => sql.includes("ALTER TABLE"));
+	const alterStatements = sqlStatements.filter((sql) => sql.includes('ALTER TABLE'));
 	expect(alterStatements.length).toBeGreaterThan(0);
-	expect(alterStatements[0]).toContain("ADD COLUMN");
-	expect(alterStatements[0]).toContain("priority");
+	expect(alterStatements[0]).toContain('ADD COLUMN');
+	expect(alterStatements[0]).toContain('priority');
 
 	// Verify: Table now has priority column
-	const columns = db.getTableColumns("tasks");
-	expect(columns).toContain("priority");
+	const columns = db.getTableColumns('tasks');
+	expect(columns).toContain('priority');
 
 	// Verify: Schema version updated to 2
-	const storedVersion = await getStoredSchemaVersion(db, "tasks");
+	const storedVersion = await getStoredSchemaVersion(db, 'tasks');
 	expect(storedVersion).toBe(2);
 
 	// Verify: isBackwardsCompatible since we're adding with default
@@ -161,12 +161,12 @@ test("migration_v1ToV2_addsColumnWithDefault", async () => {
 // Test 3: v1 → v3 Multi-Step Migration
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("migration_v1ToV3_computesDiffAcrossMultipleVersions", async () => {
+test('migration_v1ToV3_computesDiffAcrossMultipleVersions', async () => {
 	// Create versioned schema at v3 with full history
 	const taskSchema = define({
 		version: 3,
 		shape: v3Schema,
-		defaults: { priority: "medium", status: "todo" },
+		defaults: { priority: 'medium', status: 'todo' },
 		history: {
 			1: v1Schema,
 			2: v2Schema,
@@ -175,17 +175,17 @@ test("migration_v1ToV3_computesDiffAcrossMultipleVersions", async () => {
 
 	// Create database at v1
 	const db = createTestDatabase();
-	await createTestTable(db, "tasks", {
-		id: "TEXT",
-		title: "TEXT",
-		completed: "INTEGER",
+	await createTestTable(db, 'tasks', {
+		id: 'TEXT',
+		title: 'TEXT',
+		completed: 'INTEGER',
 	});
-	await setupDatabaseAtVersion(db, "tasks", 1);
+	await setupDatabaseAtVersion(db, 'tasks', 1);
 	db.clearSQLHistory();
 
 	// Run migrations (v1 → v3, skipping v2)
 	const result = await runMigrations({
-		collection: "tasks",
+		collection: 'tasks',
 		schema: taskSchema,
 		db,
 	});
@@ -200,49 +200,49 @@ test("migration_v1ToV3_computesDiffAcrossMultipleVersions", async () => {
 	const ops = result.diff!.operations;
 
 	// Should have: add(priority), add(status), remove(completed)
-	const addOps = ops.filter(op => op.type === "add_column");
-	const removeOps = ops.filter(op => op.type === "remove_column");
+	const addOps = ops.filter((op) => op.type === 'add_column');
+	const removeOps = ops.filter((op) => op.type === 'remove_column');
 
 	expect(addOps).toContainEqual(
-		expect.objectContaining({ type: "add_column", column: "priority" }),
+		expect.objectContaining({ type: 'add_column', column: 'priority' })
 	);
-	expect(addOps).toContainEqual(expect.objectContaining({ type: "add_column", column: "status" }));
+	expect(addOps).toContainEqual(expect.objectContaining({ type: 'add_column', column: 'status' }));
 	expect(removeOps).toContainEqual(
-		expect.objectContaining({ type: "remove_column", column: "completed" }),
+		expect.objectContaining({ type: 'remove_column', column: 'completed' })
 	);
 
 	// Verify: Generated SQL includes both ADD and DROP
 	const sql = result.diff!.generatedSQL;
-	expect(sql.some(s => s.includes("ADD COLUMN") && s.includes("priority"))).toBe(true);
-	expect(sql.some(s => s.includes("ADD COLUMN") && s.includes("status"))).toBe(true);
-	expect(sql.some(s => s.includes("DROP COLUMN") && s.includes("completed"))).toBe(true);
+	expect(sql.some((s) => s.includes('ADD COLUMN') && s.includes('priority'))).toBe(true);
+	expect(sql.some((s) => s.includes('ADD COLUMN') && s.includes('status'))).toBe(true);
+	expect(sql.some((s) => s.includes('DROP COLUMN') && s.includes('completed'))).toBe(true);
 
 	// Verify: isBackwardsCompatible = false (because of remove)
 	expect(result.diff!.isBackwardsCompatible).toBe(false);
 
 	// Verify: Table has new columns
-	const columns = db.getTableColumns("tasks");
-	expect(columns).toContain("priority");
-	expect(columns).toContain("status");
-	expect(columns).not.toContain("completed");
+	const columns = db.getTableColumns('tasks');
+	expect(columns).toContain('priority');
+	expect(columns).toContain('status');
+	expect(columns).not.toContain('completed');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 4: Error Recovery
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("migration_sqlError_callsErrorHandlerAndRecovers", async () => {
+test('migration_sqlError_callsErrorHandlerAndRecovers', async () => {
 	// Create versioned schema
 	const taskSchema = define({
 		version: 2,
 		shape: v2Schema,
-		defaults: { priority: "medium" },
+		defaults: { priority: 'medium' },
 		history: { 1: v1Schema },
 	});
 
 	// Create database at v1 (but WITHOUT the tasks table - will cause ALTER error)
 	const db = createTestDatabase();
-	await setupDatabaseAtVersion(db, "tasks", 1);
+	await setupDatabaseAtVersion(db, 'tasks', 1);
 
 	// Set up tables for recovery context
 	await db.exec(`CREATE TABLE deltas (id TEXT, collection TEXT)`);
@@ -252,18 +252,18 @@ test("migration_sqlError_callsErrorHandlerAndRecovers", async () => {
 	db.clearSQLHistory();
 
 	// Inject error to simulate SQL failure
-	db.injectError(new Error("no such table: tasks"));
+	db.injectError(new Error('no such table: tasks'));
 
 	// Track error handler calls
 	const errorHandlerCalls: Array<{ error: unknown; context: unknown }> = [];
 	const onError: MigrationErrorHandler = async (error, context) => {
 		errorHandlerCalls.push({ error, context });
-		return { action: "reset" };
+		return { action: 'reset' };
 	};
 
 	// Run migrations
 	const result = await runMigrations({
-		collection: "tasks",
+		collection: 'tasks',
 		schema: taskSchema,
 		db,
 		onError,
@@ -272,7 +272,7 @@ test("migration_sqlError_callsErrorHandlerAndRecovers", async () => {
 	// Verify: Error handler was called
 	expect(errorHandlerCalls).toHaveLength(1);
 	expect(errorHandlerCalls[0].error).toMatchObject({
-		code: "SQLITE_ERROR",
+		code: 'SQLITE_ERROR',
 		fromVersion: 1,
 		toVersion: 2,
 	});
@@ -288,10 +288,10 @@ test("migration_sqlError_callsErrorHandlerAndRecovers", async () => {
 	// Verify: Result shows migration happened (via reset) with error
 	expect(result.migrated).toBe(true);
 	expect(result.error).toBeDefined();
-	expect(result.error!.code).toBe("SQLITE_ERROR");
+	expect(result.error!.code).toBe('SQLITE_ERROR');
 
 	// Verify: Schema version updated to target despite error (reset action)
-	const storedVersion = await getStoredSchemaVersion(db, "tasks");
+	const storedVersion = await getStoredSchemaVersion(db, 'tasks');
 	expect(storedVersion).toBe(2);
 });
 
@@ -299,23 +299,23 @@ test("migration_sqlError_callsErrorHandlerAndRecovers", async () => {
 // Test 5: Custom Migration
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("migration_customMigration_receivesContextAndRuns", async () => {
+test('migration_customMigration_receivesContextAndRuns', async () => {
 	// Create versioned schema
 	const taskSchema = define({
 		version: 2,
 		shape: v2Schema,
-		defaults: { priority: "medium" },
+		defaults: { priority: 'medium' },
 		history: { 1: v1Schema },
 	});
 
 	// Create database at v1 with some documents
 	const db = createTestDatabase();
-	await createTestTable(db, "tasks", {
-		id: "TEXT",
-		title: "TEXT",
-		completed: "INTEGER",
+	await createTestTable(db, 'tasks', {
+		id: 'TEXT',
+		title: 'TEXT',
+		completed: 'INTEGER',
 	});
-	await setupDatabaseAtVersion(db, "tasks", 1);
+	await setupDatabaseAtVersion(db, 'tasks', 1);
 
 	// Create kv table for custom migration marker
 	await db.exec(`CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT)`);
@@ -332,8 +332,8 @@ test("migration_customMigration_receivesContextAndRuns", async () => {
 
 		// Set a marker to prove custom migration ran
 		await database.run(`INSERT INTO kv (key, value) VALUES (?, ?)`, [
-			"custom_migration_v2",
-			"completed",
+			'custom_migration_v2',
+			'completed',
 		]);
 
 		// Run custom SQL instead of auto-generated
@@ -342,11 +342,11 @@ test("migration_customMigration_receivesContextAndRuns", async () => {
 
 	// Run migrations with custom migration and document list
 	const result = await runMigrations({
-		collection: "tasks",
+		collection: 'tasks',
 		schema: taskSchema,
 		db,
 		clientMigrations: { 2: customMigration },
-		listDocuments: async () => ["doc-1", "doc-2", "doc-3"],
+		listDocuments: async () => ['doc-1', 'doc-2', 'doc-3'],
 	});
 
 	// Verify: Custom migration was called
@@ -355,10 +355,10 @@ test("migration_customMigration_receivesContextAndRuns", async () => {
 	// Verify: Context had dirtyDocs with 3 entries
 	expect(receivedContext).not.toBe(null);
 	expect(receivedContext!.dirtyDocs).toHaveLength(3);
-	expect((receivedContext!.dirtyDocs as Array<{ id: string }>).map(d => d.id)).toEqual([
-		"doc-1",
-		"doc-2",
-		"doc-3",
+	expect((receivedContext!.dirtyDocs as Array<{ id: string }>).map((d) => d.id)).toEqual([
+		'doc-1',
+		'doc-2',
+		'doc-3',
 	]);
 
 	// Verify: Context had the schema diff
@@ -369,9 +369,9 @@ test("migration_customMigration_receivesContextAndRuns", async () => {
 
 	// Verify: Marker was set (custom migration ran)
 	const marker = await db.get<{ value: string }>(`SELECT value FROM kv WHERE key = ?`, [
-		"custom_migration_v2",
+		'custom_migration_v2',
 	]);
-	expect(marker?.value).toBe("completed");
+	expect(marker?.value).toBe('completed');
 
 	// Verify: Migration result
 	expect(result.migrated).toBe(true);
@@ -379,12 +379,12 @@ test("migration_customMigration_receivesContextAndRuns", async () => {
 	expect(result.toVersion).toBe(2);
 
 	// Verify: Table has priority column (from custom migration)
-	const columns = db.getTableColumns("tasks");
-	expect(columns).toContain("priority");
+	const columns = db.getTableColumns('tasks');
+	expect(columns).toContain('priority');
 
 	// Verify: Auto-generated SQL was NOT in the executed SQL
 	// (Custom migration used different DEFAULT value)
 	const sqlStatements = db.getExecutedSQL();
-	const autoGenSQL = sqlStatements.filter(sql => sql.includes("DEFAULT 'medium'"));
+	const autoGenSQL = sqlStatements.filter((sql) => sql.includes("DEFAULT 'medium'"));
 	expect(autoGenSQL).toHaveLength(0);
 });

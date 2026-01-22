@@ -3,7 +3,7 @@
  * Tracks executed SQL and simulates table structure.
  */
 
-import type { MigrationDatabase } from "$/client/persistence/types";
+import type { MigrationDatabase } from '$/client/persistence/types';
 
 interface TableSchema {
 	columns: Map<string, string>; // column name -> type
@@ -42,7 +42,7 @@ export function createTestDatabase(): TestDatabase {
 
 		const name = match[1];
 		const columns = new Map<string, string>();
-		const columnDefs = match[2].split(",");
+		const columnDefs = match[2].split(',');
 
 		for (const def of columnDefs) {
 			const colMatch = def.trim().match(/^"?(\w+)"?\s+(\w+)/);
@@ -55,18 +55,18 @@ export function createTestDatabase(): TestDatabase {
 	}
 
 	function parseAlterTable(
-		sql: string,
-	): { table: string; action: "add" | "drop"; column: string; type?: string } | null {
+		sql: string
+	): { table: string; action: 'add' | 'drop'; column: string; type?: string } | null {
 		const addMatch = sql.match(
-			/ALTER TABLE\s+"?(\w+)"?\s+ADD COLUMN\s+"?(\w+)"?\s+(\w+)(?:\s+DEFAULT\s+(.+))?/i,
+			/ALTER TABLE\s+"?(\w+)"?\s+ADD COLUMN\s+"?(\w+)"?\s+(\w+)(?:\s+DEFAULT\s+(.+))?/i
 		);
 		if (addMatch) {
-			return { table: addMatch[1], action: "add", column: addMatch[2], type: addMatch[3] };
+			return { table: addMatch[1], action: 'add', column: addMatch[2], type: addMatch[3] };
 		}
 
 		const dropMatch = sql.match(/ALTER TABLE\s+"?(\w+)"?\s+DROP COLUMN\s+"?(\w+)"?/i);
 		if (dropMatch) {
-			return { table: dropMatch[1], action: "drop", column: dropMatch[2] };
+			return { table: dropMatch[1], action: 'drop', column: dropMatch[2] };
 		}
 
 		return null;
@@ -74,16 +74,16 @@ export function createTestDatabase(): TestDatabase {
 
 	function parseInsert(
 		sql: string,
-		params: unknown[] = [],
+		params: unknown[] = []
 	): { table: string; row: Record<string, unknown>; replace: boolean; keyColumn?: string } | null {
 		const replaceMatch = sql.match(/INSERT\s+OR\s+REPLACE/i);
 		const match = sql.match(
-			/INSERT(?:\s+OR\s+REPLACE)?\s+INTO\s+"?(\w+)"?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i,
+			/INSERT(?:\s+OR\s+REPLACE)?\s+INTO\s+"?(\w+)"?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i
 		);
 		if (!match) return null;
 
 		const table = match[1];
-		const columns = match[2].split(",").map(c => c.trim().replace(/"/g, ""));
+		const columns = match[2].split(',').map((c) => c.trim().replace(/"/g, ''));
 		const row: Record<string, unknown> = {};
 
 		columns.forEach((col, i) => {
@@ -96,7 +96,7 @@ export function createTestDatabase(): TestDatabase {
 
 	function parseSelect(
 		sql: string,
-		params: unknown[] = [],
+		params: unknown[] = []
 	): { table: string; where?: { column: string; value: unknown } } | null {
 		const match = sql.match(/SELECT\s+.+\s+FROM\s+"?(\w+)"?(?:\s+WHERE\s+(\w+)\s*=\s*\?)?/i);
 		if (!match) return null;
@@ -114,7 +114,7 @@ export function createTestDatabase(): TestDatabase {
 
 	function parseDelete(
 		sql: string,
-		params: unknown[] = [],
+		params: unknown[] = []
 	): { table: string; where?: { column: string; value: unknown } } | null {
 		const match = sql.match(/DELETE\s+FROM\s+"?(\w+)"?(?:\s+WHERE\s+(\w+)\s+LIKE\s+\?)?/i);
 		if (!match) return null;
@@ -144,7 +144,7 @@ export function createTestDatabase(): TestDatabase {
 						// Remove existing row with same key before inserting
 						const keyValue = insert.row[insert.keyColumn];
 						const existingIndex = table.rows.findIndex(
-							r => (r as Record<string, unknown>)[insert.keyColumn!] === keyValue,
+							(r) => (r as Record<string, unknown>)[insert.keyColumn!] === keyValue
 						);
 						if (existingIndex >= 0) {
 							table.rows.splice(existingIndex, 1);
@@ -160,10 +160,10 @@ export function createTestDatabase(): TestDatabase {
 			if (del) {
 				const table = tables.get(del.table);
 				if (table && del.where) {
-					const pattern = String(del.where.value).replace(/%/g, ".*");
+					const pattern = String(del.where.value).replace(/%/g, '.*');
 					const regex = new RegExp(`^${pattern}$`);
-					table.rows = table.rows.filter(row => {
-						const val = String((row as Record<string, unknown>)[del.where!.column] ?? "");
+					table.rows = table.rows.filter((row) => {
+						const val = String((row as Record<string, unknown>)[del.where!.column] ?? '');
 						return !regex.test(val);
 					});
 				}
@@ -196,9 +196,9 @@ export function createTestDatabase(): TestDatabase {
 				if (!table) {
 					throw new Error(`Table ${alter.table} does not exist`);
 				}
-				if (alter.action === "add") {
-					table.columns.set(alter.column, alter.type ?? "TEXT");
-				} else if (alter.action === "drop") {
+				if (alter.action === 'add') {
+					table.columns.set(alter.column, alter.type ?? 'TEXT');
+				} else if (alter.action === 'drop') {
 					table.columns.delete(alter.column);
 				}
 				return;
@@ -216,7 +216,7 @@ export function createTestDatabase(): TestDatabase {
 
 			if (select.where) {
 				const row = table.rows.find(
-					r => (r as Record<string, unknown>)[select.where!.column] === select.where!.value,
+					(r) => (r as Record<string, unknown>)[select.where!.column] === select.where!.value
 				);
 				return row as T | undefined;
 			}
@@ -235,7 +235,7 @@ export function createTestDatabase(): TestDatabase {
 
 			if (select.where) {
 				return table.rows.filter(
-					r => (r as Record<string, unknown>)[select.where!.column] === select.where!.value,
+					(r) => (r as Record<string, unknown>)[select.where!.column] === select.where!.value
 				) as T[];
 			}
 
@@ -278,7 +278,7 @@ export function createTestDatabase(): TestDatabase {
 export async function setupDatabaseAtVersion(
 	db: TestDatabase,
 	collection: string,
-	version: number,
+	version: number
 ): Promise<void> {
 	await db.exec(`
 		CREATE TABLE IF NOT EXISTS __replicate_schema (
@@ -289,7 +289,7 @@ export async function setupDatabaseAtVersion(
 	`);
 	await db.run(
 		`INSERT OR REPLACE INTO __replicate_schema (collection, version, migratedAt) VALUES (?, ?, ?)`,
-		[collection, version, Date.now()],
+		[collection, version, Date.now()]
 	);
 }
 
@@ -299,10 +299,10 @@ export async function setupDatabaseAtVersion(
 export async function createTestTable(
 	db: TestDatabase,
 	tableName: string,
-	columns: Record<string, string>,
+	columns: Record<string, string>
 ): Promise<void> {
 	const columnDefs = Object.entries(columns)
 		.map(([name, type]) => `"${name}" ${type}`)
-		.join(", ");
+		.join(', ');
 	await db.exec(`CREATE TABLE "${tableName}" (${columnDefs})`);
 }

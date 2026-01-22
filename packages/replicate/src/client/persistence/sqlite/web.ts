@@ -1,5 +1,5 @@
-import { createPersistenceFromExecutor, type Executor } from "./schema.js";
-import type { Persistence } from "../types.js";
+import { createPersistenceFromExecutor, type Executor } from './schema.js';
+import type { Persistence } from '../types.js';
 
 const INIT = 0;
 const EXECUTE = 1;
@@ -42,19 +42,19 @@ class WorkerExecutor implements Executor {
 			if (ok) {
 				handler.resolve(rows ?? []);
 			} else {
-				handler.reject(new Error(error ?? "Unknown worker error"));
+				handler.reject(new Error(error ?? 'Unknown worker error'));
 			}
 		};
 
 		// Handle worker errors - reject all pending requests
 		this.worker.onerror = (event: ErrorEvent) => {
-			const error = new Error(`Worker error: ${event.message || "Unknown error"}`);
+			const error = new Error(`Worker error: ${event.message || 'Unknown error'}`);
 			this.rejectAllPending(error);
 		};
 
 		// Handle worker message errors
 		this.worker.onmessageerror = () => {
-			const error = new Error("Worker message deserialization failed");
+			const error = new Error('Worker message deserialization failed');
 			this.rejectAllPending(error);
 		};
 	}
@@ -70,7 +70,7 @@ class WorkerExecutor implements Executor {
 	private send(type: number, payload: Partial<Request> = {}): Promise<Record<string, unknown>[]> {
 		return new Promise((resolve, reject) => {
 			if (this.terminated) {
-				reject(new Error("Worker has been terminated"));
+				reject(new Error('Worker has been terminated'));
 				return;
 			}
 			const id = this.nextId++;
@@ -90,7 +90,7 @@ class WorkerExecutor implements Executor {
 
 	close(): void {
 		for (const [, handler] of this.pending) {
-			handler.reject(new Error("Worker terminated"));
+			handler.reject(new Error('Worker terminated'));
 		}
 		this.pending.clear();
 		this.send(CLOSE).catch(() => {});
@@ -106,7 +106,7 @@ export interface WebSqliteOptions {
 export async function createWebSqlitePersistence(options: WebSqliteOptions): Promise<Persistence> {
 	const { name, worker } = options;
 
-	const resolvedWorker = typeof worker === "function" ? await worker() : worker;
+	const resolvedWorker = typeof worker === 'function' ? await worker() : worker;
 	const executor = new WorkerExecutor(resolvedWorker);
 
 	try {

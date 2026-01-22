@@ -1,10 +1,10 @@
-import * as Y from "yjs";
+import * as Y from 'yjs';
 import type {
 	Persistence,
 	PersistenceProvider,
 	KeyValueStore,
 	MigrationDatabase,
-} from "../types.js";
+} from '../types.js';
 
 export interface Executor {
 	execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
@@ -45,20 +45,20 @@ class SqliteKeyValueStore implements KeyValueStore {
 	constructor(private executor: Executor) {}
 
 	async get<T>(key: string): Promise<T | undefined> {
-		const result = await this.executor.execute("SELECT value FROM kv WHERE key = ?", [key]);
+		const result = await this.executor.execute('SELECT value FROM kv WHERE key = ?', [key]);
 		if (result.rows.length === 0) return undefined;
 		return JSON.parse(result.rows[0].value as string) as T;
 	}
 
 	async set<T>(key: string, value: T): Promise<void> {
-		await this.executor.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", [
+		await this.executor.execute('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', [
 			key,
 			JSON.stringify(value),
 		]);
 	}
 
 	async del(key: string): Promise<void> {
-		await this.executor.execute("DELETE FROM kv WHERE key = ?", [key]);
+		await this.executor.execute('DELETE FROM kv WHERE key = ?', [key]);
 	}
 }
 
@@ -98,23 +98,23 @@ class SqlitePersistenceProvider implements PersistenceProvider {
 		private executor: Executor,
 		private collection: string,
 		private ydoc: Y.Doc,
-		private onError?: (error: Error) => void,
+		private onError?: (error: Error) => void
 	) {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== "sqlite") {
+			if (origin !== 'sqlite') {
 				const writePromise = this.saveUpdate(update).catch((error: Error) => {
 					this.lastError = error;
 					this.onError?.(error);
 				});
 				this.pendingWrites.push(writePromise);
 				writePromise.finally(() => {
-					this.pendingWrites = this.pendingWrites.filter(p => p !== writePromise);
+					this.pendingWrites = this.pendingWrites.filter((p) => p !== writePromise);
 				});
 			}
 		};
-		this.ydoc.on("update", this.updateHandler);
+		this.ydoc.on('update', this.updateHandler);
 	}
 
 	async flush(): Promise<void> {
@@ -128,37 +128,37 @@ class SqlitePersistenceProvider implements PersistenceProvider {
 
 	private async loadState(): Promise<void> {
 		const snapshotResult = await this.executor.execute(
-			"SELECT data FROM snapshots WHERE collection = ?",
-			[this.collection],
+			'SELECT data FROM snapshots WHERE collection = ?',
+			[this.collection]
 		);
 
 		if (snapshotResult.rows.length > 0) {
 			const raw = snapshotResult.rows[0].data;
 			const snapshotData = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer);
-			Y.applyUpdate(this.ydoc, snapshotData, "sqlite");
+			Y.applyUpdate(this.ydoc, snapshotData, 'sqlite');
 		}
 
 		const deltasResult = await this.executor.execute(
-			"SELECT data FROM deltas WHERE collection = ? ORDER BY id ASC",
-			[this.collection],
+			'SELECT data FROM deltas WHERE collection = ? ORDER BY id ASC',
+			[this.collection]
 		);
 
 		for (const row of deltasResult.rows) {
 			const raw = row.data;
 			const updateData = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer);
-			Y.applyUpdate(this.ydoc, updateData, "sqlite");
+			Y.applyUpdate(this.ydoc, updateData, 'sqlite');
 		}
 	}
 
 	private async saveUpdate(update: Uint8Array): Promise<void> {
-		await this.executor.execute("INSERT INTO deltas (collection, data) VALUES (?, ?)", [
+		await this.executor.execute('INSERT INTO deltas (collection, data) VALUES (?, ?)', [
 			this.collection,
 			update,
 		]);
 	}
 
 	destroy(): void {
-		this.ydoc.off("update", this.updateHandler);
+		this.ydoc.off('update', this.updateHandler);
 	}
 }
 
@@ -173,12 +173,12 @@ export function createPersistenceFromExecutor(executor: Executor): Persistence {
           UNION
           SELECT collection FROM deltas WHERE collection LIKE ?
         )`,
-				[`${prefix}:%`, `${prefix}:%`],
+				[`${prefix}:%`, `${prefix}:%`]
 			);
-			return result.rows.map(row => {
+			return result.rows.map((row) => {
 				const collection = row.collection as string;
-				const parts = collection.split(":");
-				return parts.slice(1).join(":");
+				const parts = collection.split(':');
+				return parts.slice(1).join(':');
 			});
 		},
 		kv: new SqliteKeyValueStore(executor),

@@ -4,7 +4,7 @@ import type {
 	TableNamesInDataModel,
 	DocumentByName,
 	WithOptionalSystemFields,
-} from "convex/server";
+} from 'convex/server';
 
 export type TableNamesFromSchema<Schema extends SchemaDefinition<any, any>> = TableNamesInDataModel<
 	DataModelFromSchemaDefinition<Schema>

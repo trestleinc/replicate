@@ -1,4 +1,4 @@
-import type { Persistence } from "../types.js";
+import type { Persistence } from '../types.js';
 
 export interface PassphraseConfig {
 	get: () => Promise<string>;
@@ -27,7 +27,7 @@ export interface NativeUnlockConfig {
 export interface WebEncryptionConfig {
 	storage: Persistence;
 	user: string;
-	mode?: "local" | "e2e";
+	mode?: 'local' | 'e2e';
 	unlock: WebUnlockConfig;
 	recovery?: RecoveryConfig;
 	lock?: LockConfig;
@@ -38,7 +38,7 @@ export interface WebEncryptionConfig {
 export interface NativeEncryptionConfig {
 	storage: Persistence;
 	user: string;
-	mode?: "local" | "e2e";
+	mode?: 'local' | 'e2e';
 	unlock: NativeUnlockConfig;
 	recovery?: RecoveryConfig;
 	lock?: LockConfig;
@@ -46,7 +46,7 @@ export interface NativeEncryptionConfig {
 	onUnlock?: () => void;
 }
 
-export type EncryptionState = "locked" | "unlocked" | "setup";
+export type EncryptionState = 'locked' | 'unlocked' | 'setup';
 
 export interface EncryptionPersistence extends Persistence {
 	readonly state: EncryptionState;

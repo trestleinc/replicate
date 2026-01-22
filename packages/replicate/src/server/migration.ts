@@ -6,22 +6,22 @@
  * and client migrations are generated automatically.
  */
 
-import type { GenericValidator, Infer } from "convex/values";
-import type { GenericMutationCtx, GenericDataModel } from "convex/server";
+import type { GenericValidator, Infer } from 'convex/values';
+import type { GenericMutationCtx, GenericDataModel } from 'convex/server';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schema Diff Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Field type for schema operations */
-export type FieldType = "string" | "number" | "boolean" | "null" | "array" | "object" | "prose";
+export type FieldType = 'string' | 'number' | 'boolean' | 'null' | 'array' | 'object' | 'prose';
 
 /** Individual diff operation detected between schema versions */
 export type SchemaDiffOperation =
-	| { type: "add_column"; column: string; fieldType: FieldType; defaultValue: unknown }
-	| { type: "remove_column"; column: string }
-	| { type: "rename_column"; from: string; to: string }
-	| { type: "change_type"; column: string; from: FieldType; to: FieldType };
+	| { type: 'add_column'; column: string; fieldType: FieldType; defaultValue: unknown }
+	| { type: 'remove_column'; column: string }
+	| { type: 'rename_column'; from: string; to: string }
+	| { type: 'change_type'; column: string; from: FieldType; to: FieldType };
 
 /** Result of diffing two schema versions */
 export interface SchemaDiff {
@@ -38,7 +38,7 @@ export interface SchemaDiff {
 
 /** Context passed to server migration functions */
 export interface MigrationContext<DataModel extends GenericDataModel = GenericDataModel> {
-	db: GenericMutationCtx<DataModel>["db"];
+	db: GenericMutationCtx<DataModel>['db'];
 }
 
 /** Single migration definition */
@@ -109,31 +109,31 @@ function detectFieldType(validator: GenericValidator): FieldType {
 	const v = validator as { kind?: string; type?: string };
 
 	// Check for prose validator (has specific structure)
-	if (v.kind === "object") {
+	if (v.kind === 'object') {
 		const inner = (validator as { fields?: Record<string, unknown> }).fields;
-		if (inner && "type" in inner && "content" in inner) {
-			return "prose";
+		if (inner && 'type' in inner && 'content' in inner) {
+			return 'prose';
 		}
-		return "object";
+		return 'object';
 	}
 
 	switch (v.kind) {
-		case "string":
-			return "string";
-		case "number":
-		case "float64":
-		case "int64":
-			return "number";
-		case "boolean":
-			return "boolean";
-		case "null":
-			return "null";
-		case "array":
-			return "array";
-		case "object":
-			return "object";
+		case 'string':
+			return 'string';
+		case 'number':
+		case 'float64':
+		case 'int64':
+			return 'number';
+		case 'boolean':
+			return 'boolean';
+		case 'null':
+			return 'null';
+		case 'array':
+			return 'array';
+		case 'object':
+			return 'object';
 		default:
-			return "object";
+			return 'object';
 	}
 }
 
@@ -144,7 +144,7 @@ function extractFields(validator: GenericValidator): Map<string, GenericValidato
 	const fields = new Map<string, GenericValidator>();
 	const v = validator as { kind?: string; fields?: Record<string, GenericValidator> };
 
-	if (v.kind === "object" && v.fields) {
+	if (v.kind === 'object' && v.fields) {
 		for (const [name, fieldValidator] of Object.entries(v.fields)) {
 			fields.set(name, fieldValidator);
 		}
@@ -158,20 +158,20 @@ function extractFields(validator: GenericValidator): Map<string, GenericValidato
  */
 function fieldTypeToSQL(fieldType: FieldType): string {
 	switch (fieldType) {
-		case "string":
-		case "prose":
-			return "TEXT";
-		case "number":
-			return "REAL";
-		case "boolean":
-			return "INTEGER";
-		case "null":
-			return "TEXT";
-		case "array":
-		case "object":
-			return "TEXT"; // JSON stored as text
+		case 'string':
+		case 'prose':
+			return 'TEXT';
+		case 'number':
+			return 'REAL';
+		case 'boolean':
+			return 'INTEGER';
+		case 'null':
+			return 'TEXT';
+		case 'array':
+		case 'object':
+			return 'TEXT'; // JSON stored as text
 		default:
-			return "TEXT";
+			return 'TEXT';
 	}
 }
 
@@ -179,10 +179,10 @@ function fieldTypeToSQL(fieldType: FieldType): string {
  * Escape SQL literal value.
  */
 function sqlLiteral(value: unknown): string {
-	if (value === null || value === undefined) return "NULL";
-	if (typeof value === "string") return `'${value.replace(/'/g, "''")}'`;
-	if (typeof value === "number") return String(value);
-	if (typeof value === "boolean") return value ? "1" : "0";
+	if (value === null || value === undefined) return 'NULL';
+	if (typeof value === 'string') return `'${value.replace(/'/g, "''")}'`;
+	if (typeof value === 'number') return String(value);
+	if (typeof value === 'boolean') return value ? '1' : '0';
 	return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
 }
 
@@ -204,7 +204,7 @@ function computeSchemaDiff(
 	toValidator: GenericValidator,
 	fromVersion: number,
 	toVersion: number,
-	defaults: Record<string, unknown>,
+	defaults: Record<string, unknown>
 ): SchemaDiff {
 	const operations: SchemaDiffOperation[] = [];
 	const generatedSQL: string[] = [];
@@ -219,7 +219,7 @@ function computeSchemaDiff(
 			const defaultValue = defaults[name];
 
 			operations.push({
-				type: "add_column",
+				type: 'add_column',
 				column: name,
 				fieldType,
 				defaultValue,
@@ -227,7 +227,7 @@ function computeSchemaDiff(
 
 			const sqlType = fieldTypeToSQL(fieldType);
 			const colName = validateIdentifier(name);
-			const def = defaultValue !== undefined ? ` DEFAULT ${sqlLiteral(defaultValue)}` : "";
+			const def = defaultValue !== undefined ? ` DEFAULT ${sqlLiteral(defaultValue)}` : '';
 			generatedSQL.push(`ALTER TABLE %TABLE% ADD COLUMN ${colName} ${sqlType}${def}`);
 		}
 	}
@@ -236,7 +236,7 @@ function computeSchemaDiff(
 	for (const [name] of fromFields) {
 		if (!toFields.has(name)) {
 			operations.push({
-				type: "remove_column",
+				type: 'remove_column',
 				column: name,
 			});
 
@@ -253,7 +253,7 @@ function computeSchemaDiff(
 			const toType = detectFieldType(toFieldValidator);
 			if (fromType !== toType) {
 				operations.push({
-					type: "change_type",
+					type: 'change_type',
 					column: name,
 					from: fromType,
 					to: toType,
@@ -264,8 +264,8 @@ function computeSchemaDiff(
 	}
 
 	// Backwards compatible if only adding optional columns with defaults
-	const isBackwardsCompatible = operations.every(op => {
-		if (op.type === "add_column") {
+	const isBackwardsCompatible = operations.every((op) => {
+		if (op.type === 'add_column') {
 			return op.defaultValue !== undefined;
 		}
 		return false;
@@ -314,7 +314,7 @@ function computeSchemaDiff(
  * ```
  */
 export function define<TShape extends GenericValidator>(
-	options: SchemaDefinitionOptions<TShape>,
+	options: SchemaDefinitionOptions<TShape>
 ): VersionedSchema<TShape> {
 	const { version, shape, defaults = {}, history = {} } = options;
 
@@ -334,7 +334,7 @@ export function define<TShape extends GenericValidator>(
 			const validator = allVersions[v];
 			if (!validator) {
 				throw new Error(
-					`Schema version ${v} not found. Available: ${Object.keys(allVersions).join(", ")}`,
+					`Schema version ${v} not found. Available: ${Object.keys(allVersions).join(', ')}`
 				);
 			}
 			return validator;
@@ -348,7 +348,7 @@ export function define<TShape extends GenericValidator>(
 				toValidator,
 				fromVersion,
 				toVersion,
-				defaults as Record<string, unknown>,
+				defaults as Record<string, unknown>
 			);
 		},
 

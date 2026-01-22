@@ -1,9 +1,9 @@
-import type { Persistence } from "../types.js";
-import type { EncryptionPersistence, EncryptionState, WebEncryptionConfig } from "./types.js";
-import { createWebEncryptionPersistence } from "./web.js";
-import { isPRFSupported } from "./webauthn.js";
+import type { Persistence } from '../types.js';
+import type { EncryptionPersistence, EncryptionState, WebEncryptionConfig } from './types.js';
+import { createWebEncryptionPersistence } from './web.js';
+import { isPRFSupported } from './webauthn.js';
 
-export type EncryptionPreference = "webauthn" | "passphrase" | "none";
+export type EncryptionPreference = 'webauthn' | 'passphrase' | 'none';
 
 export interface EncryptionManagerHooks {
 	change?: (state: EncryptionManagerState) => void;
@@ -19,7 +19,7 @@ export interface EncryptionManagerConfig {
 }
 
 export interface EncryptionManagerState {
-	state: EncryptionState | "disabled";
+	state: EncryptionState | 'disabled';
 	error?: Error;
 	persistence: Persistence;
 }
@@ -34,23 +34,23 @@ export interface EncryptionManager {
 	destroy(): void;
 }
 
-const ENABLED_KEY = "encryption:manager:enabled";
+const ENABLED_KEY = 'encryption:manager:enabled';
 
 export async function createEncryptionManager(
-	config: EncryptionManagerConfig,
+	config: EncryptionManagerConfig
 ): Promise<EncryptionManager> {
-	const { storage, user, preference = "webauthn", hooks } = config;
+	const { storage, user, preference = 'webauthn', hooks } = config;
 
 	let encryptedPersistence: EncryptionPersistence | null = null;
 	let currentState: EncryptionManagerState = {
-		state: "disabled",
+		state: 'disabled',
 		persistence: storage,
 	};
 
 	const subscribers = new Set<(state: EncryptionManagerState) => void>();
 
 	const notify = (): void => {
-		subscribers.forEach(cb => cb(currentState));
+		subscribers.forEach((cb) => cb(currentState));
 		hooks?.change?.(currentState);
 	};
 
@@ -61,7 +61,7 @@ export async function createEncryptionManager(
 
 	const isEnabled = await storage.kv.get<boolean>(ENABLED_KEY);
 
-	if (isEnabled && preference !== "none") {
+	if (isEnabled && preference !== 'none') {
 		try {
 			const encryptionConfig = await buildEncryptionConfig(storage, user, preference, hooks);
 			encryptedPersistence = await createWebEncryptionPersistence(encryptionConfig);
@@ -72,7 +72,7 @@ export async function createEncryptionManager(
 			});
 		} catch (err) {
 			updateState({
-				state: "disabled",
+				state: 'disabled',
 				error: err instanceof Error ? err : new Error(String(err)),
 				persistence: storage,
 			});
@@ -102,7 +102,7 @@ export async function createEncryptionManager(
 				});
 			} catch (err) {
 				updateState({
-					state: "disabled",
+					state: 'disabled',
 					error: err instanceof Error ? err : new Error(String(err)),
 					persistence: storage,
 				});
@@ -119,7 +119,7 @@ export async function createEncryptionManager(
 			await storage.kv.del(ENABLED_KEY);
 
 			updateState({
-				state: "disabled",
+				state: 'disabled',
 				error: undefined,
 				persistence: storage,
 			});
@@ -127,7 +127,7 @@ export async function createEncryptionManager(
 
 		async unlock(): Promise<void> {
 			if (!encryptedPersistence) {
-				throw new Error("Encryption not enabled. Call enable() first.");
+				throw new Error('Encryption not enabled. Call enable() first.');
 			}
 
 			await encryptedPersistence.unlock();
@@ -166,14 +166,14 @@ async function buildEncryptionConfig(
 	storage: Persistence,
 	user: string,
 	preference: EncryptionPreference,
-	hooks?: EncryptionManagerHooks,
+	hooks?: EncryptionManagerHooks
 ): Promise<WebEncryptionConfig> {
-	const webauthnSupported = preference === "webauthn" && (await isPRFSupported());
+	const webauthnSupported = preference === 'webauthn' && (await isPRFSupported());
 
 	const config: WebEncryptionConfig = {
 		storage,
 		user,
-		mode: "local",
+		mode: 'local',
 		unlock: {},
 	};
 
@@ -187,7 +187,7 @@ async function buildEncryptionConfig(
 				if (hooks?.passphrase) {
 					return hooks.passphrase();
 				}
-				throw new Error("Passphrase hook not configured");
+				throw new Error('Passphrase hook not configured');
 			},
 			setup: async (recoveryKey: string) => {
 				if (hooks?.recovery) {
@@ -196,7 +196,7 @@ async function buildEncryptionConfig(
 				if (hooks?.passphrase) {
 					return hooks.passphrase();
 				}
-				throw new Error("Passphrase hook not configured");
+				throw new Error('Passphrase hook not configured');
 			},
 		};
 	}
@@ -210,7 +210,7 @@ async function buildEncryptionConfig(
 				if (hooks?.passphrase) {
 					return hooks.passphrase();
 				}
-				throw new Error("Recovery requires passphrase hook");
+				throw new Error('Recovery requires passphrase hook');
 			},
 		};
 	}
