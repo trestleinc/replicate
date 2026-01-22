@@ -563,7 +563,6 @@ export class Replicate<T extends object> {
 						client,
 						seq,
 						vector,
-						_internal: true,
 					});
 					return null;
 				}
@@ -576,7 +575,6 @@ export class Replicate<T extends object> {
 							client,
 							seq,
 							vector,
-							_internal: true,
 						});
 					}
 
@@ -590,7 +588,6 @@ export class Replicate<T extends object> {
 						cursor,
 						interval,
 						vector,
-						_internal: true,
 					});
 					return null;
 				}
@@ -606,7 +603,6 @@ export class Replicate<T extends object> {
 					cursor,
 					interval,
 					vector,
-					_internal: true,
 				});
 
 				return null;
