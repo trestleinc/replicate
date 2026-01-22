@@ -22,13 +22,32 @@ const DEFAULT_THRESHOLD = 500;
 const DEFAULT_TIMEOUT = 24 * 60 * 60 * 1000;
 const MAX_RETRIES = 3;
 
+/**
+ * Atomic sequence generation using dedicated counter table.
+ *
+ * This pattern leverages Convex's OCC (Optimistic Concurrency Control):
+ * - If two mutations try to increment the same counter concurrently,
+ *   Convex detects the conflict and retries one of them automatically.
+ * - This guarantees unique, monotonically increasing sequence numbers.
+ *
+ * Previous approach (querying max seq from deltas table) had a race condition
+ * where concurrent mutations could get the same seq number.
+ */
 async function getNextSeq(ctx: any, collection: string): Promise<number> {
-	const latest = await ctx.db
-		.query('deltas')
-		.withIndex('by_seq', (q: any) => q.eq('collection', collection))
-		.order('desc')
-		.first();
-	return (latest?.seq ?? 0) + 1;
+	const existing = await ctx.db
+		.query('sequences')
+		.withIndex('by_collection', (q: any) => q.eq('collection', collection))
+		.unique();
+
+	if (existing) {
+		const nextSeq = existing.seq + 1;
+		await ctx.db.patch(existing._id, { seq: nextSeq });
+		return nextSeq;
+	}
+
+	// Initialize sequence counter for this collection
+	await ctx.db.insert('sequences', { collection, seq: 1 });
+	return 1;
 }
 
 // O(1) delta count increment - called when inserting a delta
@@ -207,9 +226,16 @@ export const mark = mutation({
 		client: v.string(),
 		vector: v.optional(v.bytes()),
 		seq: v.optional(v.number()),
+		// Security: Require internal call marker to prevent direct client calls
+		_internal: v.optional(v.literal(true)),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
+		// Require internal call marker - prevents direct client calls to component mutations
+		if (args._internal !== true) {
+			throw new Error('Unauthorized: Direct component mutation calls are not allowed');
+		}
+
 		const now = Date.now();
 
 		const existing = await ctx.db
@@ -224,8 +250,10 @@ export const mark = mutation({
 		};
 
 		if (args.vector !== undefined) updates.vector = args.vector;
-		if (args.seq !== undefined) {
-			updates.seq = existing ? Math.max(existing.seq, args.seq) : args.seq;
+		// Idempotent seq update: only update if new seq is strictly greater
+		// This prevents race conditions where a lower seq overwrites a higher one
+		if (args.seq !== undefined && (!existing || args.seq > existing.seq)) {
+			updates.seq = args.seq;
 		}
 
 		if (existing) {
@@ -256,12 +284,25 @@ export const compact = mutation({
 		const logger = getLogger(['compaction']);
 		const now = Date.now();
 
-		const deltas = await ctx.db
+		// Get the current max seq at the START of compaction.
+		// This establishes our snapshot boundary - prevents TOCTOU race conditions
+		// where new deltas arrive during compaction and get incorrectly included.
+		const sequenceRecord = await ctx.db
+			.query('sequences')
+			.withIndex('by_collection', (q: any) => q.eq('collection', args.collection))
+			.unique();
+		const snapshotBoundarySeq = sequenceRecord?.seq ?? 0;
+
+		// Query all deltas for this document
+		const allDeltas = await ctx.db
 			.query('deltas')
 			.withIndex('by_document', (q: any) =>
 				q.eq('collection', args.collection).eq('document', args.document)
 			)
 			.collect();
+
+		// Filter to only include deltas within our boundary
+		const deltas = allDeltas.filter((d: any) => d.seq <= snapshotBoundarySeq);
 
 		if (deltas.length === 0) {
 			return { success: true, removed: 0, retained: 0, size: 0 };
@@ -314,7 +355,9 @@ export const compact = mutation({
 			}
 		}
 
-		const seq = Math.max(...deltas.map((d: any) => d.seq));
+		// Use the boundary seq for the snapshot - this ensures consistency
+		// with the deltas we included (all have seq <= snapshotBoundarySeq)
+		const seq = snapshotBoundarySeq;
 
 		if (existing) {
 			await ctx.db.patch(existing._id, {
@@ -478,12 +521,23 @@ export const runCompaction = mutation({
 		const retain = args.retain ?? 0;
 
 		try {
-			const deltas = await ctx.db
+			// Get the current max seq at the START of compaction.
+			// This establishes our snapshot boundary - prevents TOCTOU race conditions.
+			const sequenceRecord = await ctx.db
+				.query('sequences')
+				.withIndex('by_collection', (q: any) => q.eq('collection', job.collection))
+				.unique();
+			const snapshotBoundarySeq = sequenceRecord?.seq ?? 0;
+
+			const allDeltas = await ctx.db
 				.query('deltas')
 				.withIndex('by_document', (q: any) =>
 					q.eq('collection', job.collection).eq('document', job.document)
 				)
 				.collect();
+
+			// Filter to only include deltas within our boundary
+			const deltas = allDeltas.filter((d: any) => d.seq <= snapshotBoundarySeq);
 
 			if (deltas.length === 0) {
 				await ctx.db.patch(args.id, { status: 'done', completed: now });
@@ -539,7 +593,8 @@ export const runCompaction = mutation({
 				}
 			}
 
-			const seq = Math.max(...deltas.map((d: any) => d.seq));
+			// Use the boundary seq for the snapshot
+			const seq = snapshotBoundarySeq;
 
 			if (snapshot) {
 				await ctx.db.patch(snapshot._id, {
@@ -903,9 +958,16 @@ export const presence = mutation({
 		cursor: v.optional(cursorValidator),
 		interval: v.optional(v.number()),
 		vector: v.optional(v.bytes()),
+		// Security: Require internal call marker to prevent direct client calls
+		_internal: v.optional(v.literal(true)),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
+		// Require internal call marker - prevents direct client calls to component mutations
+		if (args._internal !== true) {
+			throw new Error('Unauthorized: Direct component mutation calls are not allowed');
+		}
+
 		const existing = await ctx.db
 			.query('sessions')
 			.withIndex('by_client', (q: any) =>

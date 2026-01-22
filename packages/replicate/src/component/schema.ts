@@ -53,6 +53,14 @@ export default defineSchema({
 		count: v.number(),
 	}).index('by_document', ['collection', 'document']),
 
+	// Atomic sequence counter per collection
+	// Uses Convex OCC to ensure unique, monotonically increasing seq numbers
+	// even under concurrent mutations
+	sequences: defineTable({
+		collection: v.string(),
+		seq: v.number(),
+	}).index('by_collection', ['collection']),
+
 	snapshots: defineTable({
 		collection: v.string(),
 		document: v.string(),
