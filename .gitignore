@@ -7,9 +7,9 @@
 node_modules
 dist/
 packages/*/dist
-examples/*/dist
-examples/*/.env
-examples/*/.env.local
+apps/*/dist
+apps/*/.env
+apps/*/.env.local
 
 *.env*
 .env
@@ -21,12 +21,13 @@ examples/*/.env.local
 .vite
 .svelte-kit
 .output/
+.wrangler/
 
 # Expo / React Native
-examples/expo/.expo/
-examples/expo/android/
-examples/expo/ios/
-examples/expo/web-build/
+apps/expo/.expo/
+apps/expo/android/
+apps/expo/ios/
+apps/expo/web-build/
 *.jks
 *.p8
 *.p12

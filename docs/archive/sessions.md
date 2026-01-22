@@ -53,10 +53,10 @@ peers: defineTable({
 
 ```typescript
 compact({
-  collection: v.string(),
-  documentId: v.string(),  // <-- Specific document
-  snapshotBytes: v.bytes(),
-})
+	collection: v.string(),
+	documentId: v.string(), // <-- Specific document
+	snapshotBytes: v.bytes(),
+});
 ```
 
 **But sessions are tracked per-collection.** This causes incorrect compaction behavior:
@@ -134,8 +134,8 @@ From `y-protocols/awareness.js`:
 
 ```typescript
 awareness.setLocalState({
-  user: { name: "Alice", color: "#ff0000" },
-  cursor: { anchor: 5, head: 10 },
+	user: { name: 'Alice', color: '#ff0000' },
+	cursor: { anchor: 5, head: 10 },
 });
 
 // Encode for transmission
@@ -193,13 +193,13 @@ const documentsMap = rootDoc.getMap<Y.Doc>('documents');
 
 // Subdocuments loaded on demand
 function getOrCreateSubdoc(documentId: string): Y.Doc {
-  let subdoc = documentsMap.get(documentId);
-  if (!subdoc) {
-    subdoc = new Y.Doc({ guid: documentId });
-    documentsMap.set(documentId, subdoc);
-  }
-  subdoc.load(); // Yjs lazy loading API
-  return subdoc;
+	let subdoc = documentsMap.get(documentId);
+	if (!subdoc) {
+		subdoc = new Y.Doc({ guid: documentId });
+		documentsMap.set(documentId, subdoc);
+	}
+	subdoc.load(); // Yjs lazy loading API
+	return subdoc;
 }
 ```
 
@@ -211,13 +211,13 @@ Each subdocument gets its own Awareness instance:
 const awarenessMap = new Map<string, Awareness>();
 
 function getAwareness(documentId: string): Awareness {
-  let awareness = awarenessMap.get(documentId);
-  if (!awareness) {
-    const subdoc = getOrCreateSubdoc(documentId);
-    awareness = new Awareness(subdoc);
-    awarenessMap.set(documentId, awareness);
-  }
-  return awareness;
+	let awareness = awarenessMap.get(documentId);
+	if (!awareness) {
+		const subdoc = getOrCreateSubdoc(documentId);
+		awareness = new Awareness(subdoc);
+		awarenessMap.set(documentId, awareness);
+	}
+	return awareness;
 }
 ```
 
@@ -276,42 +276,42 @@ function getAwareness(documentId: string): Awareness {
 
 ```typescript
 // convex/intervals.ts
-import { Replicate } from "@trestleinc/replicate/server";
-import { components } from "./_generated/api";
+import { Replicate } from '@trestleinc/replicate/server';
+import { components } from './_generated/api';
 
 const replicate = Replicate(components.replicate);
 
-export const intervals = replicate<Interval>({ collection: "intervals" });
-export const comments = replicate<Comment>({ collection: "comments" });
+export const intervals = replicate<Interval>({ collection: 'intervals' });
+export const comments = replicate<Comment>({ collection: 'comments' });
 ```
 
 **Generated API shape:**
 
 ```typescript
 // Public (user may call directly)
-api.intervals.stream     // real-time sync subscription
-api.intervals.material   // SSR prefetch
-api.intervals.insert     // create document
-api.intervals.update     // update document
-api.intervals.remove     // delete document
-api.intervals.sessions   // who's online (NEW)
-api.intervals.cursors    // cursor positions (NEW)
+api.intervals.stream; // real-time sync subscription
+api.intervals.material; // SSR prefetch
+api.intervals.insert; // create document
+api.intervals.update; // update document
+api.intervals.remove; // delete document
+api.intervals.sessions; // who's online (NEW)
+api.intervals.cursors; // cursor positions (NEW)
 
 // Internal (client library calls these, not user)
-api.intervals.internal.recovery  // startup reconciliation
-api.intervals.internal.mark      // session tracking + cursor
-api.intervals.internal.compact   // delta compaction
-api.intervals.internal.leave     // disconnect cleanup (NEW)
+api.intervals.internal.recovery; // startup reconciliation
+api.intervals.internal.mark; // session tracking + cursor
+api.intervals.internal.compact; // delta compaction
+api.intervals.internal.leave; // disconnect cleanup (NEW)
 ```
 
 **Client usage unchanged:**
 
 ```typescript
 const intervals = collection.create({
-  config: () => ({
-    api: api.intervals,  // just pass the whole thing
-    // ...
-  }),
+	config: () => ({
+		api: api.intervals, // just pass the whole thing
+		// ...
+	}),
 });
 ```
 
@@ -480,41 +480,41 @@ The library handles this automatically when user binds to a prose field:
 ```typescript
 // Inside CursorTracker (internal - user never writes this)
 class CursorTracker {
-  private handleVisibility = () => {
-    if (document.hidden) {
-      // Tab hidden - WebSocket still works
-      this.convexClient.mutation(this.api.leave, {
-        document: this.document,
-        client: this.client,
-      });
-    }
-  };
+	private handleVisibility = () => {
+		if (document.hidden) {
+			// Tab hidden - WebSocket still works
+			this.convexClient.mutation(this.api.leave, {
+				document: this.document,
+				client: this.client,
+			});
+		}
+	};
 
-  private handleUnload = () => {
-    // Tab closing - WebSocket dying, use HTTP
-    const path = getFunctionName(this.api.leave);
-    navigator.sendBeacon(
-      `${this.convexUrl}/api/mutation/${path}?format=json`,
-      JSON.stringify({ args: { document: this.document, client: this.client } })
-    );
-  };
+	private handleUnload = () => {
+		// Tab closing - WebSocket dying, use HTTP
+		const path = getFunctionName(this.api.leave);
+		navigator.sendBeacon(
+			`${this.convexUrl}/api/mutation/${path}?format=json`,
+			JSON.stringify({ args: { document: this.document, client: this.client } })
+		);
+	};
 
-  constructor(config) {
-    // Auto-register handlers
-    document.addEventListener("visibilitychange", this.handleVisibility);
-    window.addEventListener("beforeunload", this.handleUnload);
-  }
+	constructor(config) {
+		// Auto-register handlers
+		document.addEventListener('visibilitychange', this.handleVisibility);
+		window.addEventListener('beforeunload', this.handleUnload);
+	}
 
-  destroy() {
-    // Cleanup handlers
-    document.removeEventListener("visibilitychange", this.handleVisibility);
-    window.removeEventListener("beforeunload", this.handleUnload);
-    // Normal disconnect via WebSocket
-    this.convexClient.mutation(this.api.leave, {
-      document: this.document,
-      client: this.client,
-    });
-  }
+	destroy() {
+		// Cleanup handlers
+		document.removeEventListener('visibilitychange', this.handleVisibility);
+		window.removeEventListener('beforeunload', this.handleUnload);
+		// Normal disconnect via WebSocket
+		this.convexClient.mutation(this.api.leave, {
+			document: this.document,
+			client: this.client,
+		});
+	}
 }
 ```
 
@@ -533,48 +533,46 @@ Convex exposes all public mutations via `/api/mutation/{path}` automatically. Th
 ```typescript
 // In builder.ts - createLeaveMutation
 return mutationGeneric({
-  args: {
-    document: v.string(),
-    client: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.runMutation(component.public.leave, {
-      collection,
-      document: args.document,
-      client: args.client,
-    });
-    return null;
-  },
+	args: {
+		document: v.string(),
+		client: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		await ctx.runMutation(component.public.leave, {
+			collection,
+			document: args.document,
+			client: args.client,
+		});
+		return null;
+	},
 });
 ```
 
 ```typescript
 // In component/public.ts
 export const leave = mutation({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    client: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const record = await ctx.db
-      .query("sessions")
-      .withIndex("client", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-         .eq("client", args.client)
-      )
-      .first();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		client: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const record = await ctx.db
+			.query('sessions')
+			.withIndex('client', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
+			)
+			.first();
 
-    if (record) {
-      // Clear cursor but keep session record for sync tracking
-      await ctx.db.patch(record._id, {
-        cursor: undefined,
-        active: undefined,
-      });
-    }
-  },
+		if (record) {
+			// Clear cursor but keep session record for sync tracking
+			await ctx.db.patch(record._id, {
+				cursor: undefined,
+				active: undefined,
+			});
+		}
+	},
 });
 ```
 
@@ -637,69 +635,69 @@ Now requires `document` and accepts optional identity/cursor fields.
 
 ```typescript
 export const mark = mutation({
-  args: {
-    collection: v.string(),
-    document: v.string(),              // NEW: Required
-    client: v.string(),
-    seq: v.optional(v.number()),       // Optional: only sync loop provides this
+	args: {
+		collection: v.string(),
+		document: v.string(), // NEW: Required
+		client: v.string(),
+		seq: v.optional(v.number()), // Optional: only sync loop provides this
 
-    // Identity (optional, for any document)
-    user: v.optional(v.string()),
-    profile: v.optional(v.object({
-      name: v.optional(v.string()),
-      color: v.optional(v.string()),
-      avatar: v.optional(v.string()),
-    })),
+		// Identity (optional, for any document)
+		user: v.optional(v.string()),
+		profile: v.optional(
+			v.object({
+				name: v.optional(v.string()),
+				color: v.optional(v.string()),
+				avatar: v.optional(v.string()),
+			})
+		),
 
-    // Cursor (optional, only for prose bindings)
-    cursor: v.optional(v.object({
-      anchor: v.number(),
-      head: v.number(),
-      field: v.optional(v.string()),
-    })),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const existing = await ctx.db
-      .query("sessions")
-      .withIndex("client", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-         .eq("client", args.client)
-      )
-      .first();
+		// Cursor (optional, only for prose bindings)
+		cursor: v.optional(
+			v.object({
+				anchor: v.number(),
+				head: v.number(),
+				field: v.optional(v.string()),
+			})
+		),
+	},
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const existing = await ctx.db
+			.query('sessions')
+			.withIndex('client', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
+			)
+			.first();
 
-    const updates: any = {
-      seen: now,
-    };
+		const updates: any = {
+			seen: now,
+		};
 
-    // Only update seq if provided (sync loop calls)
-    if (args.seq !== undefined) {
-      updates.seq = existing
-        ? Math.max(existing.seq, args.seq)
-        : args.seq;
-    }
+		// Only update seq if provided (sync loop calls)
+		if (args.seq !== undefined) {
+			updates.seq = existing ? Math.max(existing.seq, args.seq) : args.seq;
+		}
 
-    // Only update these if provided
-    if (args.user !== undefined) updates.user = args.user;
-    if (args.profile !== undefined) updates.profile = args.profile;
-    if (args.cursor !== undefined) {
-      updates.cursor = args.cursor;
-      updates.active = now;
-    }
+		// Only update these if provided
+		if (args.user !== undefined) updates.user = args.user;
+		if (args.profile !== undefined) updates.profile = args.profile;
+		if (args.cursor !== undefined) {
+			updates.cursor = args.cursor;
+			updates.active = now;
+		}
 
-    if (existing) {
-      await ctx.db.patch(existing._id, updates);
-    } else {
-      await ctx.db.insert("sessions", {
-        collection: args.collection,
-        document: args.document,
-        client: args.client,
-        seq: args.seq ?? 0,
-        ...updates,
-      });
-    }
-  },
+		if (existing) {
+			await ctx.db.patch(existing._id, updates);
+		} else {
+			await ctx.db.insert('sessions', {
+				collection: args.collection,
+				document: args.document,
+				client: args.client,
+				seq: args.seq ?? 0,
+				...updates,
+			});
+		}
+	},
 });
 ```
 
@@ -707,28 +705,25 @@ export const mark = mutation({
 
 ```typescript
 export const compact = mutation({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    bytes: v.bytes(),          // Snapshot bytes
-    vector: v.bytes(),         // State vector
-  },
-  handler: async (ctx, args) => {
-    // Only consider clients for THIS document that have active sessions
-    const clients = await ctx.db
-      .query("sessions")
-      .withIndex("document", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-      )
-      .collect();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		bytes: v.bytes(), // Snapshot bytes
+		vector: v.bytes(), // State vector
+	},
+	handler: async (ctx, args) => {
+		// Only consider clients for THIS document that have active sessions
+		const clients = await ctx.db
+			.query('sessions')
+			.withIndex('document', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document)
+			)
+			.collect();
 
-    const minSeq = clients.length > 0
-      ? Math.min(...clients.map(p => p.seq))
-      : Infinity;
+		const minSeq = clients.length > 0 ? Math.min(...clients.map((p) => p.seq)) : Infinity;
 
-    // ... rest of compaction logic (unchanged)
-  },
+		// ... rest of compaction logic (unchanged)
+	},
 });
 ```
 
@@ -738,29 +733,27 @@ Called by client library when disconnecting or unbinding prose.
 
 ```typescript
 export const leave = mutation({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    client: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("sessions")
-      .withIndex("client", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-         .eq("client", args.client)
-      )
-      .first();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		client: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query('sessions')
+			.withIndex('client', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('client', args.client)
+			)
+			.first();
 
-    if (existing) {
-      // Clear cursor but keep the session record for sync tracking
-      await ctx.db.patch(existing._id, {
-        cursor: undefined,
-        active: undefined,
-      });
-    }
-  },
+		if (existing) {
+			// Clear cursor but keep the session record for sync tracking
+			await ctx.db.patch(existing._id, {
+				cursor: undefined,
+				active: undefined,
+			});
+		}
+	},
 });
 ```
 
@@ -775,14 +768,12 @@ Now cascades deletion to session records for the removed document.
 ```typescript
 // In remove handler, after deleting the document:
 const records = await ctx.db
-  .query("sessions")
-  .withIndex("document", q =>
-    q.eq("collection", collection).eq("document", document)
-  )
-  .collect();
+	.query('sessions')
+	.withIndex('document', (q) => q.eq('collection', collection).eq('document', document))
+	.collect();
 
 for (const record of records) {
-  await ctx.db.delete(record._id);
+	await ctx.db.delete(record._id);
 }
 ```
 
@@ -794,49 +785,50 @@ Query who's online for a specific document.
 
 ```typescript
 export const sessions = query({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    group: v.optional(v.boolean()),       // Aggregate by user
-  },
-  returns: v.array(v.object({
-    client: v.string(),
-    document: v.string(),
-    user: v.optional(v.string()),
-    profile: v.optional(v.any()),
-    seen: v.number(),
-  })),
-  handler: async (ctx, args) => {
-    const records = await ctx.db
-      .query("sessions")
-      .withIndex("document", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-      )
-      .collect();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		group: v.optional(v.boolean()), // Aggregate by user
+	},
+	returns: v.array(
+		v.object({
+			client: v.string(),
+			document: v.string(),
+			user: v.optional(v.string()),
+			profile: v.optional(v.any()),
+			seen: v.number(),
+		})
+	),
+	handler: async (ctx, args) => {
+		const records = await ctx.db
+			.query('sessions')
+			.withIndex('document', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document)
+			)
+			.collect();
 
-    let results = records.map(p => ({
-      client: p.client,
-      document: p.document,
-      user: p.user,
-      profile: p.profile,
-      seen: p.seen,
-    }));
+		let results = records.map((p) => ({
+			client: p.client,
+			document: p.document,
+			user: p.user,
+			profile: p.profile,
+			seen: p.seen,
+		}));
 
-    if (args.group) {
-      const byUser = new Map();
-      for (const p of results) {
-        const key = p.user ?? p.client;
-        const existing = byUser.get(key);
-        if (!existing || p.seen > existing.seen) {
-          byUser.set(key, p);
-        }
-      }
-      results = Array.from(byUser.values());
-    }
+		if (args.group) {
+			const byUser = new Map();
+			for (const p of results) {
+				const key = p.user ?? p.client;
+				const existing = byUser.get(key);
+				if (!existing || p.seen > existing.seen) {
+					byUser.set(key, p);
+				}
+			}
+			results = Array.from(byUser.values());
+		}
 
-    return results;
-  },
+		return results;
+	},
 });
 ```
 
@@ -846,42 +838,43 @@ Subscribe to cursor positions for a specific document (prose fields only).
 
 ```typescript
 export const cursors = query({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    exclude: v.optional(v.string()),  // Exclude this client (self)
-  },
-  returns: v.array(v.object({
-    client: v.string(),
-    user: v.optional(v.string()),
-    profile: v.optional(v.any()),
-    cursor: v.object({
-      anchor: v.number(),
-      head: v.number(),
-      field: v.optional(v.string()),
-    }),
-  })),
-  handler: async (ctx, args) => {
-    // Only return records that have a cursor set
-    // Cursors are cleared instantly via leave mutation (visibilitychange/beforeunload)
-    const records = await ctx.db
-      .query("sessions")
-      .withIndex("document", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-      )
-      .collect();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		exclude: v.optional(v.string()), // Exclude this client (self)
+	},
+	returns: v.array(
+		v.object({
+			client: v.string(),
+			user: v.optional(v.string()),
+			profile: v.optional(v.any()),
+			cursor: v.object({
+				anchor: v.number(),
+				head: v.number(),
+				field: v.optional(v.string()),
+			}),
+		})
+	),
+	handler: async (ctx, args) => {
+		// Only return records that have a cursor set
+		// Cursors are cleared instantly via leave mutation (visibilitychange/beforeunload)
+		const records = await ctx.db
+			.query('sessions')
+			.withIndex('document', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document)
+			)
+			.collect();
 
-    return records
-      .filter(p => p.client !== args.exclude)
-      .filter(p => p.cursor)
-      .map(p => ({
-        client: p.client,
-        user: p.user,
-        profile: p.profile,
-        cursor: p.cursor!,
-      }));
-  },
+		return records
+			.filter((p) => p.client !== args.exclude)
+			.filter((p) => p.cursor)
+			.map((p) => ({
+				client: p.client,
+				user: p.user,
+				profile: p.profile,
+				cursor: p.cursor!,
+			}));
+	},
 });
 ```
 
@@ -898,14 +891,14 @@ Current code calls `mark` without document. Need to track which documents the us
 ```typescript
 const seenDocuments = new Set<string>();
 for (const change of changes) {
-  seenDocuments.add(change.document);
+	seenDocuments.add(change.document);
 }
 for (const doc of seenDocuments) {
-  await convexClient.mutation(api.mark, {
-    client,
-    document: doc,
-    seq: newCursor,
-  });
+	await convexClient.mutation(api.mark, {
+		client,
+		document: doc,
+		seq: newCursor,
+	});
 }
 ```
 
@@ -929,36 +922,36 @@ binding.cursor.update({ anchor: 5, head: 10 });
 
 ```typescript
 interface CursorPosition {
-  anchor: number;
-  head: number;
-  field?: string;  // Which prose field
+	anchor: number;
+	head: number;
+	field?: string; // Which prose field
 }
 
 interface ClientCursor {
-  client: string;
-  user?: string;
-  profile?: { name?: string; color?: string; avatar?: string };
-  cursor: CursorPosition;
+	client: string;
+	user?: string;
+	profile?: { name?: string; color?: string; avatar?: string };
+	cursor: CursorPosition;
 }
 
 interface CursorTracker {
-  /** Get local cursor position */
-  get(): CursorPosition | null;
+	/** Get local cursor position */
+	get(): CursorPosition | null;
 
-  /** Update local cursor position (syncs to server) */
-  update(position: CursorPosition): void;
+	/** Update local cursor position (syncs to server) */
+	update(position: CursorPosition): void;
 
-  /** Get all other clients' cursors (excludes self) */
-  others(): Map<string, ClientCursor>;
+	/** Get all other clients' cursors (excludes self) */
+	others(): Map<string, ClientCursor>;
 
-  /** Subscribe to changes */
-  on(event: 'change', cb: () => void): void;
+	/** Subscribe to changes */
+	on(event: 'change', cb: () => void): void;
 
-  /** Unsubscribe from changes */
-  off(event: 'change', cb: () => void): void;
+	/** Unsubscribe from changes */
+	off(event: 'change', cb: () => void): void;
 
-  /** Cleanup and notify server */
-  destroy(): void;
+	/** Cleanup and notify server */
+	destroy(): void;
 }
 ```
 
@@ -978,8 +971,8 @@ const others = binding.cursor.others();
 
 // Subscribe to changes
 binding.cursor.on('change', () => {
-  const cursors = binding.cursor.others();
-  // render cursors...
+	const cursors = binding.cursor.others();
+	// render cursors...
 });
 
 // Cleanup on unmount
@@ -992,113 +985,115 @@ binding.cursor.destroy();
 // src/client/cursor.ts
 
 export class CursorTracker {
-  private position: CursorPosition | null = null;
-  private remoteClients: Map<string, ClientCursor> = new Map();
-  private convexClient: ConvexClient;
-  private api: ConvexCollectionApi;
-  private collection: string;
-  private document: string;
-  private client: string;
-  private field: string;
-  private unsubscribe?: () => void;
-  private listeners: Set<() => void> = new Set();
+	private position: CursorPosition | null = null;
+	private remoteClients: Map<string, ClientCursor> = new Map();
+	private convexClient: ConvexClient;
+	private api: ConvexCollectionApi;
+	private collection: string;
+	private document: string;
+	private client: string;
+	private field: string;
+	private unsubscribe?: () => void;
+	private listeners: Set<() => void> = new Set();
 
-  constructor(config: {
-    convexClient: ConvexClient;
-    api: ConvexCollectionApi;
-    collection: string;
-    document: string;
-    client: string;
-    field: string;
-    user?: string;
-    profile?: { name?: string; color?: string; avatar?: string };
-  }) {
-    this.convexClient = config.convexClient;
-    this.api = config.api;
-    this.collection = config.collection;
-    this.document = config.document;
-    this.client = config.client;
-    this.field = config.field;
+	constructor(config: {
+		convexClient: ConvexClient;
+		api: ConvexCollectionApi;
+		collection: string;
+		document: string;
+		client: string;
+		field: string;
+		user?: string;
+		profile?: { name?: string; color?: string; avatar?: string };
+	}) {
+		this.convexClient = config.convexClient;
+		this.api = config.api;
+		this.collection = config.collection;
+		this.document = config.document;
+		this.client = config.client;
+		this.field = config.field;
 
-    // Subscribe to server cursors
-    this.subscribeToServer();
-  }
+		// Subscribe to server cursors
+		this.subscribeToServer();
+	}
 
-  /** Get local cursor position */
-  get(): CursorPosition | null {
-    return this.position;
-  }
+	/** Get local cursor position */
+	get(): CursorPosition | null {
+		return this.position;
+	}
 
-  /** Update local cursor (syncs to server) */
-  update(position: Omit<CursorPosition, 'field'>): void {
-    this.position = { ...position, field: this.field };
-    this.syncToServer();
-  }
+	/** Update local cursor (syncs to server) */
+	update(position: Omit<CursorPosition, 'field'>): void {
+		this.position = { ...position, field: this.field };
+		this.syncToServer();
+	}
 
-  /** Get all other clients' cursors (excludes self) */
-  others(): Map<string, ClientCursor> {
-    return new Map(this.remoteClients);
-  }
+	/** Get all other clients' cursors (excludes self) */
+	others(): Map<string, ClientCursor> {
+		return new Map(this.remoteClients);
+	}
 
-  /** Subscribe to changes */
-  on(event: 'change', cb: () => void): void {
-    if (event === 'change') {
-      this.listeners.add(cb);
-    }
-  }
+	/** Subscribe to changes */
+	on(event: 'change', cb: () => void): void {
+		if (event === 'change') {
+			this.listeners.add(cb);
+		}
+	}
 
-  /** Unsubscribe from changes */
-  off(event: 'change', cb: () => void): void {
-    if (event === 'change') {
-      this.listeners.delete(cb);
-    }
-  }
+	/** Unsubscribe from changes */
+	off(event: 'change', cb: () => void): void {
+		if (event === 'change') {
+			this.listeners.delete(cb);
+		}
+	}
 
-  /** Cleanup */
-  destroy(): void {
-    this.unsubscribe?.();
-    this.listeners.clear();
+	/** Cleanup */
+	destroy(): void {
+		this.unsubscribe?.();
+		this.listeners.clear();
 
-    // Notify server (clear cursor)
-    this.convexClient.mutation(this.api.internal.leave, {
-      collection: this.collection,
-      document: this.document,
-      client: this.client,
-    }).catch(() => {});
-  }
+		// Notify server (clear cursor)
+		this.convexClient
+			.mutation(this.api.internal.leave, {
+				collection: this.collection,
+				document: this.document,
+				client: this.client,
+			})
+			.catch(() => {});
+	}
 
-  // --- Private ---
+	// --- Private ---
 
-  private syncToServer = debounce(async () => {
-    if (!this.position) return;
+	private syncToServer = debounce(async () => {
+		if (!this.position) return;
 
-    await this.convexClient.mutation(this.api.internal.mark, {
-      collection: this.collection,
-      document: this.document,
-      client: this.client,
-      cursor: this.position,  // Plain JSON!
-    });
-  }, 200);
+		await this.convexClient.mutation(this.api.internal.mark, {
+			collection: this.collection,
+			document: this.document,
+			client: this.client,
+			cursor: this.position, // Plain JSON!
+		});
+	}, 200);
 
-  private subscribeToServer(): void {
-    this.unsubscribe = this.convexClient.onUpdate(
-      this.api.cursors,
-      {
-        collection: this.collection,
-        document: this.document,
-        exclude: this.client,
-      },
-      (clients) => {
-        // Update remote clients map
-        this.remoteClients.clear();
-        for (const c of clients) {
-          this.remoteClients.set(c.client, c);
-        }
-        // Notify listeners of remote changes
-        this.listeners.forEach(cb => cb());
-      }
-    );
-  }
+	private subscribeToServer(): void {
+		this.unsubscribe = this.convexClient.onUpdate(
+			this.api.cursors,
+			{
+				collection: this.collection,
+				document: this.document,
+				exclude: this.client,
+			},
+			(clients) => {
+				// Update remote clients map
+				this.remoteClients.clear();
+				for (const c of clients) {
+					this.remoteClients.set(c.client, c);
+				}
+				// Notify listeners of remote changes
+				this.listeners.forEach((cb) => cb());
+			}
+		);
+	}
 }
 ```
 
@@ -1111,16 +1106,16 @@ export class CursorTracker {
 ```typescript
 // Before
 export interface EditorBinding {
-  readonly fragment: Y.XmlFragment;
-  readonly provider: { readonly awareness: null };
-  // ...
+	readonly fragment: Y.XmlFragment;
+	readonly provider: { readonly awareness: null };
+	// ...
 }
 
 // After
 export interface EditorBinding {
-  readonly fragment: Y.XmlFragment;
-  readonly cursor: CursorTracker;
-  // ...
+	readonly fragment: Y.XmlFragment;
+	readonly cursor: CursorTracker;
+	// ...
 }
 ```
 
@@ -1193,7 +1188,7 @@ Device B (phone):  client="xyz", document="interval_123", user="user_alice"
 **`sessions({ document: "interval_123", group: true })`**:
 
 ```typescript
-[{ user: "user_alice", profile: { name: "Alice" }, online: true }]
+[{ user: 'user_alice', profile: { name: 'Alice' }, online: true }];
 // One session entry (grouped by user)
 ```
 
@@ -1201,9 +1196,9 @@ Device B (phone):  client="xyz", document="interval_123", user="user_alice"
 
 ```typescript
 [
-  { client: "abc", cursor: { anchor: 10, head: 10 } },  // laptop cursor
-  { client: "xyz", cursor: { anchor: 25, head: 30 } },  // phone cursor
-]
+	{ client: 'abc', cursor: { anchor: 10, head: 10 } }, // laptop cursor
+	{ client: 'xyz', cursor: { anchor: 25, head: 30 } }, // phone cursor
+];
 // Two cursors (both labeled "Alice" via profile)
 ```
 
@@ -1217,14 +1212,14 @@ Device B: client="xyz", document="interval_456", user="user_alice"
 **`sessions({ document: "interval_123" })`**:
 
 ```typescript
-[{ user: "user_alice", online: true }]
+[{ user: 'user_alice', online: true }];
 // Only Alice's laptop
 ```
 
 **`sessions({ document: "interval_456" })`**:
 
 ```typescript
-[{ user: "user_alice", online: true }]
+[{ user: 'user_alice', online: true }];
 // Only Alice's phone
 ```
 
@@ -1235,12 +1230,12 @@ Device B: client="xyz", document="interval_456", user="user_alice"
 ```typescript
 // Update via mark with user
 await mark({
-  collection: "intervals",
-  document: "doc_1",
-  client: "abc",
-  seq: currentSeq,
-  user: "user_alice",
-  profile: { name: "Alice", color: "#ff0000" },
+	collection: 'intervals',
+	document: 'doc_1',
+	client: 'abc',
+	seq: currentSeq,
+	user: 'user_alice',
+	profile: { name: 'Alice', color: '#ff0000' },
 });
 ```
 
@@ -1249,12 +1244,12 @@ await mark({
 ```typescript
 // Clear user/profile via mark
 await mark({
-  collection: "intervals",
-  document: "doc_1",
-  client: "abc",
-  seq: currentSeq,
-  user: null,     // Clear
-  profile: null,  // Clear
+	collection: 'intervals',
+	document: 'doc_1',
+	client: 'abc',
+	seq: currentSeq,
+	user: null, // Clear
+	profile: null, // Clear
 });
 ```
 

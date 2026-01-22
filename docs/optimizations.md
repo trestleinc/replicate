@@ -435,73 +435,76 @@ The client uses a **per-document actor model** for sync, built with Effect.ts pr
 ```typescript
 // src/component/schema.ts
 
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
 
 export default defineSchema({
-  // ═══════════════════════════════════════════════════════════════════════
-  // DOCUMENTS: Individual Yjs updates (deltas)
-  // ═══════════════════════════════════════════════════════════════════════
-  documents: defineTable({
-    collection: v.string(),           // Which collection
-    document: v.string(),             // Which document
-    bytes: v.bytes(),                 // Yjs update binary
-    seq: v.number(),                  // Global sequence number for ordering
-  })
-    .index("by_collection", ["collection"])
-    .index("by_document", ["collection", "document"])
-    .index("by_seq", ["collection", "seq"]),
+	// ═══════════════════════════════════════════════════════════════════════
+	// DOCUMENTS: Individual Yjs updates (deltas)
+	// ═══════════════════════════════════════════════════════════════════════
+	documents: defineTable({
+		collection: v.string(), // Which collection
+		document: v.string(), // Which document
+		bytes: v.bytes(), // Yjs update binary
+		seq: v.number(), // Global sequence number for ordering
+	})
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_seq', ['collection', 'seq']),
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // SNAPSHOTS: Merged state checkpoints
-  // ═══════════════════════════════════════════════════════════════════════
-  snapshots: defineTable({
-    collection: v.string(),           // Which collection
-    document: v.string(),             // Which document
-    bytes: v.bytes(),                 // Merged Yjs update (Y.mergeUpdatesV2)
-    vector: v.bytes(),                // State vector (Y.encodeStateVectorFromUpdateV2)
-    seq: v.number(),                  // Highest seq included in snapshot
-    created: v.number(),              // Timestamp
-  })
-    .index("by_document", ["collection", "document"]),
+	// ═══════════════════════════════════════════════════════════════════════
+	// SNAPSHOTS: Merged state checkpoints
+	// ═══════════════════════════════════════════════════════════════════════
+	snapshots: defineTable({
+		collection: v.string(), // Which collection
+		document: v.string(), // Which document
+		bytes: v.bytes(), // Merged Yjs update (Y.mergeUpdatesV2)
+		vector: v.bytes(), // State vector (Y.encodeStateVectorFromUpdateV2)
+		seq: v.number(), // Highest seq included in snapshot
+		created: v.number(), // Timestamp
+	}).index('by_document', ['collection', 'document']),
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // SESSIONS: Client state tracking for compaction
-  // ═══════════════════════════════════════════════════════════════════════
-  sessions: defineTable({
-    // Identity
-    collection: v.string(),           // Which collection
-    document: v.string(),             // Which document
-    client: v.string(),               // Y.Doc.clientID (persisted)
+	// ═══════════════════════════════════════════════════════════════════════
+	// SESSIONS: Client state tracking for compaction
+	// ═══════════════════════════════════════════════════════════════════════
+	sessions: defineTable({
+		// Identity
+		collection: v.string(), // Which collection
+		document: v.string(), // Which document
+		client: v.string(), // Y.Doc.clientID (persisted)
 
-    // Sync state (for compaction decisions)
-    vector: v.optional(v.bytes()),    // Client's state vector
-    connected: v.boolean(),           // Currently heartbeating?
-    seq: v.number(),                  // Last known seq
+		// Sync state (for compaction decisions)
+		vector: v.optional(v.bytes()), // Client's state vector
+		connected: v.boolean(), // Currently heartbeating?
+		seq: v.number(), // Last known seq
 
-    // Liveness
-    seen: v.number(),                 // Last heartbeat timestamp
+		// Liveness
+		seen: v.number(), // Last heartbeat timestamp
 
-    // Presence (for UI)
-    user: v.optional(v.string()),     // User ID for grouping
-    profile: v.optional(v.object({
-      name: v.optional(v.string()),
-      color: v.optional(v.string()),
-      avatar: v.optional(v.string()),
-    })),
-    cursor: v.optional(v.object({
-      anchor: v.any(),                // Yjs RelativePosition
-      head: v.any(),                  // Yjs RelativePosition
-      field: v.optional(v.string()),
-    })),
+		// Presence (for UI)
+		user: v.optional(v.string()), // User ID for grouping
+		profile: v.optional(
+			v.object({
+				name: v.optional(v.string()),
+				color: v.optional(v.string()),
+				avatar: v.optional(v.string()),
+			})
+		),
+		cursor: v.optional(
+			v.object({
+				anchor: v.any(), // Yjs RelativePosition
+				head: v.any(), // Yjs RelativePosition
+				field: v.optional(v.string()),
+			})
+		),
 
-    // Watchdog
-    timeout: v.optional(v.id("_scheduled_functions")),
-  })
-    .index("by_collection", ["collection"])
-    .index("by_document", ["collection", "document"])
-    .index("by_client", ["collection", "document", "client"])
-    .index("by_connected", ["collection", "document", "connected"]),
+		// Watchdog
+		timeout: v.optional(v.id('_scheduled_functions')),
+	})
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_client', ['collection', 'document', 'client'])
+		.index('by_connected', ['collection', 'document', 'connected']),
 });
 ```
 
@@ -715,28 +718,28 @@ export const compact = mutation({
 ```typescript
 // recovery - Get diff for reconnecting client
 export const recovery = query({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    vector: v.bytes(),
-  },
-  handler: async (ctx, args) => {
-    // Merge snapshot + deltas
-    // Return diff against client's vector
-  },
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		vector: v.bytes(),
+	},
+	handler: async (ctx, args) => {
+		// Merge snapshot + deltas
+		// Return diff against client's vector
+	},
 });
 
 // sessions - Get active sessions for presence UI
 export const sessions = query({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    connected: v.optional(v.boolean()),
-    exclude: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    // Return sessions with presence info
-  },
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		connected: v.optional(v.boolean()),
+		exclude: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		// Return sessions with presence info
+	},
 });
 ```
 

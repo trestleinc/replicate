@@ -31,21 +31,21 @@ Schema migrations for local-first apps with zero mental overhead.
 
 ```typescript
 // convex/schema/tasks.ts
-import { schema } from "@trestleinc/replicate/server";
-import { v } from "convex/values";
+import { schema } from '@trestleinc/replicate/server';
+import { v } from 'convex/values';
 
 export const taskSchema = schema.define({
-  version: 1,
-  shape: v.object({
-    id: v.string(),
-    title: v.string(),
-    completed: v.boolean(),
-    content: schema.prose(),
-  }),
+	version: 1,
+	shape: v.object({
+		id: v.string(),
+		title: v.string(),
+		completed: v.boolean(),
+		content: schema.prose(),
+	}),
 });
 
 // Type inference
-import type { Infer } from "convex/values";
+import type { Infer } from 'convex/values';
 type Task = Infer<typeof taskSchema.shape>;
 ```
 
@@ -53,34 +53,34 @@ type Task = Infer<typeof taskSchema.shape>;
 
 ```typescript
 // convex/schema/tasks.ts
-import { schema } from "@trestleinc/replicate/server";
-import { v } from "convex/values";
+import { schema } from '@trestleinc/replicate/server';
+import { v } from 'convex/values';
 
 export const taskSchema = schema.define({
-  version: 2,  // Bump version
+	version: 2, // Bump version
 
-  shape: v.object({
-    id: v.string(),
-    title: v.string(),
-    completed: v.boolean(),
-    priority: v.optional(v.string()),  // New field (optional in validator)
-    content: schema.prose(),
-  }),
+	shape: v.object({
+		id: v.string(),
+		title: v.string(),
+		completed: v.boolean(),
+		priority: v.optional(v.string()), // New field (optional in validator)
+		content: schema.prose(),
+	}),
 
-  // Defaults applied during migrations
-  defaults: {
-    priority: "medium",
-  },
+	// Defaults applied during migrations
+	defaults: {
+		priority: 'medium',
+	},
 
-  // Keep history for diffing (optional but recommended)
-  history: {
-    1: v.object({
-      id: v.string(),
-      title: v.string(),
-      completed: v.boolean(),
-      content: schema.prose(),
-    }),
-  },
+	// Keep history for diffing (optional but recommended)
+	history: {
+		1: v.object({
+			id: v.string(),
+			title: v.string(),
+			completed: v.boolean(),
+			content: schema.prose(),
+		}),
+	},
 });
 ```
 
@@ -88,16 +88,16 @@ export const taskSchema = schema.define({
 
 ```typescript
 // convex/migrations/tasks.ts
-import { taskSchema } from "../schema/tasks";
+import { taskSchema } from '../schema/tasks';
 
 export const taskMigrations = taskSchema.migrations({
-  2: {
-    name: "add-priority-field",
-    migrate: async (ctx, doc) => {
-      // Normal Convex migration - exactly like @convex-dev/migrations
-      await ctx.db.patch(doc._id, { priority: "medium" });
-    },
-  },
+	2: {
+		name: 'add-priority-field',
+		migrate: async (ctx, doc) => {
+			// Normal Convex migration - exactly like @convex-dev/migrations
+			await ctx.db.patch(doc._id, { priority: 'medium' });
+		},
+	},
 });
 ```
 
@@ -105,19 +105,19 @@ export const taskMigrations = taskSchema.migrations({
 
 ```typescript
 // src/collections/tasks.ts
-import { collection, persistence } from "@trestleinc/replicate/client";
-import { ConvexClient } from "convex/browser";
-import { taskSchema } from "../convex/schema/tasks";
-import { api } from "../convex/_generated/api";
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
+import { taskSchema } from '../convex/schema/tasks';
+import { api } from '../convex/_generated/api';
 
 export const tasks = collection.create({
-  schema: taskSchema,  // Version info included
-  persistence: () => persistence.web.sqlite(),
-  config: () => ({
-    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
-    api: api.tasks,
-    getKey: (task) => task.id,
-  }),
+	schema: taskSchema, // Version info included
+	persistence: () => persistence.web.sqlite(),
+	config: () => ({
+		convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+		api: api.tasks,
+		getKey: (task) => task.id,
+	}),
 });
 
 // Migrations run automatically
@@ -183,17 +183,17 @@ Generated SQL:
 ### Basic Schema
 
 ```typescript
-import { schema } from "@trestleinc/replicate/server";
-import { v } from "convex/values";
+import { schema } from '@trestleinc/replicate/server';
+import { v } from 'convex/values';
 
 export const userSchema = schema.define({
-  version: 1,
-  shape: v.object({
-    id: v.string(),
-    name: v.string(),
-    email: v.string(),
-    createdAt: v.number(),
-  }),
+	version: 1,
+	shape: v.object({
+		id: v.string(),
+		name: v.string(),
+		email: v.string(),
+		createdAt: v.number(),
+	}),
 });
 ```
 
@@ -201,16 +201,16 @@ export const userSchema = schema.define({
 
 ```typescript
 export const postSchema = schema.define({
-  version: 1,
-  shape: v.object({
-    id: v.string(),
-    title: v.string(),
-    content: schema.prose(),  // Rich text (Yjs)
-    published: v.optional(v.boolean()),
-  }),
-  defaults: {
-    published: false,
-  },
+	version: 1,
+	shape: v.object({
+		id: v.string(),
+		title: v.string(),
+		content: schema.prose(), // Rich text (Yjs)
+		published: v.optional(v.boolean()),
+	}),
+	defaults: {
+		published: false,
+	},
 });
 ```
 
@@ -218,43 +218,43 @@ export const postSchema = schema.define({
 
 ```typescript
 export const taskSchema = schema.define({
-  version: 3,
+	version: 3,
 
-  shape: v.object({
-    id: v.string(),
-    title: v.string(),
-    status: v.union(v.literal("todo"), v.literal("doing"), v.literal("done")),  // Changed in v3
-    priority: v.optional(v.string()),  // Added in v2
-    content: schema.prose(),
-  }),
+	shape: v.object({
+		id: v.string(),
+		title: v.string(),
+		status: v.union(v.literal('todo'), v.literal('doing'), v.literal('done')), // Changed in v3
+		priority: v.optional(v.string()), // Added in v2
+		content: schema.prose(),
+	}),
 
-  defaults: {
-    status: "todo",
-    priority: "medium",
-  },
+	defaults: {
+		status: 'todo',
+		priority: 'medium',
+	},
 
-  history: {
-    1: v.object({
-      id: v.string(),
-      title: v.string(),
-      completed: v.boolean(),
-      content: schema.prose(),
-    }),
-    2: v.object({
-      id: v.string(),
-      title: v.string(),
-      completed: v.boolean(),
-      priority: v.optional(v.string()),
-      content: schema.prose(),
-    }),
-  },
+	history: {
+		1: v.object({
+			id: v.string(),
+			title: v.string(),
+			completed: v.boolean(),
+			content: schema.prose(),
+		}),
+		2: v.object({
+			id: v.string(),
+			title: v.string(),
+			completed: v.boolean(),
+			priority: v.optional(v.string()),
+			content: schema.prose(),
+		}),
+	},
 });
 ```
 
 ### Type Inference
 
 ```typescript
-import type { Infer } from "convex/values";
+import type { Infer } from 'convex/values';
 
 // Types are inferred from the validator
 type Task = Infer<typeof taskSchema.shape>;
@@ -275,15 +275,15 @@ Server migrations use standard `@convex-dev/migrations` patterns:
 
 ```typescript
 // convex/migrations/tasks.ts
-import { taskSchema } from "../schema/tasks";
+import { taskSchema } from '../schema/tasks';
 
 export const taskMigrations = taskSchema.migrations({
-  2: {
-    name: "add-priority-field",
-    migrate: async (ctx, doc) => {
-      await ctx.db.patch(doc._id, { priority: "medium" });
-    },
-  },
+	2: {
+		name: 'add-priority-field',
+		migrate: async (ctx, doc) => {
+			await ctx.db.patch(doc._id, { priority: 'medium' });
+		},
+	},
 });
 ```
 
@@ -291,21 +291,19 @@ export const taskMigrations = taskSchema.migrations({
 
 ```typescript
 export const taskMigrations = taskSchema.migrations({
-  3: {
-    name: "convert-completed-to-status",
-    migrate: async (ctx, doc) => {
-      // Complex logic that can't be auto-generated
-      const owner = await ctx.db.get(doc.ownerId);
-      const status = doc.completed
-        ? "done"
-        : owner?.defaultStatus ?? "todo";
+	3: {
+		name: 'convert-completed-to-status',
+		migrate: async (ctx, doc) => {
+			// Complex logic that can't be auto-generated
+			const owner = await ctx.db.get(doc.ownerId);
+			const status = doc.completed ? 'done' : (owner?.defaultStatus ?? 'todo');
 
-      await ctx.db.patch(doc._id, {
-        status,
-        completed: undefined,  // Remove old field
-      });
-    },
-  },
+			await ctx.db.patch(doc._id, {
+				status,
+				completed: undefined, // Remove old field
+			});
+		},
+	},
 });
 ```
 
@@ -313,14 +311,14 @@ export const taskMigrations = taskSchema.migrations({
 
 ```typescript
 export const taskMigrations = taskSchema.migrations({
-  2: {
-    name: "add-priority-field",
-    batchSize: 50,  // Smaller batches for large documents
-    parallelize: true,  // Run in parallel within batch
-    migrate: async (ctx, doc) => {
-      await ctx.db.patch(doc._id, { priority: "medium" });
-    },
-  },
+	2: {
+		name: 'add-priority-field',
+		batchSize: 50, // Smaller batches for large documents
+		parallelize: true, // Run in parallel within batch
+		migrate: async (ctx, doc) => {
+			await ctx.db.patch(doc._id, { priority: 'medium' });
+		},
+	},
 });
 ```
 
@@ -328,12 +326,12 @@ export const taskMigrations = taskSchema.migrations({
 
 ```typescript
 // convex/migrations/index.ts
-import { migrations } from "@convex-dev/migrations";
-import { components, internal } from "../_generated/api";
-import { taskMigrations } from "./tasks";
+import { migrations } from '@convex-dev/migrations';
+import { components, internal } from '../_generated/api';
+import { taskMigrations } from './tasks';
 
 export const run = migrations(components.migrations, {
-  run: internal.migrations.run,
+	run: internal.migrations.run,
 });
 
 // Export for CLI
@@ -347,19 +345,19 @@ export const { run: runTaskMigrations } = taskMigrations.register(run);
 ### Basic Setup
 
 ```typescript
-import { collection, persistence } from "@trestleinc/replicate/client";
-import { ConvexClient } from "convex/browser";
-import { taskSchema } from "../convex/schema/tasks";
-import { api } from "../convex/_generated/api";
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
+import { taskSchema } from '../convex/schema/tasks';
+import { api } from '../convex/_generated/api';
 
 export const tasks = collection.create({
-  schema: taskSchema,
-  persistence: () => persistence.web.sqlite(),
-  config: () => ({
-    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
-    api: api.tasks,
-    getKey: (task) => task.id,
-  }),
+	schema: taskSchema,
+	persistence: () => persistence.web.sqlite(),
+	config: () => ({
+		convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+		api: api.tasks,
+		getKey: (task) => task.id,
+	}),
 });
 ```
 
@@ -367,28 +365,30 @@ export const tasks = collection.create({
 
 ```typescript
 export const tasks = collection.create({
-  schema: taskSchema,
-  persistence: () => persistence.web.sqlite(),
-  config: () => ({ /* ... */ }),
+	schema: taskSchema,
+	persistence: () => persistence.web.sqlite(),
+	config: () => ({
+		/* ... */
+	}),
 
-  onMigrationError: async (error, context) => {
-    console.error("Migration failed:", error.message);
+	onMigrationError: async (error, context) => {
+		console.error('Migration failed:', error.message);
 
-    // Check if we can safely reset
-    if (context.canResetSafely) {
-      // No unsynced changes - safe to wipe and resync
-      return { action: "reset" };
-    }
+		// Check if we can safely reset
+		if (context.canResetSafely) {
+			// No unsynced changes - safe to wipe and resync
+			return { action: 'reset' };
+		}
 
-    if (context.pendingChanges > 0) {
-      // Has unsynced changes - keep old schema, warn user
-      console.warn(`${context.pendingChanges} changes would be lost`);
-      return { action: "keep-old-schema" };
-    }
+		if (context.pendingChanges > 0) {
+			// Has unsynced changes - keep old schema, warn user
+			console.warn(`${context.pendingChanges} changes would be lost`);
+			return { action: 'keep-old-schema' };
+		}
 
-    // Retry with exponential backoff
-    return { action: "retry" };
-  },
+		// Retry with exponential backoff
+		return { action: 'retry' };
+	},
 });
 ```
 
@@ -398,15 +398,17 @@ For cases where auto-diff isn't sufficient:
 
 ```typescript
 export const tasks = collection.create({
-  schema: taskSchema,
-  persistence: () => persistence.web.sqlite(),
-  config: () => ({ /* ... */ }),
+	schema: taskSchema,
+	persistence: () => persistence.web.sqlite(),
+	config: () => ({
+		/* ... */
+	}),
 
-  // Override auto-generated migration
-  clientMigrations: {
-    3: async (db, ctx) => {
-      // Custom SQLite logic
-      await db.run(`
+	// Override auto-generated migration
+	clientMigrations: {
+		3: async (db, ctx) => {
+			// Custom SQLite logic
+			await db.run(`
         ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT 'todo';
         UPDATE tasks SET status =
           CASE
@@ -416,18 +418,18 @@ export const tasks = collection.create({
         ALTER TABLE tasks DROP COLUMN completed;
       `);
 
-      // Custom Yjs logic
-      for (const doc of ctx.dirtyDocs) {
-        const ydoc = ctx.getYDoc(doc.id);
-        const fields = ydoc.getMap("fields");
-        ydoc.transact(() => {
-          const completed = fields.get("completed");
-          fields.set("status", completed ? "done" : "todo");
-          fields.delete("completed");
-        });
-      }
-    },
-  },
+			// Custom Yjs logic
+			for (const doc of ctx.dirtyDocs) {
+				const ydoc = ctx.getYDoc(doc.id);
+				const fields = ydoc.getMap('fields');
+				ydoc.transact(() => {
+					const completed = fields.get('completed');
+					fields.set('status', completed ? 'done' : 'todo');
+					fields.delete('completed');
+				});
+			}
+		},
+	},
 });
 ```
 
@@ -439,18 +441,18 @@ When migrations fail, the `onMigrationError` hook receives context about the fai
 
 ```typescript
 interface MigrationError {
-  code: "SCHEMA_MISMATCH" | "SQLITE_ERROR" | "YJS_ERROR" | "NETWORK_ERROR";
-  message: string;
-  fromVersion: number;
-  toVersion: number;
-  operation?: SchemaDiffOperation;  // Which operation failed
+	code: 'SCHEMA_MISMATCH' | 'SQLITE_ERROR' | 'YJS_ERROR' | 'NETWORK_ERROR';
+	message: string;
+	fromVersion: number;
+	toVersion: number;
+	operation?: SchemaDiffOperation; // Which operation failed
 }
 
 interface RecoveryContext {
-  error: MigrationError;
-  canResetSafely: boolean;  // True if no unsynced local changes
-  pendingChanges: number;   // Count of unsynced changes
-  lastSyncedAt: Date | null;
+	error: MigrationError;
+	canResetSafely: boolean; // True if no unsynced local changes
+	pendingChanges: number; // Count of unsynced changes
+	lastSyncedAt: Date | null;
 }
 ```
 
@@ -508,28 +510,28 @@ These changes are NOT backwards compatible:
 ```typescript
 // Version 2: Add new field, keep old
 export const taskSchema = schema.define({
-  version: 2,
-  shape: v.object({
-    id: v.string(),
-    completed: v.boolean(),  // Deprecated, but kept
-    status: v.optional(v.string()),  // New
-  }),
-  defaults: {
-    status: "todo",
-  },
+	version: 2,
+	shape: v.object({
+		id: v.string(),
+		completed: v.boolean(), // Deprecated, but kept
+		status: v.optional(v.string()), // New
+	}),
+	defaults: {
+		status: 'todo',
+	},
 });
 
 // Version 3: Remove old field (after all clients upgraded)
 export const taskSchema = schema.define({
-  version: 3,
-  shape: v.object({
-    id: v.string(),
-    status: v.union(v.literal("todo"), v.literal("doing"), v.literal("done")),
-  }),
-  defaults: {
-    status: "todo",
-  },
-  history: { 1: v1Schema, 2: v2Schema },
+	version: 3,
+	shape: v.object({
+		id: v.string(),
+		status: v.union(v.literal('todo'), v.literal('doing'), v.literal('done')),
+	}),
+	defaults: {
+		status: 'todo',
+	},
+	history: { 1: v1Schema, 2: v2Schema },
 });
 ```
 
@@ -575,33 +577,33 @@ console.log(diff);
 
 ```typescript
 import type {
-  VersionedSchema,
-  SchemaDefinition,
-  SchemaDiff,
-  SchemaDiffOperation,
-} from "@trestleinc/replicate/server";
+	VersionedSchema,
+	SchemaDefinition,
+	SchemaDiff,
+	SchemaDiffOperation,
+} from '@trestleinc/replicate/server';
 ```
 
 ### Migration Types
 
 ```typescript
 import type {
-  MigrationDefinition,
-  MigrationContext,
-  ClientMigrationContext,
-  ClientMigrationFn,
-} from "@trestleinc/replicate/server";
+	MigrationDefinition,
+	MigrationContext,
+	ClientMigrationContext,
+	ClientMigrationFn,
+} from '@trestleinc/replicate/server';
 ```
 
 ### Recovery Types
 
 ```typescript
 import type {
-  MigrationError,
-  RecoveryContext,
-  RecoveryAction,
-  MigrationErrorHandler,
-} from "@trestleinc/replicate/client";
+	MigrationError,
+	RecoveryContext,
+	RecoveryAction,
+	MigrationErrorHandler,
+} from '@trestleinc/replicate/client';
 ```
 
 ---
@@ -612,68 +614,68 @@ import type {
 
 ```typescript
 // convex/schema/tasks.ts
-import { schema } from "@trestleinc/replicate/server";
-import { v } from "convex/values";
+import { schema } from '@trestleinc/replicate/server';
+import { v } from 'convex/values';
 
 export const taskSchema = schema.define({
-  version: 2,
-  shape: v.object({
-    id: v.string(),
-    title: v.string(),
-    status: v.optional(v.string()),
-    priority: v.optional(v.string()),
-    content: schema.prose(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  }),
-  defaults: {
-    status: "todo",
-    priority: "medium",
-  },
-  history: {
-    1: v.object({
-      id: v.string(),
-      title: v.string(),
-      completed: v.boolean(),
-      content: schema.prose(),
-      createdAt: v.number(),
-    }),
-  },
+	version: 2,
+	shape: v.object({
+		id: v.string(),
+		title: v.string(),
+		status: v.optional(v.string()),
+		priority: v.optional(v.string()),
+		content: schema.prose(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}),
+	defaults: {
+		status: 'todo',
+		priority: 'medium',
+	},
+	history: {
+		1: v.object({
+			id: v.string(),
+			title: v.string(),
+			completed: v.boolean(),
+			content: schema.prose(),
+			createdAt: v.number(),
+		}),
+	},
 });
 
 // convex/migrations/tasks.ts
 export const taskMigrations = taskSchema.migrations({
-  2: {
-    name: "add-status-and-priority",
-    migrate: async (ctx, doc) => {
-      await ctx.db.patch(doc._id, {
-        status: doc.completed ? "done" : "todo",
-        priority: "medium",
-        updatedAt: Date.now(),
-        completed: undefined,
-      });
-    },
-  },
+	2: {
+		name: 'add-status-and-priority',
+		migrate: async (ctx, doc) => {
+			await ctx.db.patch(doc._id, {
+				status: doc.completed ? 'done' : 'todo',
+				priority: 'medium',
+				updatedAt: Date.now(),
+				completed: undefined,
+			});
+		},
+	},
 });
 
 // src/collections/tasks.ts
-import { collection, persistence } from "@trestleinc/replicate/client";
-import { ConvexClient } from "convex/browser";
-import { taskSchema } from "../convex/schema/tasks";
-import { api } from "../convex/_generated/api";
+import { collection, persistence } from '@trestleinc/replicate/client';
+import { ConvexClient } from 'convex/browser';
+import { taskSchema } from '../convex/schema/tasks';
+import { api } from '../convex/_generated/api';
 
 export const tasks = collection.create({
-  schema: taskSchema,
-  persistence: () => persistence.web.sqlite(),
-  config: () => ({
-    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
-    api: api.tasks,
-    getKey: (task) => task.id,
-  }),
-  onMigrationError: async (error, ctx) => {
-    if (ctx.canResetSafely) return { action: "reset" };
-    return { action: "keep-old-schema" };
-  },
+	schema: taskSchema,
+	persistence: () => persistence.web.sqlite(),
+	config: () => ({
+		convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+		api: api.tasks,
+		getKey: (task) => task.id,
+	}),
+	onMigrationError: async (error, ctx) => {
+		if (ctx.canResetSafely) return { action: 'reset' };
+		return { action: 'keep-old-schema' };
+	},
 });
 ```
 
@@ -682,19 +684,19 @@ export const tasks = collection.create({
 ```typescript
 // Change status values: open/closed → todo/done
 export const taskMigrations = taskSchema.migrations({
-  3: {
-    name: "update-status-values",
-    migrate: async (ctx, doc) => {
-      const statusMap: Record<string, string> = {
-        "open": "todo",
-        "in-progress": "doing",
-        "closed": "done",
-      };
-      await ctx.db.patch(doc._id, {
-        status: statusMap[doc.status] ?? "todo",
-      });
-    },
-  },
+	3: {
+		name: 'update-status-values',
+		migrate: async (ctx, doc) => {
+			const statusMap: Record<string, string> = {
+				open: 'todo',
+				'in-progress': 'doing',
+				closed: 'done',
+			};
+			await ctx.db.patch(doc._id, {
+				status: statusMap[doc.status] ?? 'todo',
+			});
+		},
+	},
 });
 ```
 
@@ -703,15 +705,15 @@ export const taskMigrations = taskSchema.migrations({
 ```typescript
 // Copy owner name into task for faster reads
 export const taskMigrations = taskSchema.migrations({
-  4: {
-    name: "denormalize-owner-name",
-    migrate: async (ctx, doc) => {
-      const owner = await ctx.db.get(doc.ownerId);
-      await ctx.db.patch(doc._id, {
-        ownerName: owner?.name ?? "Unknown",
-      });
-    },
-  },
+	4: {
+		name: 'denormalize-owner-name',
+		migrate: async (ctx, doc) => {
+			const owner = await ctx.db.get(doc.ownerId);
+			await ctx.db.patch(doc._id, {
+				ownerName: owner?.name ?? 'Unknown',
+			});
+		},
+	},
 });
 ```
 

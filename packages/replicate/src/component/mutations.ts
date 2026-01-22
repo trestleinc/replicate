@@ -109,112 +109,65 @@ async function scheduleCompactionIfNeeded(
 	}
 }
 
-export const insertDocument = mutation({
+const documentWriteArgs = {
+	collection: v.string(),
+	document: v.string(),
+	bytes: v.bytes(),
+	threshold: v.optional(v.number()),
+	timeout: v.optional(v.number()),
+	retain: v.optional(v.number()),
+};
+
+async function handleDocumentWrite(
+	ctx: MutationCtx,
 	args: {
-		collection: v.string(),
-		document: v.string(),
-		bytes: v.bytes(),
-		threshold: v.optional(v.number()),
-		timeout: v.optional(v.number()),
-		retain: v.optional(v.number()),
-	},
+		collection: string;
+		document: string;
+		bytes: ArrayBuffer;
+		threshold?: number;
+		timeout?: number;
+		retain?: number;
+	}
+) {
+	const seq = await getNextSeq(ctx, args.collection);
+
+	await ctx.db.insert('deltas', {
+		collection: args.collection,
+		document: args.document,
+		bytes: args.bytes,
+		seq,
+	});
+
+	const count = await incrementDeltaCount(ctx, args.collection, args.document);
+	await scheduleCompactionIfNeeded(
+		ctx,
+		args.collection,
+		args.document,
+		count,
+		args.threshold ?? DEFAULT_THRESHOLD,
+		args.timeout ?? DEFAULT_TIMEOUT,
+		args.retain ?? 0
+	);
+
+	return { success: true as const, seq };
+}
+
+export const insertDocument = mutation({
+	args: documentWriteArgs,
 	returns: successSeqValidator,
-	handler: async (ctx, args) => {
-		const seq = await getNextSeq(ctx, args.collection);
-
-		await ctx.db.insert('deltas', {
-			collection: args.collection,
-			document: args.document,
-			bytes: args.bytes,
-			seq,
-		});
-
-		// O(1) count increment and compaction check
-		const count = await incrementDeltaCount(ctx, args.collection, args.document);
-		await scheduleCompactionIfNeeded(
-			ctx,
-			args.collection,
-			args.document,
-			count,
-			args.threshold ?? DEFAULT_THRESHOLD,
-			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0
-		);
-
-		return { success: true, seq };
-	},
+	handler: handleDocumentWrite,
 });
 
 export const updateDocument = mutation({
-	args: {
-		collection: v.string(),
-		document: v.string(),
-		bytes: v.bytes(),
-		threshold: v.optional(v.number()),
-		timeout: v.optional(v.number()),
-		retain: v.optional(v.number()),
-	},
+	args: documentWriteArgs,
 	returns: successSeqValidator,
-	handler: async (ctx, args) => {
-		const seq = await getNextSeq(ctx, args.collection);
-
-		await ctx.db.insert('deltas', {
-			collection: args.collection,
-			document: args.document,
-			bytes: args.bytes,
-			seq,
-		});
-
-		// O(1) count increment and compaction check
-		const count = await incrementDeltaCount(ctx, args.collection, args.document);
-		await scheduleCompactionIfNeeded(
-			ctx,
-			args.collection,
-			args.document,
-			count,
-			args.threshold ?? DEFAULT_THRESHOLD,
-			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0
-		);
-
-		return { success: true, seq };
-	},
+	handler: handleDocumentWrite,
 });
 
 export const deleteDocument = mutation({
-	args: {
-		collection: v.string(),
-		document: v.string(),
-		bytes: v.bytes(),
-		threshold: v.optional(v.number()),
-		timeout: v.optional(v.number()),
-		retain: v.optional(v.number()),
-	},
+	args: documentWriteArgs,
 	returns: successSeqValidator,
-	handler: async (ctx, args) => {
-		const seq = await getNextSeq(ctx, args.collection);
-
-		await ctx.db.insert('deltas', {
-			collection: args.collection,
-			document: args.document,
-			bytes: args.bytes,
-			seq,
-		});
-
-		// O(1) count increment and compaction check
-		const count = await incrementDeltaCount(ctx, args.collection, args.document);
-		await scheduleCompactionIfNeeded(
-			ctx,
-			args.collection,
-			args.document,
-			count,
-			args.threshold ?? DEFAULT_THRESHOLD,
-			args.timeout ?? DEFAULT_TIMEOUT,
-			args.retain ?? 0
-		);
-
-		return { success: true, seq };
-	},
+	handler: handleDocumentWrite,
 });
 
 const DEFAULT_HEARTBEAT_INTERVAL = 10000;

@@ -43,12 +43,12 @@ Deltas are only deleted when **ALL active peers** have received that data.
 ```typescript
 // Pseudo-code for safe deletion check
 for (const session of activeSessions) {
-  const missing = Y.diffUpdateV2(snapshot, session.vector);
-  if (missing.byteLength > 2) {
-    // This peer hasn't seen all data in snapshot
-    canDelete = false;
-    break;
-  }
+	const missing = Y.diffUpdateV2(snapshot, session.vector);
+	if (missing.byteLength > 2) {
+		// This peer hasn't seen all data in snapshot
+		canDelete = false;
+		break;
+	}
 }
 ```
 
@@ -100,11 +100,11 @@ Each client reports their Yjs state vector via the `mark` action (within `presen
 ```typescript
 // Client reports sync progress
 api.presence({
-  action: "mark",
-  document: docId,
-  client: clientId,
-  seq: lastSeenSeq,
-  vector: Y.encodeStateVector(ydoc),
+	action: 'mark',
+	document: docId,
+	client: clientId,
+	seq: lastSeenSeq,
+	vector: Y.encodeStateVector(ydoc),
 });
 ```
 
@@ -120,7 +120,7 @@ const snapshot = await getSnapshot(collection, document);
 // Merge into unified state
 const updates = [];
 if (snapshot) updates.push(snapshot.bytes);
-updates.push(...deltas.map(d => d.bytes));
+updates.push(...deltas.map((d) => d.bytes));
 
 const merged = Y.mergeUpdatesV2(updates);
 const mergedVector = Y.encodeStateVectorFromUpdateV2(merged);
@@ -135,10 +135,10 @@ A peer is "active" if:
 
 ```typescript
 const now = Date.now();
-const activeSessions = sessions.filter(session => {
-  if (session.connected) return true;
-  if ((now - session.seen) < timeout) return true;
-  return false;
+const activeSessions = sessions.filter((session) => {
+	if (session.connected) return true;
+	if (now - session.seen < timeout) return true;
+	return false;
 });
 ```
 
@@ -150,18 +150,18 @@ For each active peer, check if they have all data in the snapshot:
 let canDeleteAll = true;
 
 for (const session of activeSessions) {
-  if (!session.vector) {
-    // No vector means we can't verify - don't delete
-    canDeleteAll = false;
-    break;
-  }
+	if (!session.vector) {
+		// No vector means we can't verify - don't delete
+		canDeleteAll = false;
+		break;
+	}
 
-  const diff = Y.diffUpdateV2(merged, session.vector);
-  if (diff.byteLength > 2) {
-    // Non-empty diff means peer is missing data
-    canDeleteAll = false;
-    break;
-  }
+	const diff = Y.diffUpdateV2(merged, session.vector);
+	if (diff.byteLength > 2) {
+		// Non-empty diff means peer is missing data
+		canDeleteAll = false;
+		break;
+	}
 }
 ```
 
@@ -171,12 +171,12 @@ Always update/create the snapshot with merged state:
 
 ```typescript
 await upsertSnapshot({
-  collection,
-  document,
-  bytes: merged,
-  vector: mergedVector,
-  seq: Math.max(...deltas.map(d => d.seq)),
-  created: Date.now(),
+	collection,
+	document,
+	bytes: merged,
+	vector: mergedVector,
+	seq: Math.max(...deltas.map((d) => d.seq)),
+	created: Date.now(),
 });
 ```
 
@@ -184,9 +184,9 @@ await upsertSnapshot({
 
 ```typescript
 if (canDeleteAll) {
-  for (const delta of deltas) {
-    await db.delete(delta._id);
-  }
+	for (const delta of deltas) {
+		await db.delete(delta._id);
+	}
 }
 ```
 
@@ -195,12 +195,10 @@ if (canDeleteAll) {
 Remove sessions that are disconnected beyond `timeout`:
 
 ```typescript
-const staleSessions = sessions.filter(s =>
-  !s.connected && (now - s.seen) > timeout
-);
+const staleSessions = sessions.filter((s) => !s.connected && now - s.seen > timeout);
 
 for (const session of staleSessions) {
-  await db.delete(session._id);
+	await db.delete(session._id);
 }
 ```
 
@@ -212,9 +210,9 @@ The replicate component requires `yjs` as a peer dependency:
 
 ```json
 {
-  "peerDependencies": {
-    "yjs": "^13.6.0"
-  }
+	"peerDependencies": {
+		"yjs": "^13.6.0"
+	}
 }
 ```
 
@@ -224,21 +222,21 @@ Add a `compaction` table for job deduplication and tracking:
 
 ```typescript
 compaction: defineTable({
-  collection: v.string(),
-  document: v.string(),
-  status: v.union(
-    v.literal("pending"),
-    v.literal("running"),
-    v.literal("done"),
-    v.literal("failed")
-  ),
-  started: v.number(),
-  completed: v.optional(v.number()),
-  retries: v.number(),
-  error: v.optional(v.string()),
+	collection: v.string(),
+	document: v.string(),
+	status: v.union(
+		v.literal('pending'),
+		v.literal('running'),
+		v.literal('done'),
+		v.literal('failed')
+	),
+	started: v.number(),
+	completed: v.optional(v.number()),
+	retries: v.number(),
+	error: v.optional(v.string()),
 })
-  .index("by_document", ["collection", "document", "status"])
-  .index("by_status", ["status", "started"])
+	.index('by_document', ['collection', 'document', 'status'])
+	.index('by_status', ['status', 'started']);
 ```
 
 ### Schedule Mutation
@@ -247,53 +245,49 @@ Schedules compaction with deduplication (one job per document):
 
 ```typescript
 export const schedule = mutation({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-    timeout: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("compaction")
-      .withIndex("by_document", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-         .eq("status", "running")
-      )
-      .first();
+	args: {
+		collection: v.string(),
+		document: v.string(),
+		timeout: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query('compaction')
+			.withIndex('by_document', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('status', 'running')
+			)
+			.first();
 
-    if (existing) {
-      return { id: existing._id, status: "already_running" };
-    }
+		if (existing) {
+			return { id: existing._id, status: 'already_running' };
+		}
 
-    const pending = await ctx.db
-      .query("compaction")
-      .withIndex("by_document", q =>
-        q.eq("collection", args.collection)
-         .eq("document", args.document)
-         .eq("status", "pending")
-      )
-      .first();
+		const pending = await ctx.db
+			.query('compaction')
+			.withIndex('by_document', (q) =>
+				q.eq('collection', args.collection).eq('document', args.document).eq('status', 'pending')
+			)
+			.first();
 
-    if (pending) {
-      return { id: pending._id, status: "already_pending" };
-    }
+		if (pending) {
+			return { id: pending._id, status: 'already_pending' };
+		}
 
-    const id = await ctx.db.insert("compaction", {
-      collection: args.collection,
-      document: args.document,
-      status: "pending",
-      started: Date.now(),
-      retries: 0,
-    });
+		const id = await ctx.db.insert('compaction', {
+			collection: args.collection,
+			document: args.document,
+			status: 'pending',
+			started: Date.now(),
+			retries: 0,
+		});
 
-    await ctx.scheduler.runAfter(0, api.compaction.run, {
-      id,
-      timeout: args.timeout,
-    });
+		await ctx.scheduler.runAfter(0, api.compaction.run, {
+			id,
+			timeout: args.timeout,
+		});
 
-    return { id, status: "scheduled" };
-  },
+		return { id, status: 'scheduled' };
+	},
 });
 ```
 
@@ -302,126 +296,125 @@ export const schedule = mutation({
 Executes compaction with retry logic:
 
 ```typescript
-import * as Y from "yjs";
+import * as Y from 'yjs';
 
 export const run = mutation({
-  args: {
-    id: v.id("compaction"),
-    timeout: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.id);
-    if (!job || job.status === "done") return;
+	args: {
+		id: v.id('compaction'),
+		timeout: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const job = await ctx.db.get(args.id);
+		if (!job || job.status === 'done') return;
 
-    await ctx.db.patch(args.id, { status: "running" });
+		await ctx.db.patch(args.id, { status: 'running' });
 
-    const now = Date.now();
-    const timeout = args.timeout ?? 24 * 60 * 60 * 1000;
+		const now = Date.now();
+		const timeout = args.timeout ?? 24 * 60 * 60 * 1000;
 
-    try {
-      const deltas = await ctx.db
-        .query("deltas")
-        .withIndex("by_document", q =>
-          q.eq("collection", job.collection).eq("document", job.document)
-        )
-        .collect();
+		try {
+			const deltas = await ctx.db
+				.query('deltas')
+				.withIndex('by_document', (q) =>
+					q.eq('collection', job.collection).eq('document', job.document)
+				)
+				.collect();
 
-      if (deltas.length === 0) {
-        await ctx.db.patch(args.id, { status: "done", completed: now });
-        return { removed: 0, retained: 0 };
-      }
+			if (deltas.length === 0) {
+				await ctx.db.patch(args.id, { status: 'done', completed: now });
+				return { removed: 0, retained: 0 };
+			}
 
-      const snapshot = await ctx.db
-        .query("snapshots")
-        .withIndex("by_document", q =>
-          q.eq("collection", job.collection).eq("document", job.document)
-        )
-        .first();
+			const snapshot = await ctx.db
+				.query('snapshots')
+				.withIndex('by_document', (q) =>
+					q.eq('collection', job.collection).eq('document', job.document)
+				)
+				.first();
 
-      const updates: Uint8Array[] = [];
-      if (snapshot) updates.push(new Uint8Array(snapshot.bytes));
-      updates.push(...deltas.map(d => new Uint8Array(d.bytes)));
+			const updates: Uint8Array[] = [];
+			if (snapshot) updates.push(new Uint8Array(snapshot.bytes));
+			updates.push(...deltas.map((d) => new Uint8Array(d.bytes)));
 
-      const merged = Y.mergeUpdatesV2(updates);
-      const vector = Y.encodeStateVectorFromUpdateV2(merged);
+			const merged = Y.mergeUpdatesV2(updates);
+			const vector = Y.encodeStateVectorFromUpdateV2(merged);
 
-      const sessions = await ctx.db
-        .query("sessions")
-        .withIndex("by_document", q =>
-          q.eq("collection", job.collection).eq("document", job.document)
-        )
-        .collect();
+			const sessions = await ctx.db
+				.query('sessions')
+				.withIndex('by_document', (q) =>
+					q.eq('collection', job.collection).eq('document', job.document)
+				)
+				.collect();
 
-      let canDelete = true;
-      for (const session of sessions) {
-        const isActive = session.connected || (now - session.seen) < timeout;
-        if (!isActive) continue;
+			let canDelete = true;
+			for (const session of sessions) {
+				const isActive = session.connected || now - session.seen < timeout;
+				if (!isActive) continue;
 
-        if (!session.vector) {
-          canDelete = false;
-          break;
-        }
+				if (!session.vector) {
+					canDelete = false;
+					break;
+				}
 
-        const diff = Y.diffUpdateV2(merged, new Uint8Array(session.vector));
-        if (diff.byteLength > 2) {
-          canDelete = false;
-          break;
-        }
-      }
+				const diff = Y.diffUpdateV2(merged, new Uint8Array(session.vector));
+				if (diff.byteLength > 2) {
+					canDelete = false;
+					break;
+				}
+			}
 
-      if (snapshot) {
-        await ctx.db.patch(snapshot._id, {
-          bytes: merged.buffer as ArrayBuffer,
-          vector: vector.buffer as ArrayBuffer,
-          seq: Math.max(...deltas.map(d => d.seq)),
-          created: now,
-        });
-      } else {
-        await ctx.db.insert("snapshots", {
-          collection: job.collection,
-          document: job.document,
-          bytes: merged.buffer as ArrayBuffer,
-          vector: vector.buffer as ArrayBuffer,
-          seq: Math.max(...deltas.map(d => d.seq)),
-          created: now,
-        });
-      }
+			if (snapshot) {
+				await ctx.db.patch(snapshot._id, {
+					bytes: merged.buffer as ArrayBuffer,
+					vector: vector.buffer as ArrayBuffer,
+					seq: Math.max(...deltas.map((d) => d.seq)),
+					created: now,
+				});
+			} else {
+				await ctx.db.insert('snapshots', {
+					collection: job.collection,
+					document: job.document,
+					bytes: merged.buffer as ArrayBuffer,
+					vector: vector.buffer as ArrayBuffer,
+					seq: Math.max(...deltas.map((d) => d.seq)),
+					created: now,
+				});
+			}
 
-      let removed = 0;
-      if (canDelete) {
-        for (const delta of deltas) {
-          await ctx.db.delete(delta._id);
-          removed++;
-        }
-      }
+			let removed = 0;
+			if (canDelete) {
+				for (const delta of deltas) {
+					await ctx.db.delete(delta._id);
+					removed++;
+				}
+			}
 
-      for (const session of sessions) {
-        if (session.connected) continue;
-        if ((now - session.seen) > timeout) {
-          await ctx.db.delete(session._id);
-        }
-      }
+			for (const session of sessions) {
+				if (session.connected) continue;
+				if (now - session.seen > timeout) {
+					await ctx.db.delete(session._id);
+				}
+			}
 
-      await ctx.db.patch(args.id, { status: "done", completed: now });
-      return { removed, retained: deltas.length - removed };
+			await ctx.db.patch(args.id, { status: 'done', completed: now });
+			return { removed, retained: deltas.length - removed };
+		} catch (error) {
+			const retries = (job.retries ?? 0) + 1;
 
-    } catch (error) {
-      const retries = (job.retries ?? 0) + 1;
-
-      if (retries < 3) {
-        await ctx.db.patch(args.id, { status: "pending", retries });
-        const backoff = Math.pow(2, retries) * 1000;
-        await ctx.scheduler.runAfter(backoff, api.compaction.run, args);
-      } else {
-        await ctx.db.patch(args.id, {
-          status: "failed",
-          error: String(error),
-          completed: now,
-        });
-      }
-      throw error;
-    }
-  },
+			if (retries < 3) {
+				await ctx.db.patch(args.id, { status: 'pending', retries });
+				const backoff = Math.pow(2, retries) * 1000;
+				await ctx.scheduler.runAfter(backoff, api.compaction.run, args);
+			} else {
+				await ctx.db.patch(args.id, {
+					status: 'failed',
+					error: String(error),
+					completed: now,
+				});
+			}
+			throw error;
+		}
+	},
 });
 ```
 
@@ -431,25 +424,28 @@ export const run = mutation({
 
 ```typescript
 interface CompactionConfig {
-  threshold?: number;   // Delta count to trigger compaction (default: 500)
-  timeout?: Duration;   // Ignore peers disconnected longer than this (default: "1d")
-  retain?: number;      // Keep N recent deltas after compaction (default: 0)
+	threshold?: number; // Delta count to trigger compaction (default: 500)
+	timeout?: Duration; // Ignore peers disconnected longer than this (default: "1d")
+	retain?: number; // Keep N recent deltas after compaction (default: 0)
 }
 ```
 
 ### Usage
 
 ```typescript
-import { collection } from "@trestleinc/replicate/server";
+import { collection } from '@trestleinc/replicate/server';
 
-export const { material, delta, replicate, presence, session } =
-  collection.create<Doc<"tasks">>(components.replicate, "tasks", {
-    compaction: {
-      threshold: 500,   // Trigger at 500 deltas
-      timeout: "30d",   // Wait 30 days for disconnected peers
-      retain: 50,       // Keep last 50 deltas as buffer
-    },
-  });
+export const { material, delta, replicate, presence, session } = collection.create<Doc<'tasks'>>(
+	components.replicate,
+	'tasks',
+	{
+		compaction: {
+			threshold: 500, // Trigger at 500 deltas
+			timeout: '30d', // Wait 30 days for disconnected peers
+			retain: 50, // Keep last 50 deltas as buffer
+		},
+	}
+);
 ```
 
 ### Common Configurations
@@ -466,16 +462,17 @@ export const { material, delta, replicate, presence, session } =
 After insert/update/delete, schedule compaction if threshold exceeded:
 
 ```typescript
-const deltas = await ctx.db.query("deltas")
-  .withIndex("by_document", q => q.eq("collection", c).eq("document", d))
-  .collect();
+const deltas = await ctx.db
+	.query('deltas')
+	.withIndex('by_document', (q) => q.eq('collection', c).eq('document', d))
+	.collect();
 
 if (deltas.length >= (config.threshold ?? 500)) {
-  await ctx.runMutation(api.compaction.schedule, {
-    collection,
-    document,
-    timeout: config.timeout,
-  });
+	await ctx.runMutation(api.compaction.schedule, {
+		collection,
+		document,
+		timeout: config.timeout,
+	});
 }
 ```
 
@@ -500,14 +497,14 @@ Deltas may have been deleted. Client uses `recovery` query:
 ```typescript
 // Client sends its state vector
 const { diff, vector } = await convexClient.query(api.tasks.recovery, {
-  document: docId,
-  vector: Y.encodeStateVector(ydoc),
+	document: docId,
+	vector: Y.encodeStateVector(ydoc),
 });
 
 // Server computes diff from snapshot
 // Client applies diff to catch up
 if (diff) {
-  Y.applyUpdate(ydoc, new Uint8Array(diff));
+	Y.applyUpdate(ydoc, new Uint8Array(diff));
 }
 ```
 
@@ -542,9 +539,9 @@ Query the `compaction` table for job status:
 
 ```typescript
 const jobs = await ctx.db
-  .query("compaction")
-  .withIndex("by_status", q => q.eq("status", "failed"))
-  .collect();
+	.query('compaction')
+	.withIndex('by_status', (q) => q.eq('status', 'failed'))
+	.collect();
 ```
 
 | Status    | Meaning                   |
@@ -558,11 +555,17 @@ const jobs = await ctx.db
 
 ```typescript
 {
-  document: string;
-  deltas: number;
-  snapshot: { size: number; age: number };
-  peers: { active: number; stale: number };
-  ready: boolean;
+	document: string;
+	deltas: number;
+	snapshot: {
+		size: number;
+		age: number;
+	}
+	peers: {
+		active: number;
+		stale: number;
+	}
+	ready: boolean;
 }
 ```
 
@@ -581,10 +584,10 @@ If some peers are behind, we could delete only deltas ALL peers have seen:
 
 ```typescript
 // Find minimum safe seq across all active peers
-const minSafeSeq = Math.min(...activeSessions.map(s => s.seq));
+const minSafeSeq = Math.min(...activeSessions.map((s) => s.seq));
 
 // Delete only deltas below that seq
-const safeToDelete = deltas.filter(d => d.seq < minSafeSeq);
+const safeToDelete = deltas.filter((d) => d.seq < minSafeSeq);
 ```
 
 ### Compaction Metrics

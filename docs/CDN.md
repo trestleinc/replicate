@@ -67,32 +67,32 @@ Create a Worker to serve R2 with proper headers:
 ```typescript
 // workers/cdn.ts
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const key = url.pathname.slice(1); // Remove leading slash
+	async fetch(request: Request, env: Env): Promise<Response> {
+		const url = new URL(request.url);
+		const key = url.pathname.slice(1); // Remove leading slash
 
-    const object = await env.WA_SQLITE_BUCKET.get(key);
+		const object = await env.WA_SQLITE_BUCKET.get(key);
 
-    if (!object) {
-      return new Response("Not Found", { status: 404 });
-    }
+		if (!object) {
+			return new Response('Not Found', { status: 404 });
+		}
 
-    const headers = new Headers();
+		const headers = new Headers();
 
-    // Set content type
-    if (key.endsWith(".wasm")) {
-      headers.set("Content-Type", "application/wasm");
-    } else if (key.endsWith(".js") || key.endsWith(".mjs")) {
-      headers.set("Content-Type", "application/javascript");
-    }
+		// Set content type
+		if (key.endsWith('.wasm')) {
+			headers.set('Content-Type', 'application/wasm');
+		} else if (key.endsWith('.js') || key.endsWith('.mjs')) {
+			headers.set('Content-Type', 'application/javascript');
+		}
 
-    // Cache headers - immutable for versioned paths
-    headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    headers.set("Access-Control-Allow-Origin", "*");
-    headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+		// Cache headers - immutable for versioned paths
+		headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+		headers.set('Access-Control-Allow-Origin', '*');
+		headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
 
-    return new Response(object.body, { headers });
-  },
+		return new Response(object.body, { headers });
+	},
 };
 ```
 
@@ -122,32 +122,32 @@ For dynamic proxying with automatic updates:
 
 ```typescript
 // workers/wa-sqlite-proxy.ts
-const UPSTREAM = "https://cdn.jsdelivr.net/gh/rhashimoto/wa-sqlite@master";
+const UPSTREAM = 'https://cdn.jsdelivr.net/gh/rhashimoto/wa-sqlite@master';
 const CACHE_TTL = 86400 * 7; // 7 days
 
 export default {
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const upstreamUrl = `${UPSTREAM}${url.pathname}`;
+	async fetch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+		const upstreamUrl = `${UPSTREAM}${url.pathname}`;
 
-    // Check cache first
-    const cache = caches.default;
-    let response = await cache.match(request);
+		// Check cache first
+		const cache = caches.default;
+		let response = await cache.match(request);
 
-    if (!response) {
-      response = await fetch(upstreamUrl);
+		if (!response) {
+			response = await fetch(upstreamUrl);
 
-      // Clone and add cache headers
-      response = new Response(response.body, response);
-      response.headers.set("Cache-Control", `public, max-age=${CACHE_TTL}`);
-      response.headers.set("Access-Control-Allow-Origin", "*");
+			// Clone and add cache headers
+			response = new Response(response.body, response);
+			response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL}`);
+			response.headers.set('Access-Control-Allow-Origin', '*');
 
-      // Store in cache
-      await cache.put(request, response.clone());
-    }
+			// Store in cache
+			await cache.put(request, response.clone());
+		}
 
-    return response;
-  },
+		return response;
+	},
 };
 ```
 
@@ -159,7 +159,7 @@ Update the worker to use your CDN:
 
 ```typescript
 // src/client/persistence/sqlite/worker.ts
-const CDN_BASE = "https://wa-sqlite.robelest.com/v1.0.0";
+const CDN_BASE = 'https://wa-sqlite.robelest.com/v1.0.0';
 ```
 
 ### User-Configurable CDN
@@ -169,9 +169,9 @@ Allow users to override:
 ```typescript
 // src/client/persistence/sqlite/web.ts
 export interface WebSqliteOptions {
-  name: string;
-  worker: Worker | (() => Worker | Promise<Worker>);
-  cdnBase?: string; // Optional custom CDN
+	name: string;
+	worker: Worker | (() => Worker | Promise<Worker>);
+	cdnBase?: string; // Optional custom CDN
 }
 
 // In worker initialization, pass cdnBase via postMessage
@@ -184,13 +184,13 @@ For users with completely custom setups:
 ```typescript
 // src/client/persistence/index.ts
 export const persistence = {
-  sqlite: {
-    once: onceWebSqlitePersistence,
-    create: createWebSqlitePersistence,
-  },
-  native: nativeSqlitePersistence,
-  memory: memoryPersistence,
-  custom: customPersistence, // For advanced users
+	sqlite: {
+		once: onceWebSqlitePersistence,
+		create: createWebSqlitePersistence,
+	},
+	native: nativeSqlitePersistence,
+	memory: memoryPersistence,
+	custom: customPersistence, // For advanced users
 };
 ```
 
@@ -259,7 +259,7 @@ Cloudflare automatically applies Brotli for supported browsers:
 
 ```typescript
 // In worker, add Link headers for push
-headers.set("Link", "</v1.0.0/dist/wa-sqlite-async.wasm>; rel=preload; as=fetch");
+headers.set('Link', '</v1.0.0/dist/wa-sqlite-async.wasm>; rel=preload; as=fetch');
 ```
 
 ### 3. Edge Caching Rules
@@ -285,12 +285,14 @@ View in Cloudflare Dashboard → R2 → Analytics:
 
 ```typescript
 // In worker
-console.log(JSON.stringify({
-  timestamp: Date.now(),
-  path: url.pathname,
-  userAgent: request.headers.get("User-Agent"),
-  country: request.cf?.country,
-}));
+console.log(
+	JSON.stringify({
+		timestamp: Date.now(),
+		path: url.pathname,
+		userAgent: request.headers.get('User-Agent'),
+		country: request.cf?.country,
+	})
+);
 ```
 
 View logs: `wrangler tail wa-sqlite-cdn`

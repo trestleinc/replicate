@@ -1341,9 +1341,7 @@ function createVersionedCollection<T extends object>(
 	};
 }
 
-export namespace collection {
-	export type Infer<C> = C extends { $docType?: infer T } ? NonNullable<T> : never;
-}
+export type CollectionInfer<C> = C extends { $docType?: infer T } ? NonNullable<T> : never;
 
 /**
  * Create a collection with versioned schema (new API).

@@ -93,5 +93,3 @@ export {
 	runAutoMigration,
 	createMigrationError,
 } from '$/client/migration';
-
-export { getLogger, type Logger } from '$/shared/logger';

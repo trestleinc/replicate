@@ -25,28 +25,90 @@ export const profileValidator = v.object({
 	avatar: v.optional(v.string()),
 });
 
+// ============================================================================
+// Yjs Internal Structure Validators
+// ============================================================================
+
+/**
+ * Yjs ID validator - internal identifier for CRDT items.
+ * Structure: { client: number, clock: number }
+ * @see https://docs.yjs.dev/api/internals
+ */
+export const yjsIdValidator = v.object({
+	client: v.number(),
+	clock: v.number(),
+});
+
+/**
+ * Yjs RelativePosition JSON validator - encodes cursor positions that survive
+ * concurrent edits. When serialized to JSON via relativePositionToJSON(),
+ * only truthy fields are included, so all fields are optional.
+ *
+ * @see https://docs.yjs.dev/api/relative-positions
+ */
+export const relativePositionValidator = v.object({
+	type: v.optional(yjsIdValidator),
+	tname: v.optional(v.string()),
+	item: v.optional(yjsIdValidator),
+	assoc: v.optional(v.number()),
+});
+
 /**
  * Cursor validator for collaborative editing positions.
- * Tracks anchor/head selection positions and optional field context.
+ * Tracks anchor/head selection positions using Yjs RelativePosition JSON format
+ * and optional field context for multi-field documents.
  */
 export const cursorValidator = v.object({
-	anchor: v.any(),
-	head: v.any(),
+	anchor: relativePositionValidator,
+	head: relativePositionValidator,
 	field: v.optional(v.string()),
+});
+
+// ============================================================================
+// ProseMirror Structure Validators
+// ============================================================================
+
+/**
+ * ProseMirror mark validator (bold, italic, link, etc.)
+ * Attrs must remain v.any() due to plugin extensibility.
+ */
+export const proseMarkValidator = v.object({
+	type: v.string(),
+	attrs: v.optional(v.record(v.string(), v.any())),
+});
+
+/**
+ * ProseMirror node validator (paragraph, heading, list, etc.)
+ * Content is recursive (nodes contain nodes), so we use v.any() for content array.
+ * Attrs must remain v.any() due to plugin extensibility.
+ */
+export const proseNodeValidator = v.object({
+	type: v.string(),
+	attrs: v.optional(v.record(v.string(), v.any())),
+	content: v.optional(v.array(v.any())), // Recursive - contains proseNodeValidator
+	text: v.optional(v.string()),
+	marks: v.optional(v.array(proseMarkValidator)),
 });
 
 /**
  * Prose validator for ProseMirror-compatible rich text JSON.
  * Used for collaborative rich text editing fields.
+ * Root must be a 'doc' node containing an array of block nodes.
  */
 export const proseValidator = v.object({
 	type: v.literal('doc'),
-	content: v.optional(v.array(v.any())),
+	content: v.optional(v.array(proseNodeValidator)),
 });
 
 // ============================================================================
 // Stream/Sync Validators
 // ============================================================================
+
+/**
+ * Stream change type - the kind of CRDT operation stored in the stream.
+ * 'delta' = incremental Yjs update, 'snapshot' = full document state.
+ */
+export const streamChangeTypeValidator = v.union(v.literal('delta'), v.literal('snapshot'));
 
 /**
  * Individual change in a stream response.
@@ -55,7 +117,7 @@ export const streamChangeValidator = v.object({
 	document: v.string(),
 	bytes: v.bytes(),
 	seq: v.number(),
-	type: v.string(),
+	type: streamChangeTypeValidator,
 });
 
 /**
@@ -65,7 +127,7 @@ export const streamChangeWithExistsValidator = v.object({
 	document: v.string(),
 	bytes: v.bytes(),
 	seq: v.number(),
-	type: v.string(),
+	type: streamChangeTypeValidator,
 	exists: v.boolean(),
 });
 
@@ -109,7 +171,7 @@ export const sessionValidator = v.object({
 	client: v.string(),
 	document: v.string(),
 	user: v.optional(v.string()),
-	profile: v.optional(v.any()),
+	profile: v.optional(profileValidator),
 	cursor: v.optional(cursorValidator),
 	seen: v.number(),
 });
@@ -210,14 +272,29 @@ export const materialResultValidator = v.object({
 // Derived Types (Single Source of Truth)
 // ============================================================================
 
+/** Yjs ID (client, clock). */
+export type YjsId = Infer<typeof yjsIdValidator>;
+
+/** Yjs RelativePosition JSON form. */
+export type RelativePosition = Infer<typeof relativePositionValidator>;
+
 /** User profile for presence/identity. */
 export type Profile = Infer<typeof profileValidator>;
 
 /** Cursor position for collaborative editing. */
 export type Cursor = Infer<typeof cursorValidator>;
 
+/** ProseMirror mark (bold, italic, etc.). */
+export type ProseMark = Infer<typeof proseMarkValidator>;
+
+/** ProseMirror node (paragraph, heading, etc.). */
+export type ProseNode = Infer<typeof proseNodeValidator>;
+
 /** ProseMirror-compatible JSON structure. */
 export type ProseValue = Infer<typeof proseValidator>;
+
+/** Stream change type. */
+export type StreamChangeType = Infer<typeof streamChangeTypeValidator>;
 
 /** Individual stream change. */
 export type StreamChange = Infer<typeof streamChangeValidator>;
@@ -319,5 +396,3 @@ export function parseDuration(s: Duration): number {
 	const [, num, unit] = match;
 	return parseInt(num) * DURATION_MULTIPLIERS[unit.toLowerCase() as DurationUnit];
 }
-
-export { getLogger, type Logger } from './logger';

@@ -113,12 +113,12 @@ services/
 #### Error Types (`errors.ts`)
 
 ```typescript
-NetworkError               // Retryable sync errors
-IDBError                   // Storage read errors
-IDBWriteError              // Storage write errors
-ProseError                 // Rich text field binding issues
-CollectionNotReadyError    // Collection not initialized
-NonRetriableError          // Auth failures, validation errors
+NetworkError; // Retryable sync errors
+IDBError; // Storage read errors
+IDBWriteError; // Storage write errors
+ProseError; // Rich text field binding issues
+CollectionNotReadyError; // Collection not initialized
+NonRetriableError; // Auth failures, validation errors
 ```
 
 #### Data Flow
@@ -160,39 +160,39 @@ Server update (via stream subscription)
 
 ```typescript
 // Main entry point
-collection.create()           // Create lazy-initialized collection (SSR-safe)
+collection.create(); // Create lazy-initialized collection (SSR-safe)
 
 // Persistence providers (namespaced by platform)
-persistence.web.sqlite()          // Browser: wa-sqlite Web Worker + OPFSCoopSyncVFS
-persistence.web.sqlite.once()     // SQLite singleton (shared across collections)
-persistence.web.encrypted()       // Browser: encrypted storage with WebAuthn PRF
-persistence.native.sqlite()       // React Native: op-sqlite
-persistence.native.encrypted()    // React Native: encrypted storage (not yet implemented)
-persistence.memory()              // Testing: in-memory (cross-platform)
-persistence.custom()              // Custom storage adapter (cross-platform)
+persistence.web.sqlite(); // Browser: wa-sqlite Web Worker + OPFSCoopSyncVFS
+persistence.web.sqlite.once(); // SQLite singleton (shared across collections)
+persistence.web.encrypted(); // Browser: encrypted storage with WebAuthn PRF
+persistence.native.sqlite(); // React Native: op-sqlite
+persistence.native.encrypted(); // React Native: encrypted storage (not yet implemented)
+persistence.memory(); // Testing: in-memory (cross-platform)
+persistence.custom(); // Custom storage adapter (cross-platform)
 
 // Schema helpers (matches server API)
-schema.prose()                // Zod schema for prose fields
-schema.prose.extract()        // Extract plain text from ProseMirror JSON
-schema.prose.empty()          // Create empty prose value
+schema.prose(); // Zod schema for prose fields
+schema.prose.extract(); // Extract plain text from ProseMirror JSON
+schema.prose.empty(); // Create empty prose value
 ```
 
 ### Server (`@trestleinc/replicate/server`)
 
 ```typescript
-replicate()                   // Factory to create bound replicate function
+replicate(); // Factory to create bound replicate function
 
 // Schema helpers
-schema.table()                // Define replicated table schema
-schema.prose()                // Validator for ProseMirror JSON
+schema.table(); // Define replicated table schema
+schema.prose(); // Validator for ProseMirror JSON
 ```
 
 ### Shared (`@trestleinc/replicate/shared`)
 
 ```typescript
-ProseFields<T>                // Extract prose field names from document type
-XmlFragmentJSON               // ProseMirror-compatible JSON structure
-OperationType                 // Enum: Delta | Snapshot
+ProseFields<T>; // Extract prose field names from document type
+XmlFragmentJSON; // ProseMirror-compatible JSON structure
+OperationType; // Enum: Delta | Snapshot
 ```
 
 ## Key Patterns
@@ -207,8 +207,9 @@ import { components } from './_generated/api';
 const r = replicate(components.replicate);
 
 // convex/tasks.ts (use for each collection)
-export const { stream, material, insert, update, remove, versions } =
-  r<Task>({ collection: 'tasks' });
+export const { stream, material, insert, update, remove, versions } = r<Task>({
+	collection: 'tasks',
+});
 ```
 
 ### Client: Collection Setup
@@ -218,16 +219,16 @@ import { collection, persistence } from '@trestleinc/replicate/client';
 import { ConvexClient } from 'convex/browser';
 
 export const tasks = collection.create({
-  persistence: async () => {
-    const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-    return persistence.sqlite.browser(SQL, 'tasks');
-  },
-  config: () => ({
-    schema: taskSchema,
-    convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
-    api: api.tasks,
-    getKey: (task) => task.id,
-  }),
+	persistence: async () => {
+		const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
+		return persistence.sqlite.browser(SQL, 'tasks');
+	},
+	config: () => ({
+		schema: taskSchema,
+		convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
+		api: api.tasks,
+		getKey: (task) => task.id,
+	}),
 });
 
 // Initialize once during app startup (browser only)
@@ -247,7 +248,7 @@ const sync = syncManager.register(documentId, ydoc, syncFn);
 
 // Pending state subscription for UI
 const unsubscribe = sync.onPendingChange((pending) => {
-  // Update UI indicator
+	// Update UI indicator
 });
 ```
 

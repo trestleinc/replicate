@@ -67,11 +67,11 @@ These changes will dramatically improve:
 ```typescript
 // Server-side: 4 clean exports
 const {
-  material,    // Paginated query for SSR/hydration
-  delta,       // Subscribe to delta log changes
-  replicate,   // Push CRDT updates (insert/update/delete)
-  session,     // Unified session management (join/leave/mark/signal + query)
-} = collection.create<Doc<"intervals">>(components.replicate, "intervals");
+	material, // Paginated query for SSR/hydration
+	delta, // Subscribe to delta log changes
+	replicate, // Push CRDT updates (insert/update/delete)
+	session, // Unified session management (join/leave/mark/signal + query)
+} = collection.create<Doc<'intervals'>>(components.replicate, 'intervals');
 ```
 
 ### 1.3 Export Consolidation
@@ -171,24 +171,21 @@ fragment.observeDeep() → actorManager.onLocalChange(docId) → debounce → sy
 Convex uses **cursor-based pagination** with the following primitives:
 
 ```typescript
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator } from 'convex/server';
 
 interface PaginationOptions {
-  numItems: number;        // How many items to fetch
-  cursor: string | null;   // Opaque cursor for continuation
+	numItems: number; // How many items to fetch
+	cursor: string | null; // Opaque cursor for continuation
 }
 
 interface PaginationResult<T> {
-  page: T[];               // Array of documents
-  isDone: boolean;         // No more pages available
-  continueCursor: string;  // Cursor for next page
+	page: T[]; // Array of documents
+	isDone: boolean; // No more pages available
+	continueCursor: string; // Cursor for next page
 }
 
 // Usage
-const result = await ctx.db
-  .query("intervals")
-  .order("desc")
-  .paginate(paginationOpts);
+const result = await ctx.db.query('intervals').order('desc').paginate(paginationOpts);
 ```
 
 ### 3.2 New `material` Query (Server)
@@ -469,42 +466,40 @@ Compaction runs automatically when delta count exceeds threshold:
 
 // Called automatically by insertDocument/updateDocument/deleteDocument
 const _triggerCompactionIfNeeded = async (
-  ctx: MutationCtx,
-  collection: string,
-  document: string,
-  threshold: number = 500,
+	ctx: MutationCtx,
+	collection: string,
+	document: string,
+	threshold: number = 500
 ) => {
-  const count = await ctx.db
-    .query("deltas")
-    .withIndex("by_document", (q) =>
-      q.eq("collection", collection).eq("document", document),
-    )
-    .collect()
-    .then((d) => d.length);
+	const count = await ctx.db
+		.query('deltas')
+		.withIndex('by_document', (q) => q.eq('collection', collection).eq('document', document))
+		.collect()
+		.then((d) => d.length);
 
-  if (count >= threshold) {
-    // Schedule internal compaction action
-    await ctx.scheduler.runAfter(0, internal._compact, {
-      collection,
-      document,
-    });
-  }
+	if (count >= threshold) {
+		// Schedule internal compaction action
+		await ctx.scheduler.runAfter(0, internal._compact, {
+			collection,
+			document,
+		});
+	}
 };
 
 // Internal action - not exposed to clients
 export const _compact = internalAction({
-  args: {
-    collection: v.string(),
-    document: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // 1. Load all deltas + existing snapshot
-    // 2. Merge into new snapshot
-    // 3. Check all sessions with vectors (connected + recent disconnected)
-    // 4. Find minimum seq where all peers have synced
-    // 5. Delete only deltas where seq <= minSafeSeq
-    // 6. Always retain snapshot for recovery fallback
-  },
+	args: {
+		collection: v.string(),
+		document: v.string(),
+	},
+	handler: async (ctx, args) => {
+		// 1. Load all deltas + existing snapshot
+		// 2. Merge into new snapshot
+		// 3. Check all sessions with vectors (connected + recent disconnected)
+		// 4. Find minimum seq where all peers have synced
+		// 5. Delete only deltas where seq <= minSafeSeq
+		// 6. Always retain snapshot for recovery fallback
+	},
 });
 ```
 
@@ -519,14 +514,14 @@ export const _compact = internalAction({
 
 ```typescript
 const { material, delta, replicate, session } = collection.create<T>(
-  components.replicate,
-  "intervals",
-  {
-    compaction: {
-      sizeThreshold: "5mb",   // Trigger when document exceeds size (default: "5mb")
-      peerTimeout: "24h",     // Consider peer stale after duration (default: "24h")
-    },
-  },
+	components.replicate,
+	'intervals',
+	{
+		compaction: {
+			sizeThreshold: '5mb', // Trigger when document exceeds size (default: "5mb")
+			peerTimeout: '24h', // Consider peer stale after duration (default: "24h")
+		},
+	}
 );
 ```
 
@@ -541,20 +536,30 @@ Hooks provide authorization and lifecycle callbacks for all operations:
 
 ```typescript
 const { material, delta, replicate, session } = collection.create<T>(
-  components.replicate,
-  "intervals",
-  {
-    hooks: {
-      // Permission checks (throw to reject)
-      evalRead: async (ctx, collection) => { /* before material/delta queries */ },
-      evalWrite: async (ctx, doc) => { /* before replicate mutations */ },
-      evalSession: async (ctx, client) => { /* before session mutations (replaces evalMark) */ },
+	components.replicate,
+	'intervals',
+	{
+		hooks: {
+			// Permission checks (throw to reject)
+			evalRead: async (ctx, collection) => {
+				/* before material/delta queries */
+			},
+			evalWrite: async (ctx, doc) => {
+				/* before replicate mutations */
+			},
+			evalSession: async (ctx, client) => {
+				/* before session mutations (replaces evalMark) */
+			},
 
-      // Lifecycle callbacks (run after operation)
-      onDelta: async (ctx, result) => { /* after delta query (replaces onStream) */ },
-      onReplicate: async (ctx, doc, type) => { /* after replicate mutation */ },
-    },
-  },
+			// Lifecycle callbacks (run after operation)
+			onDelta: async (ctx, result) => {
+				/* after delta query (replaces onStream) */
+			},
+			onReplicate: async (ctx, doc, type) => {
+				/* after replicate mutation */
+			},
+		},
+	}
 );
 ```
 
@@ -578,52 +583,52 @@ const { material, delta, replicate, session } = collection.create<T>(
 // src/client/collection.ts
 
 export interface PaginationConfig {
-  /** Number of items per page (default: 25) */
-  pageSize?: number;
+	/** Number of items per page (default: 25) */
+	pageSize?: number;
 
-  /** Initial pages to load on SSR (default: 1) */
-  ssrPages?: number;
+	/** Initial pages to load on SSR (default: 1) */
+	ssrPages?: number;
 
-  /** Whether to include CRDT state in SSR (default: true) */
-  ssrIncludeCRDT?: boolean;
+	/** Whether to include CRDT state in SSR (default: true) */
+	ssrIncludeCRDT?: boolean;
 
-  /** Enable infinite scroll behavior (default: true) */
-  infiniteScroll?: boolean;
+	/** Enable infinite scroll behavior (default: true) */
+	infiniteScroll?: boolean;
 
-  /** Preload next page when within threshold (default: 5 items) */
-  preloadThreshold?: number;
+	/** Preload next page when within threshold (default: 5 items) */
+	preloadThreshold?: number;
 }
 
 export interface CollectionOptions<T extends object> {
-  persistence: () => Promise<Persistence>;
-  config: () => {
-    convexClient: ConvexClient;
-    api: {
-      material: FunctionReference<"query">;
-      delta: FunctionReference<"query">;
-      replicate: FunctionReference<"mutation">;
-      session: FunctionReference<"mutation">;  // Unified session API
-    };
-    getKey: (doc: T) => string;
-  };
-  pagination?: PaginationConfig;
+	persistence: () => Promise<Persistence>;
+	config: () => {
+		convexClient: ConvexClient;
+		api: {
+			material: FunctionReference<'query'>;
+			delta: FunctionReference<'query'>;
+			replicate: FunctionReference<'mutation'>;
+			session: FunctionReference<'mutation'>; // Unified session API
+		};
+		getKey: (doc: T) => string;
+	};
+	pagination?: PaginationConfig;
 }
 
 // Usage
-export const intervals = collection.create(schema, "intervals", {
-  persistence: sqlite,
-  config: () => ({
-    convexClient: new ConvexClient(PUBLIC_CONVEX_URL),
-    api: api.intervals,  // { material, delta, replicate, session }
-    getKey: (interval) => interval.id,
-  }),
-  pagination: {
-    pageSize: 25,
-    ssrPages: 2,
-    ssrIncludeCRDT: true,
-    infiniteScroll: true,
-    preloadThreshold: 5,
-  },
+export const intervals = collection.create(schema, 'intervals', {
+	persistence: sqlite,
+	config: () => ({
+		convexClient: new ConvexClient(PUBLIC_CONVEX_URL),
+		api: api.intervals, // { material, delta, replicate, session }
+		getKey: (interval) => interval.id,
+	}),
+	pagination: {
+		pageSize: 25,
+		ssrPages: 2,
+		ssrIncludeCRDT: true,
+		infiniteScroll: true,
+		preloadThreshold: 5,
+	},
 });
 ```
 
@@ -634,33 +639,33 @@ export const intervals = collection.create(schema, "intervals", {
 ```typescript
 // routes/index.tsx
 
-export const Route = createFileRoute("/")({
-  loader: async () => {
-    const convex = createConvexHttpClient(CONVEX_URL);
+export const Route = createFileRoute('/')({
+	loader: async () => {
+		const convex = createConvexHttpClient(CONVEX_URL);
 
-    // Fetch first 2 pages with CRDT state
-    const page1 = await convex.query(api.intervals.material, {
-      paginationOpts: { numItems: 25, cursor: null },
-      includeCRDT: true,
-    });
+		// Fetch first 2 pages with CRDT state
+		const page1 = await convex.query(api.intervals.material, {
+			paginationOpts: { numItems: 25, cursor: null },
+			includeCRDT: true,
+		});
 
-    const page2 = !page1.isDone
-      ? await convex.query(api.intervals.material, {
-          paginationOpts: { numItems: 25, cursor: page1.continueCursor },
-          includeCRDT: true,
-        })
-      : null;
+		const page2 = !page1.isDone
+			? await convex.query(api.intervals.material, {
+					paginationOpts: { numItems: 25, cursor: page1.continueCursor },
+					includeCRDT: true,
+				})
+			: null;
 
-    return {
-      initialData: {
-        pages: [page1, page2].filter(Boolean),
-        cursor: page2?.continueCursor ?? page1.continueCursor,
-        isDone: page2?.isDone ?? page1.isDone,
-        crdt: { ...page1.crdt, ...page2?.crdt },
-        seq: Math.max(page1.seq ?? 0, page2?.seq ?? 0),
-      },
-    };
-  },
+		return {
+			initialData: {
+				pages: [page1, page2].filter(Boolean),
+				cursor: page2?.continueCursor ?? page1.continueCursor,
+				isDone: page2?.isDone ?? page1.isDone,
+				crdt: { ...page1.crdt, ...page2?.crdt },
+				seq: Math.max(page1.seq ?? 0, page2?.seq ?? 0),
+			},
+		};
+	},
 });
 ```
 
@@ -763,19 +768,19 @@ function IntervalList() {
 // src/client/services/actor.ts
 
 export type DocumentMessage =
-  // Existing
-  | { readonly _tag: "LocalChange" }
-  | { readonly _tag: "ExternalUpdate" }
-  | { readonly _tag: "Shutdown"; readonly done: Deferred.Deferred<void, never> }
+	// Existing
+	| { readonly _tag: 'LocalChange' }
+	| { readonly _tag: 'ExternalUpdate' }
+	| { readonly _tag: 'Shutdown'; readonly done: Deferred.Deferred<void, never> }
 
-  // New
-  | { readonly _tag: "Reconcile"; readonly done: Deferred.Deferred<ReconcileResult, SyncError> }
-  | { readonly _tag: "SetPriority"; readonly priority: ActorPriority };
+	// New
+	| { readonly _tag: 'Reconcile'; readonly done: Deferred.Deferred<ReconcileResult, SyncError> }
+	| { readonly _tag: 'SetPriority'; readonly priority: ActorPriority };
 
 interface ReconcileResult {
-  localChanges: number;   // Changes pushed to server
-  remoteChanges: number;  // Changes received from server
-  conflicts: number;      // Merge conflicts (CRDT resolves automatically)
+	localChanges: number; // Changes pushed to server
+	remoteChanges: number; // Changes received from server
+	conflicts: number; // Merge conflicts (CRDT resolves automatically)
 }
 ```
 
@@ -785,30 +790,30 @@ interface ReconcileResult {
 // src/client/services/actor.ts
 
 interface ActorState {
-  // Existing
-  readonly vector: Uint8Array;
-  readonly lastError: SyncError | null;
-  readonly retryCount: number;
+	// Existing
+	readonly vector: Uint8Array;
+	readonly lastError: SyncError | null;
+	readonly retryCount: number;
 
-  // New
-  readonly status: ActorStatus;
-  readonly priority: ActorPriority;
-  readonly lastSyncAt: number | null;
-  readonly pendingFields: Set<string>;
+	// New
+	readonly status: ActorStatus;
+	readonly priority: ActorPriority;
+	readonly lastSyncAt: number | null;
+	readonly pendingFields: Set<string>;
 }
 
 type ActorStatus =
-  | "idle"           // No pending changes
-  | "pending"        // Changes waiting for debounce
-  | "syncing"        // Currently syncing to server
-  | "reconciling"    // Performing recovery reconciliation
-  | "error";         // Failed, waiting for retry
+	| 'idle' // No pending changes
+	| 'pending' // Changes waiting for debounce
+	| 'syncing' // Currently syncing to server
+	| 'reconciling' // Performing recovery reconciliation
+	| 'error'; // Failed, waiting for retry
 
 type ActorPriority =
-  | "critical"       // Visible document, sync immediately
-  | "high"           // Recently edited
-  | "normal"         // Background document
-  | "low";           // Offscreen, defer sync
+	| 'critical' // Visible document, sync immediately
+	| 'high' // Recently edited
+	| 'normal' // Background document
+	| 'low'; // Offscreen, defer sync
 ```
 
 ### 4.4 Unified Sync Function
@@ -817,44 +822,45 @@ type ActorPriority =
 // src/client/services/actor.ts
 
 const performSync = Effect.gen(function* () {
-  const state = yield* Ref.get(stateRef);
+	const state = yield* Ref.get(stateRef);
 
-  // Compute delta from last known vector
-  const delta = Y.encodeStateAsUpdateV2(ydoc, state.vector);
+	// Compute delta from last known vector
+	const delta = Y.encodeStateAsUpdateV2(ydoc, state.vector);
 
-  // Skip if no actual changes
-  if (delta.length <= 2) {
-    return;
-  }
+	// Skip if no actual changes
+	if (delta.length <= 2) {
+		return;
+	}
 
-  // Serialize full document for material sync
-  const material = serializeYMapValue(ymap);
-  const bytes = delta.buffer as ArrayBuffer;
+	// Serialize full document for material sync
+	const material = serializeYMapValue(ymap);
+	const bytes = delta.buffer as ArrayBuffer;
 
-  // Determine operation type
-  const type = state.isNew ? "insert" : state.isDeleted ? "delete" : "update";
+	// Determine operation type
+	const type = state.isNew ? 'insert' : state.isDeleted ? 'delete' : 'update';
 
-  // Single mutation handles everything via `replicate`
-  yield* Effect.tryPromise({
-    try: () => replicateFn({ document: documentId, bytes, material, type }),
-    catch: (e) => new SyncError({
-      documentId,
-      cause: e,
-      retriable: isRetriable(e),
-    }),
-  });
+	// Single mutation handles everything via `replicate`
+	yield* Effect.tryPromise({
+		try: () => replicateFn({ document: documentId, bytes, material, type }),
+		catch: (e) =>
+			new SyncError({
+				documentId,
+				cause: e,
+				retriable: isRetriable(e),
+			}),
+	});
 
-  // Update vector after successful sync
-  const newVector = Y.encodeStateVector(ydoc);
-  yield* Ref.update(stateRef, (s) => ({
-    ...s,
-    vector: newVector,
-    retryCount: 0,
-    lastError: null,
-    lastSyncAt: Date.now(),
-    status: "idle",
-    isNew: false,
-  }));
+	// Update vector after successful sync
+	const newVector = Y.encodeStateVector(ydoc);
+	yield* Ref.update(stateRef, (s) => ({
+		...s,
+		vector: newVector,
+		retryCount: 0,
+		lastError: null,
+		lastSyncAt: Date.now(),
+		status: 'idle',
+		isNew: false,
+	}));
 });
 ```
 
@@ -866,29 +872,29 @@ const performSync = Effect.gen(function* () {
 // src/client/documents.ts
 
 export function observeDocument(
-  documentId: string,
-  ydoc: Y.Doc,
-  actorManager: ActorManager,
-  runtime: ReplicateRuntime,
+	documentId: string,
+	ydoc: Y.Doc,
+	actorManager: ActorManager,
+	runtime: ReplicateRuntime
 ): () => void {
-  const ymap = ydoc.getMap("content");
+	const ymap = ydoc.getMap('content');
 
-  // Observe ALL changes to the document
-  const handler = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
-    // Skip server-originated changes
-    if (transaction.origin === YjsOrigin.Server) {
-      return;
-    }
+	// Observe ALL changes to the document
+	const handler = (events: Y.YEvent<any>[], transaction: Y.Transaction) => {
+		// Skip server-originated changes
+		if (transaction.origin === YjsOrigin.Server) {
+			return;
+		}
 
-    // Notify actor of local change
-    runWithRuntime(runtime, actorManager.onLocalChange(documentId));
-  };
+		// Notify actor of local change
+		runWithRuntime(runtime, actorManager.onLocalChange(documentId));
+	};
 
-  ymap.observeDeep(handler);
+	ymap.observeDeep(handler);
 
-  return () => {
-    ymap.unobserveDeep(handler);
-  };
+	return () => {
+		ymap.unobserveDeep(handler);
+	};
 }
 ```
 
@@ -898,54 +904,54 @@ export function observeDocument(
 // src/client/collection.ts
 
 const createMutationHandlers = <T extends object>(
-  actorManager: ActorManager,
-  runtime: ReplicateRuntime,
-  docManager: DocumentManager,
+	actorManager: ActorManager,
+	runtime: ReplicateRuntime,
+	docManager: DocumentManager
 ) => ({
-  onInsert: async (mutation: CollectionMutation<T>) => {
-    const docId = mutation.key as string;
-    const ydoc = docManager.getOrCreate(docId);
-    const ymap = ydoc.getMap("content");
+	onInsert: async (mutation: CollectionMutation<T>) => {
+		const docId = mutation.key as string;
+		const ydoc = docManager.getOrCreate(docId);
+		const ymap = ydoc.getMap('content');
 
-    // Apply insert to Yjs doc
-    ydoc.transact(() => {
-      for (const [key, value] of Object.entries(mutation.modified)) {
-        ymap.set(key, value);
-      }
-    }, YjsOrigin.Local);
+		// Apply insert to Yjs doc
+		ydoc.transact(() => {
+			for (const [key, value] of Object.entries(mutation.modified)) {
+				ymap.set(key, value);
+			}
+		}, YjsOrigin.Local);
 
-    // Register actor for this document (marks as new)
-    const replicateFn = createReplicateFn(docId, ydoc, ymap, collection);
-    await runWithRuntime(runtime, actorManager.register(docId, ydoc, replicateFn, { isNew: true }));
+		// Register actor for this document (marks as new)
+		const replicateFn = createReplicateFn(docId, ydoc, ymap, collection);
+		await runWithRuntime(runtime, actorManager.register(docId, ydoc, replicateFn, { isNew: true }));
 
-    // Actor will handle sync via observer
-  },
+		// Actor will handle sync via observer
+	},
 
-  onUpdate: async (mutation: CollectionMutation<T>) => {
-    const docId = mutation.key as string;
-    const ydoc = docManager.get(docId);
-    if (!ydoc) return;
+	onUpdate: async (mutation: CollectionMutation<T>) => {
+		const docId = mutation.key as string;
+		const ydoc = docManager.get(docId);
+		if (!ydoc) return;
 
-    const ymap = ydoc.getMap("content");
+		const ymap = ydoc.getMap('content');
 
-    // Apply changes to Yjs doc
-    ydoc.transact(() => {
-      for (const [key, value] of Object.entries(mutation.changes ?? {})) {
-        ymap.set(key, value);
-      }
-    }, YjsOrigin.Local);
+		// Apply changes to Yjs doc
+		ydoc.transact(() => {
+			for (const [key, value] of Object.entries(mutation.changes ?? {})) {
+				ymap.set(key, value);
+			}
+		}, YjsOrigin.Local);
 
-    // Actor observer will trigger sync automatically
-  },
+		// Actor observer will trigger sync automatically
+	},
 
-  onDelete: async (mutation: CollectionMutation<T>) => {
-    const docId = mutation.key as string;
+	onDelete: async (mutation: CollectionMutation<T>) => {
+		const docId = mutation.key as string;
 
-    // Mark document as deleted in actor state
-    await runWithRuntime(runtime, actorManager.markDeleted(docId));
+		// Mark document as deleted in actor state
+		await runWithRuntime(runtime, actorManager.markDeleted(docId));
 
-    // Actor will sync the delete
-  },
+		// Actor will sync the delete
+	},
 });
 ```
 
@@ -958,22 +964,22 @@ const createMutationHandlers = <T extends object>(
 ```typescript
 // Current: Bulk recovery on reconnect
 const recoverFromServer = async () => {
-  // 1. Fetch ALL deltas since last cursor
-  const result = await convexClient.query(api.delta, {
-    seq: lastCursor,
-    limit: 10000,  // Potentially huge!
-  });
+	// 1. Fetch ALL deltas since last cursor
+	const result = await convexClient.query(api.delta, {
+		seq: lastCursor,
+		limit: 10000, // Potentially huge!
+	});
 
-  // 2. Apply ALL at once
-  for (const change of result.changes) {
-    docManager.applyUpdate(change.document, change.bytes);
-  }
+	// 2. Apply ALL at once
+	for (const change of result.changes) {
+		docManager.applyUpdate(change.document, change.bytes);
+	}
 
-  // Problems:
-  // - Memory spike for large delta sets
-  // - Blocks UI during application
-  // - No prioritization (invisible docs same as visible)
-  // - All-or-nothing (fails entirely on any error)
+	// Problems:
+	// - Memory spike for large delta sets
+	// - Blocks UI during application
+	// - No prioritization (invisible docs same as visible)
+	// - All-or-nothing (fails entirely on any error)
 };
 ```
 
@@ -985,47 +991,48 @@ const recoverFromServer = async () => {
 // src/client/services/actor.ts
 
 const handleReconcile = Effect.gen(function* () {
-  yield* Ref.update(stateRef, (s) => ({ ...s, status: "reconciling" }));
+	yield* Ref.update(stateRef, (s) => ({ ...s, status: 'reconciling' }));
 
-  const state = yield* Ref.get(stateRef);
-  const localVector = Y.encodeStateVector(ydoc);
+	const state = yield* Ref.get(stateRef);
+	const localVector = Y.encodeStateVector(ydoc);
 
-  // 1. Query server for our specific document's state
-  const response = yield* Effect.tryPromise({
-    try: () => recoveryFn({
-      document: documentId,
-      vector: localVector.buffer,
-    }),
-    catch: (e) => new SyncError({ documentId, cause: e, retriable: true }),
-  });
+	// 1. Query server for our specific document's state
+	const response = yield* Effect.tryPromise({
+		try: () =>
+			recoveryFn({
+				document: documentId,
+				vector: localVector.buffer,
+			}),
+		catch: (e) => new SyncError({ documentId, cause: e, retriable: true }),
+	});
 
-  let remoteChanges = 0;
-  let localChanges = 0;
+	let remoteChanges = 0;
+	let localChanges = 0;
 
-  // 2. Apply server diff if we're behind
-  if (response.diff && response.diff.byteLength > 0) {
-    Y.applyUpdateV2(ydoc, new Uint8Array(response.diff), YjsOrigin.Server);
-    remoteChanges = 1;
-  }
+	// 2. Apply server diff if we're behind
+	if (response.diff && response.diff.byteLength > 0) {
+		Y.applyUpdateV2(ydoc, new Uint8Array(response.diff), YjsOrigin.Server);
+		remoteChanges = 1;
+	}
 
-  // 3. Push local changes if server is behind
-  const serverVector = new Uint8Array(response.vector);
-  const localDelta = Y.encodeStateAsUpdateV2(ydoc, serverVector);
+	// 3. Push local changes if server is behind
+	const serverVector = new Uint8Array(response.vector);
+	const localDelta = Y.encodeStateAsUpdateV2(ydoc, serverVector);
 
-  if (localDelta.length > 2) {
-    yield* performSync;  // Reuse existing sync logic
-    localChanges = 1;
-  }
+	if (localDelta.length > 2) {
+		yield* performSync; // Reuse existing sync logic
+		localChanges = 1;
+	}
 
-  // 4. Update state
-  yield* Ref.update(stateRef, (s) => ({
-    ...s,
-    vector: Y.encodeStateVector(ydoc),
-    status: "idle",
-    lastSyncAt: Date.now(),
-  }));
+	// 4. Update state
+	yield* Ref.update(stateRef, (s) => ({
+		...s,
+		vector: Y.encodeStateVector(ydoc),
+		status: 'idle',
+		lastSyncAt: Date.now(),
+	}));
 
-  return { localChanges, remoteChanges, conflicts: 0 };
+	return { localChanges, remoteChanges, conflicts: 0 };
 });
 ```
 
@@ -1035,41 +1042,41 @@ const handleReconcile = Effect.gen(function* () {
 // src/client/collection.ts
 
 const handleReconnection = async () => {
-  const ctx = getContext(collectionName);
-  const { actorManager, runtime, registry } = ctx;
+	const ctx = getContext(collectionName);
+	const { actorManager, runtime, registry } = ctx;
 
-  // 1. Get list of all loaded documents
-  const loadedDocs = Array.from(registry.loaded);
+	// 1. Get list of all loaded documents
+	const loadedDocs = Array.from(registry.loaded);
 
-  // 2. Partition by visibility/priority
-  const visibleDocs = loadedDocs.filter(isDocumentVisible);
-  const backgroundDocs = loadedDocs.filter((d) => !isDocumentVisible(d));
+	// 2. Partition by visibility/priority
+	const visibleDocs = loadedDocs.filter(isDocumentVisible);
+	const backgroundDocs = loadedDocs.filter((d) => !isDocumentVisible(d));
 
-  // 3. Reconcile visible documents first (in parallel, limited concurrency)
-  const visibleResults = await runWithRuntime(
-    runtime,
-    Effect.all(
-      visibleDocs.map((docId) => actorManager.reconcile(docId)),
-      { concurrency: 5 },
-    ),
-  );
+	// 3. Reconcile visible documents first (in parallel, limited concurrency)
+	const visibleResults = await runWithRuntime(
+		runtime,
+		Effect.all(
+			visibleDocs.map((docId) => actorManager.reconcile(docId)),
+			{ concurrency: 5 }
+		)
+	);
 
-  // 4. Mark UI as ready after visible docs synced
-  markReady();
+	// 4. Mark UI as ready after visible docs synced
+	markReady();
 
-  // 5. Reconcile background documents with lower priority
-  for (const batch of chunk(backgroundDocs, 10)) {
-    await runWithRuntime(
-      runtime,
-      Effect.all(
-        batch.map((docId) => actorManager.reconcile(docId)),
-        { concurrency: 3 },
-      ),
-    );
+	// 5. Reconcile background documents with lower priority
+	for (const batch of chunk(backgroundDocs, 10)) {
+		await runWithRuntime(
+			runtime,
+			Effect.all(
+				batch.map((docId) => actorManager.reconcile(docId)),
+				{ concurrency: 3 }
+			)
+		);
 
-    // Yield to main thread between batches
-    await new Promise((r) => setTimeout(r, 50));
-  }
+		// Yield to main thread between batches
+		await new Promise((r) => setTimeout(r, 50));
+	}
 };
 ```
 
@@ -1117,39 +1124,39 @@ const handleReconnection = async () => {
 // src/client/services/priority.ts
 
 export interface PriorityConfig {
-  /** Callback to determine if document is visible */
-  isVisible?: (documentId: string) => boolean;
+	/** Callback to determine if document is visible */
+	isVisible?: (documentId: string) => boolean;
 
-  /** Time threshold for "recent" edit (ms) */
-  recentThreshold?: number;  // default: 5000
+	/** Time threshold for "recent" edit (ms) */
+	recentThreshold?: number; // default: 5000
 
-  /** Custom priority override */
-  getPriority?: (documentId: string) => ActorPriority;
+	/** Custom priority override */
+	getPriority?: (documentId: string) => ActorPriority;
 }
 
 export const determinePriority = (
-  documentId: string,
-  state: ActorState,
-  config: PriorityConfig,
+	documentId: string,
+	state: ActorState,
+	config: PriorityConfig
 ): ActorPriority => {
-  // Custom override
-  if (config.getPriority) {
-    return config.getPriority(documentId);
-  }
+	// Custom override
+	if (config.getPriority) {
+		return config.getPriority(documentId);
+	}
 
-  // Visible documents are critical
-  if (config.isVisible?.(documentId)) {
-    return "critical";
-  }
+	// Visible documents are critical
+	if (config.isVisible?.(documentId)) {
+		return 'critical';
+	}
 
-  // Recently edited documents are high priority
-  const recentThreshold = config.recentThreshold ?? 5000;
-  if (state.lastSyncAt && Date.now() - state.lastSyncAt < recentThreshold) {
-    return "high";
-  }
+	// Recently edited documents are high priority
+	const recentThreshold = config.recentThreshold ?? 5000;
+	if (state.lastSyncAt && Date.now() - state.lastSyncAt < recentThreshold) {
+		return 'high';
+	}
 
-  // Default to normal
-  return "normal";
+	// Default to normal
+	return 'normal';
 };
 ```
 
@@ -1159,44 +1166,48 @@ export const determinePriority = (
 // src/client/services/queue.ts
 
 interface QueueConfig {
-  critical: { debounceMs: 0; concurrency: 10 };
-  high: { debounceMs: 100; concurrency: 3 };
-  normal: { debounceMs: 200; concurrency: 2 };
-  low: { debounceMs: 500; concurrency: 1 };
+	critical: { debounceMs: 0; concurrency: 10 };
+	high: { debounceMs: 100; concurrency: 3 };
+	normal: { debounceMs: 200; concurrency: 2 };
+	low: { debounceMs: 500; concurrency: 1 };
 }
 
 export const createPriorityQueue = (
-  config: QueueConfig = defaultConfig,
+	config: QueueConfig = defaultConfig
 ): Effect.Effect<PriorityQueue, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    // Separate queues per priority
-    const criticalQueue = yield* Queue.unbounded<QueuedSync>();
-    const highQueue = yield* Queue.unbounded<QueuedSync>();
-    const normalQueue = yield* Queue.unbounded<QueuedSync>();
-    const lowQueue = yield* Queue.unbounded<QueuedSync>();
+	Effect.gen(function* () {
+		// Separate queues per priority
+		const criticalQueue = yield* Queue.unbounded<QueuedSync>();
+		const highQueue = yield* Queue.unbounded<QueuedSync>();
+		const normalQueue = yield* Queue.unbounded<QueuedSync>();
+		const lowQueue = yield* Queue.unbounded<QueuedSync>();
 
-    // Processors with different concurrency
-    yield* Effect.forkScoped(processQueue(criticalQueue, config.critical));
-    yield* Effect.forkScoped(processQueue(highQueue, config.high));
-    yield* Effect.forkScoped(processQueue(normalQueue, config.normal));
-    yield* Effect.forkScoped(processQueue(lowQueue, config.low));
+		// Processors with different concurrency
+		yield* Effect.forkScoped(processQueue(criticalQueue, config.critical));
+		yield* Effect.forkScoped(processQueue(highQueue, config.high));
+		yield* Effect.forkScoped(processQueue(normalQueue, config.normal));
+		yield* Effect.forkScoped(processQueue(lowQueue, config.low));
 
-    return {
-      enqueue: (sync: QueuedSync) => {
-        switch (sync.priority) {
-          case "critical": return Queue.offer(criticalQueue, sync);
-          case "high": return Queue.offer(highQueue, sync);
-          case "normal": return Queue.offer(normalQueue, sync);
-          case "low": return Queue.offer(lowQueue, sync);
-        }
-      },
+		return {
+			enqueue: (sync: QueuedSync) => {
+				switch (sync.priority) {
+					case 'critical':
+						return Queue.offer(criticalQueue, sync);
+					case 'high':
+						return Queue.offer(highQueue, sync);
+					case 'normal':
+						return Queue.offer(normalQueue, sync);
+					case 'low':
+						return Queue.offer(lowQueue, sync);
+				}
+			},
 
-      promote: (documentId: string, priority: ActorPriority) =>
-        Effect.gen(function* () {
-          // Move from current queue to target queue
-        }),
-    };
-  });
+			promote: (documentId: string, priority: ActorPriority) =>
+				Effect.gen(function* () {
+					// Move from current queue to target queue
+				}),
+		};
+	});
 ```
 
 ### 6.4 Visibility Detection
@@ -1205,37 +1216,37 @@ export const createPriorityQueue = (
 // src/client/services/visibility.ts
 
 export const createVisibilityTracker = (): VisibilityTracker => {
-  const visibleDocs = new Set<string>();
-  const observers = new Map<string, IntersectionObserver>();
+	const visibleDocs = new Set<string>();
+	const observers = new Map<string, IntersectionObserver>();
 
-  return {
-    observe: (documentId: string, element: HTMLElement) => {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              visibleDocs.add(documentId);
-            } else {
-              visibleDocs.delete(documentId);
-            }
-          }
-        },
-        { threshold: 0.1 },
-      );
+	return {
+		observe: (documentId: string, element: HTMLElement) => {
+			const observer = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (entry.isIntersecting) {
+							visibleDocs.add(documentId);
+						} else {
+							visibleDocs.delete(documentId);
+						}
+					}
+				},
+				{ threshold: 0.1 }
+			);
 
-      observer.observe(element);
-      observers.set(documentId, observer);
+			observer.observe(element);
+			observers.set(documentId, observer);
 
-      return () => {
-        observer.disconnect();
-        observers.delete(documentId);
-        visibleDocs.delete(documentId);
-      };
-    },
+			return () => {
+				observer.disconnect();
+				observers.delete(documentId);
+				visibleDocs.delete(documentId);
+			};
+		},
 
-    isVisible: (documentId: string) => visibleDocs.has(documentId),
-    getVisible: () => Array.from(visibleDocs),
-  };
+		isVisible: (documentId: string) => visibleDocs.has(documentId),
+		getVisible: () => Array.from(visibleDocs),
+	};
 };
 ```
 
@@ -1248,11 +1259,11 @@ export const createVisibilityTracker = (): VisibilityTracker => {
 ```typescript
 // Server-side collection creation
 const {
-  material,    // Paginated SSR query
-  delta,       // Real-time delta subscription
-  replicate,   // Single mutation for all CRDT changes
-  session,     // Unified session management
-} = collection.create<Doc<"intervals">>(components.replicate, "intervals");
+	material, // Paginated SSR query
+	delta, // Real-time delta subscription
+	replicate, // Single mutation for all CRDT changes
+	session, // Unified session management
+} = collection.create<Doc<'intervals'>>(components.replicate, 'intervals');
 ```
 
 #### `material` - Paginated Query
@@ -1340,15 +1351,15 @@ session.query(args: {
 
 ```typescript
 // Collection creation
-const collection = collection.create(schema, "tableName", {
-  persistence: () => sqlite(),
-  config: () => ({
-    convexClient,
-    api: api.tableName,  // { material, delta, replicate, session }
-    getKey: (doc) => doc.id,
-  }),
-  pagination: { pageSize: 25, ssrPages: 2 },
-  actors: { debounceMs: 200, maxRetries: 3 },
+const collection = collection.create(schema, 'tableName', {
+	persistence: () => sqlite(),
+	config: () => ({
+		convexClient,
+		api: api.tableName, // { material, delta, replicate, session }
+		getKey: (doc) => doc.id,
+	}),
+	pagination: { pageSize: 25, ssrPages: 2 },
+	actors: { debounceMs: 200, maxRetries: 3 },
 });
 
 // Type extraction
@@ -1356,32 +1367,32 @@ type Interval = collection.Doc<typeof intervals>;
 
 // Instance methods
 interface LazyCollection<T> {
-  init(material?: PaginatedMaterial<T>): Promise<void>;
-  get(): Collection<T>;
+	init(material?: PaginatedMaterial<T>): Promise<void>;
+	get(): Collection<T>;
 
-  pagination: {
-    load(): Promise<PaginatedPage<T>>;
-    status: PaginationStatus;  // "idle" | "busy" | "done" | "error"
-    canLoadMore: boolean;
-    count: number;
-    subscribe(cb: (state: PaginationState) => void): () => void;
-  };
+	pagination: {
+		load(): Promise<PaginatedPage<T>>;
+		status: PaginationStatus; // "idle" | "busy" | "done" | "error"
+		canLoadMore: boolean;
+		count: number;
+		subscribe(cb: (state: PaginationState) => void): () => void;
+	};
 
-  actors: {
-    getPending(documentId: string): boolean;
-    onPendingChange(documentId: string, cb: (pending: boolean) => void): () => void;
-    reconcile(documentId: string): Promise<ReconcileResult>;
-    reconcileAll(): Promise<ReconcileResult[]>;
-    markVisible(documentId: string, element: HTMLElement): () => void;
-  };
+	actors: {
+		getPending(documentId: string): boolean;
+		onPendingChange(documentId: string, cb: (pending: boolean) => void): () => void;
+		reconcile(documentId: string): Promise<ReconcileResult>;
+		reconcileAll(): Promise<ReconcileResult[]>;
+		markVisible(documentId: string, element: HTMLElement): () => void;
+	};
 
-  session: {
-    join(documentId: string, opts?: SessionJoinOptions): Promise<void>;
-    leave(documentId: string): Promise<void>;
-    updateCursor(documentId: string, cursor: Cursor): Promise<void>;
-    getSessions(documentId: string): Promise<Session[]>;
-    onSessionsChange(documentId: string, cb: (sessions: Session[]) => void): () => void;
-  };
+	session: {
+		join(documentId: string, opts?: SessionJoinOptions): Promise<void>;
+		leave(documentId: string): Promise<void>;
+		updateCursor(documentId: string, cursor: Cursor): Promise<void>;
+		getSessions(documentId: string): Promise<Session[]>;
+		onSessionsChange(documentId: string, cb: (sessions: Session[]) => void): () => void;
+	};
 }
 ```
 
@@ -1389,19 +1400,19 @@ interface LazyCollection<T> {
 
 ```typescript
 type DocumentMessage =
-  | { _tag: "LocalChange" }
-  | { _tag: "ExternalUpdate" }
-  | { _tag: "Reconcile"; done: Deferred<ReconcileResult, SyncError> }
-  | { _tag: "Shutdown"; done: Deferred<void, never> }
-  | { _tag: "SetPriority"; priority: ActorPriority };
+	| { _tag: 'LocalChange' }
+	| { _tag: 'ExternalUpdate' }
+	| { _tag: 'Reconcile'; done: Deferred<ReconcileResult, SyncError> }
+	| { _tag: 'Shutdown'; done: Deferred<void, never> }
+	| { _tag: 'SetPriority'; priority: ActorPriority };
 
-type ActorPriority = "critical" | "high" | "normal" | "low";
-type ActorStatus = "idle" | "pending" | "syncing" | "reconciling" | "error";
+type ActorPriority = 'critical' | 'high' | 'normal' | 'low';
+type ActorStatus = 'idle' | 'pending' | 'syncing' | 'reconciling' | 'error';
 
 interface ReconcileResult {
-  localChanges: number;
-  remoteChanges: number;
-  conflicts: number;
+	localChanges: number;
+	remoteChanges: number;
+	conflicts: number;
 }
 ```
 
@@ -1494,7 +1505,7 @@ Each phase is **contained and testable** - the system works after each phase com
 5. **Update examples**
    - Update TanStack Start example to use new 4-export API
    - Update SvelteKit example to use new 4-export API
-   - Files: `examples/tanstack-start/convex/`, `examples/sveltekit/src/convex/`
+   - Files: `apps/tanstack-start/convex/`, `apps/sveltekit/src/convex/`
 
 6. **Remove deprecated exports**
    - Remove old method aliases from server
@@ -1529,7 +1540,7 @@ Each phase is **contained and testable** - the system works after each phase com
 4. **Examples: infinite scroll**
    - Add infinite scroll demo to TanStack Start
    - Add infinite scroll demo to SvelteKit
-   - Files: `examples/tanstack-start/`, `examples/sveltekit/`
+   - Files: `apps/tanstack-start/`, `apps/sveltekit/`
 
 **Test:** SSR loads first page, infinite scroll loads more
 
@@ -1590,18 +1601,26 @@ Each phase is **contained and testable** - the system works after each phase com
 ```typescript
 // BEFORE (11 exports)
 const {
-  stream, material, insert, update, remove,
-  recovery, mark, compact, sessions, presence,
-  materialPaginated,
-} = collection.create<T>(component, "tableName");
+	stream,
+	material,
+	insert,
+	update,
+	remove,
+	recovery,
+	mark,
+	compact,
+	sessions,
+	presence,
+	materialPaginated,
+} = collection.create<T>(component, 'tableName');
 
 // AFTER (4 exports)
 const {
-  material,    // Paginated by default
-  delta,       // Renamed from stream
-  replicate,   // Replaces insert/update/remove
-  session,     // Unified: sessions + presence + mark (sync progress)
-} = collection.create<T>(component, "tableName");
+	material, // Paginated by default
+	delta, // Renamed from stream
+	replicate, // Replaces insert/update/remove
+	session, // Unified: sessions + presence + mark (sync progress)
+} = collection.create<T>(component, 'tableName');
 ```
 
 ### 9.2 Client API Migration
@@ -1632,8 +1651,8 @@ const material = await convex.query(api.intervals.material, {});
 
 // AFTER
 const page1 = await convex.query(api.intervals.material, {
-  paginationOpts: { numItems: 50, cursor: null },
-  includeCRDT: true,
+	paginationOpts: { numItems: 50, cursor: null },
+	includeCRDT: true,
 });
 ```
 
@@ -1646,9 +1665,9 @@ await convex.mutation(api.intervals.update, { document, bytes, material });
 await convex.mutation(api.intervals.remove, { document, bytes });
 
 // AFTER
-await convex.mutation(api.intervals.replicate, { document, bytes, material, type: "insert" });
-await convex.mutation(api.intervals.replicate, { document, bytes, material, type: "update" });
-await convex.mutation(api.intervals.replicate, { document, bytes, type: "delete" });
+await convex.mutation(api.intervals.replicate, { document, bytes, material, type: 'insert' });
+await convex.mutation(api.intervals.replicate, { document, bytes, material, type: 'update' });
+await convex.mutation(api.intervals.replicate, { document, bytes, type: 'delete' });
 ```
 
 ### 9.5 Breaking Changes
@@ -1670,12 +1689,12 @@ await convex.mutation(api.intervals.replicate, { document, bytes, type: "delete"
 ### paginationOptsValidator
 
 ```typescript
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator } from 'convex/server';
 
 // Validates:
 {
-  numItems: number;        // Required: items per page
-  cursor: string | null;   // Required: null for first page
+	numItems: number; // Required: items per page
+	cursor: string | null; // Required: null for first page
 }
 ```
 
@@ -1683,21 +1702,23 @@ import { paginationOptsValidator } from "convex/server";
 
 ```typescript
 interface PaginationResult<T> {
-  page: T[];               // Documents in this page
-  isDone: boolean;         // true if no more pages
-  continueCursor: string;  // Pass to next query for more
+	page: T[]; // Documents in this page
+	isDone: boolean; // true if no more pages
+	continueCursor: string; // Pass to next query for more
 }
 ```
 
 ### usePaginatedQuery (React)
 
 ```typescript
-import { usePaginatedQuery } from "convex/react";
+import { usePaginatedQuery } from 'convex/react';
 
 const { results, status, loadMore } = usePaginatedQuery(
-  api.collection.list,
-  { /* extra args */ },
-  { initialNumItems: 25 },
+	api.collection.list,
+	{
+		/* extra args */
+	},
+	{ initialNumItems: 25 }
 );
 
 // status: "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted"
@@ -1710,32 +1731,32 @@ const { results, status, loadMore } = usePaginatedQuery(
 ### Queue Creation
 
 ```typescript
-import { Queue, Effect } from "effect";
+import { Queue, Effect } from 'effect';
 
 // Unbounded queue (no backpressure)
-const queue = yield* Queue.unbounded<Message>();
+const queue = yield * Queue.unbounded<Message>();
 
 // Bounded queue (blocks when full)
-const bounded = yield* Queue.bounded<Message>(100);
+const bounded = yield * Queue.bounded<Message>(100);
 
 // Dropping queue (drops oldest when full)
-const dropping = yield* Queue.dropping<Message>(100);
+const dropping = yield * Queue.dropping<Message>(100);
 ```
 
 ### Queue Operations
 
 ```typescript
 // Add item
-yield* Queue.offer(queue, message);
+yield * Queue.offer(queue, message);
 
 // Take single item (blocks if empty)
-const item = yield* Queue.take(queue);
+const item = yield * Queue.take(queue);
 
 // Take all available items
-const items = yield* Queue.takeAll(queue);
+const items = yield * Queue.takeAll(queue);
 
 // Check size
-const size = yield* Queue.size(queue);
+const size = yield * Queue.size(queue);
 ```
 
 ---

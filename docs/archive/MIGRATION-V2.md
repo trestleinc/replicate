@@ -51,51 +51,55 @@ This migration addresses two major improvements:
 ```typescript
 // src/component/schema.ts
 export default defineSchema({
-  documents: defineTable({
-    collection: v.string(),
-    document: v.string(),
-    bytes: v.bytes(),
-    seq: v.number(),
-  })
-    .index("by_collection", ["collection"])
-    .index("by_document", ["collection", "document"])
-    .index("by_seq", ["collection", "seq"]),
+	documents: defineTable({
+		collection: v.string(),
+		document: v.string(),
+		bytes: v.bytes(),
+		seq: v.number(),
+	})
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_seq', ['collection', 'seq']),
 
-  snapshots: defineTable({
-    collection: v.string(),
-    document: v.string(),
-    bytes: v.bytes(),
-    vector: v.bytes(),
-    seq: v.number(),
-    created: v.number(),
-  }).index("by_document", ["collection", "document"]),
+	snapshots: defineTable({
+		collection: v.string(),
+		document: v.string(),
+		bytes: v.bytes(),
+		vector: v.bytes(),
+		seq: v.number(),
+		created: v.number(),
+	}).index('by_document', ['collection', 'document']),
 
-  sessions: defineTable({
-    collection: v.string(),
-    document: v.string(),
-    client: v.string(),
-    vector: v.optional(v.bytes()),
-    connected: v.boolean(),
-    seq: v.number(),
-    seen: v.number(),
-    user: v.optional(v.string()),
-    profile: v.optional(v.object({
-      name: v.optional(v.string()),
-      color: v.optional(v.string()),
-      avatar: v.optional(v.string()),
-    })),
-    cursor: v.optional(v.object({
-      anchor: v.number(),
-      head: v.number(),
-      field: v.optional(v.string()),
-    })),
-    active: v.optional(v.number()),
-    timeout: v.optional(v.id("_scheduled_functions")),
-  })
-    .index("by_collection", ["collection"])
-    .index("by_document", ["collection", "document"])
-    .index("by_client", ["collection", "document", "client"])
-    .index("by_connected", ["collection", "document", "connected"]),
+	sessions: defineTable({
+		collection: v.string(),
+		document: v.string(),
+		client: v.string(),
+		vector: v.optional(v.bytes()),
+		connected: v.boolean(),
+		seq: v.number(),
+		seen: v.number(),
+		user: v.optional(v.string()),
+		profile: v.optional(
+			v.object({
+				name: v.optional(v.string()),
+				color: v.optional(v.string()),
+				avatar: v.optional(v.string()),
+			})
+		),
+		cursor: v.optional(
+			v.object({
+				anchor: v.number(),
+				head: v.number(),
+				field: v.optional(v.string()),
+			})
+		),
+		active: v.optional(v.number()),
+		timeout: v.optional(v.id('_scheduled_functions')),
+	})
+		.index('by_collection', ['collection'])
+		.index('by_document', ['collection', 'document'])
+		.index('by_client', ['collection', 'document', 'client'])
+		.index('by_connected', ['collection', 'document', 'connected']),
 });
 ```
 
@@ -115,14 +119,14 @@ export default defineSchema({
 We have one Effect.ts service: `CursorService` in `src/client/services/cursor.ts`
 
 ```typescript
-export class CursorService extends Context.Tag("CursorService")<
-  CursorService,
-  {
-    readonly loadCursor: (collection: string) => Effect.Effect<Cursor, IDBError>;
-    readonly saveCursor: (collection: string, cursor: Cursor) => Effect.Effect<void, IDBWriteError>;
-    readonly clearCursor: (collection: string) => Effect.Effect<void, IDBError>;
-    readonly loadPeerId: (collection: string) => Effect.Effect<string, IDBError | IDBWriteError>;
-  }
+export class CursorService extends Context.Tag('CursorService')<
+	CursorService,
+	{
+		readonly loadCursor: (collection: string) => Effect.Effect<Cursor, IDBError>;
+		readonly saveCursor: (collection: string, cursor: Cursor) => Effect.Effect<void, IDBWriteError>;
+		readonly clearCursor: (collection: string) => Effect.Effect<void, IDBError>;
+		readonly loadPeerId: (collection: string) => Effect.Effect<string, IDBError | IDBWriteError>;
+	}
 >() {}
 ```
 
@@ -132,63 +136,60 @@ export class CursorService extends Context.Tag("CursorService")<
 
 ```typescript
 // src/client/services/heartbeat.ts
-import { Effect, Context, Layer, Schedule } from "effect";
+import { Effect, Context, Layer, Schedule } from 'effect';
 
-export class HeartbeatService extends Context.Tag("HeartbeatService")<
-  HeartbeatService,
-  {
-    readonly start: (config: HeartbeatConfig) => Effect.Effect<void, never, Scope>;
-    readonly stop: () => Effect.Effect<void>;
-    readonly updateCursor: (position: CursorPosition | null) => Effect.Effect<void>;
-  }
+export class HeartbeatService extends Context.Tag('HeartbeatService')<
+	HeartbeatService,
+	{
+		readonly start: (config: HeartbeatConfig) => Effect.Effect<void, never, Scope>;
+		readonly stop: () => Effect.Effect<void>;
+		readonly updateCursor: (position: CursorPosition | null) => Effect.Effect<void>;
+	}
 >() {}
 
 // Implementation uses Effect.forkScoped for auto-cleanup
 export function createHeartbeatLayer(deps: HeartbeatDeps) {
-  return Layer.scoped(
-    HeartbeatService,
-    Effect.gen(function* () {
-      let fiber: Fiber.RuntimeFiber<void, never> | null = null;
-      let currentCursor: CursorPosition | null = null;
+	return Layer.scoped(
+		HeartbeatService,
+		Effect.gen(function* () {
+			let fiber: Fiber.RuntimeFiber<void, never> | null = null;
+			let currentCursor: CursorPosition | null = null;
 
-      const sendHeartbeat = Effect.gen(function* () {
-        const vector = deps.getVector();
-        yield* Effect.tryPromise(() =>
-          deps.convexClient.mutation(deps.api.mark, {
-            document: deps.document,
-            client: deps.client,
-            vector,
-            cursor: currentCursor,
-          })
-        );
-      });
+			const sendHeartbeat = Effect.gen(function* () {
+				const vector = deps.getVector();
+				yield* Effect.tryPromise(() =>
+					deps.convexClient.mutation(deps.api.mark, {
+						document: deps.document,
+						client: deps.client,
+						vector,
+						cursor: currentCursor,
+					})
+				);
+			});
 
-      return HeartbeatService.of({
-        start: (config) =>
-          Effect.gen(function* () {
-            fiber = yield* Effect.forkScoped(
-              Effect.repeat(
-                sendHeartbeat,
-                Schedule.spaced(config.interval ?? "10 seconds")
-              )
-            );
-          }),
+			return HeartbeatService.of({
+				start: (config) =>
+					Effect.gen(function* () {
+						fiber = yield* Effect.forkScoped(
+							Effect.repeat(sendHeartbeat, Schedule.spaced(config.interval ?? '10 seconds'))
+						);
+					}),
 
-        stop: () =>
-          Effect.gen(function* () {
-            if (fiber) {
-              yield* Fiber.interrupt(fiber);
-              fiber = null;
-            }
-          }),
+				stop: () =>
+					Effect.gen(function* () {
+						if (fiber) {
+							yield* Fiber.interrupt(fiber);
+							fiber = null;
+						}
+					}),
 
-        updateCursor: (position) =>
-          Effect.sync(() => {
-            currentCursor = position;
-          }),
-      });
-    })
-  );
+				updateCursor: (position) =>
+					Effect.sync(() => {
+						currentCursor = position;
+					}),
+			});
+		})
+	);
 }
 ```
 
@@ -196,65 +197,63 @@ export function createHeartbeatLayer(deps: HeartbeatDeps) {
 
 ```typescript
 // src/client/services/presence.ts
-import { Effect, Context, Layer } from "effect";
+import { Effect, Context, Layer } from 'effect';
 
 interface PresenceConfig {
-  collection: string;
-  document: string;
-  client: string;
-  convexClient: ConvexClient;
-  api: PresenceApi;
-  subdocManager: SubdocManager;  // Direct access - no callback!
+	collection: string;
+	document: string;
+	client: string;
+	convexClient: ConvexClient;
+	api: PresenceApi;
+	subdocManager: SubdocManager; // Direct access - no callback!
 }
 
-export class PresenceService extends Context.Tag("PresenceService")<
-  PresenceService,
-  {
-    readonly connect: () => Effect.Effect<void, never, Scope>;
-    readonly disconnect: () => Effect.Effect<void>;
-    readonly updateCursor: (position: CursorPosition | null) => Effect.Effect<void>;
-    readonly getOthers: () => Effect.Effect<Map<string, ClientCursor>>;
-    readonly subscribe: (cb: () => void) => Effect.Effect<() => void>;
-  }
+export class PresenceService extends Context.Tag('PresenceService')<
+	PresenceService,
+	{
+		readonly connect: () => Effect.Effect<void, never, Scope>;
+		readonly disconnect: () => Effect.Effect<void>;
+		readonly updateCursor: (position: CursorPosition | null) => Effect.Effect<void>;
+		readonly getOthers: () => Effect.Effect<Map<string, ClientCursor>>;
+		readonly subscribe: (cb: () => void) => Effect.Effect<() => void>;
+	}
 >() {}
 
 export function createPresenceLayer(config: PresenceConfig) {
-  return Layer.scoped(
-    PresenceService,
-    Effect.gen(function* () {
-      // Vector is ALWAYS available - subdocManager is injected
-      const getVector = () => {
-        const subdoc = config.subdocManager.get(config.document);
-        return subdoc
-          ? Y.encodeStateVector(subdoc).buffer as ArrayBuffer
-          : undefined;
-      };
+	return Layer.scoped(
+		PresenceService,
+		Effect.gen(function* () {
+			// Vector is ALWAYS available - subdocManager is injected
+			const getVector = () => {
+				const subdoc = config.subdocManager.get(config.document);
+				return subdoc ? (Y.encodeStateVector(subdoc).buffer as ArrayBuffer) : undefined;
+			};
 
-      // Heartbeat fiber - auto-cancelled when scope closes
-      const heartbeatFiber = yield* Effect.forkScoped(
-        Effect.repeat(
-          sendHeartbeat(config, getVector),
-          Schedule.spaced("10 seconds")
-        )
-      );
+			// Heartbeat fiber - auto-cancelled when scope closes
+			const heartbeatFiber = yield* Effect.forkScoped(
+				Effect.repeat(sendHeartbeat(config, getVector), Schedule.spaced('10 seconds'))
+			);
 
-      // Visibility handling
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const handler = () => { /* visibility logic */ };
-          document.addEventListener("visibilitychange", handler);
-          return handler;
-        }),
-        (handler) => Effect.sync(() => {
-          document.removeEventListener("visibilitychange", handler);
-        })
-      );
+			// Visibility handling
+			yield* Effect.acquireRelease(
+				Effect.sync(() => {
+					const handler = () => {
+						/* visibility logic */
+					};
+					document.addEventListener('visibilitychange', handler);
+					return handler;
+				}),
+				(handler) =>
+					Effect.sync(() => {
+						document.removeEventListener('visibilitychange', handler);
+					})
+			);
 
-      return PresenceService.of({
-        // ... implementation
-      });
-    })
-  );
+			return PresenceService.of({
+				// ... implementation
+			});
+		})
+	);
 }
 ```
 
@@ -326,37 +325,37 @@ Replace 8+ module-level Maps with single context:
 ```typescript
 // src/client/services/context.ts
 interface CollectionContext {
-  collection: string;
-  subdocManager: SubdocManager;
-  convexClient: ConvexClient;
-  api: ConvexCollectionApi;
-  peerId: string;
-  persistence: Persistence;
-  proseFields: Set<string>;
-  mutex: ReturnType<typeof createMutex>;
+	collection: string;
+	subdocManager: SubdocManager;
+	convexClient: ConvexClient;
+	api: ConvexCollectionApi;
+	peerId: string;
+	persistence: Persistence;
+	proseFields: Set<string>;
+	mutex: ReturnType<typeof createMutex>;
 }
 
 const contexts = new Map<string, CollectionContext>();
 
 export function getContext(collection: string): CollectionContext {
-  const ctx = contexts.get(collection);
-  if (!ctx) throw new Error(`Collection ${collection} not initialized`);
-  return ctx;
+	const ctx = contexts.get(collection);
+	if (!ctx) throw new Error(`Collection ${collection} not initialized`);
+	return ctx;
 }
 
 export function initContext(config: CollectionConfig): CollectionContext {
-  const ctx: CollectionContext = {
-    collection: config.collection,
-    subdocManager: createSubdocManager(config.collection),
-    convexClient: config.convexClient,
-    api: config.api,
-    peerId: crypto.randomUUID(),
-    persistence: config.persistence,
-    proseFields: new Set(extractProseFields(config.schema)),
-    mutex: createMutex(),
-  };
-  contexts.set(config.collection, ctx);
-  return ctx;
+	const ctx: CollectionContext = {
+		collection: config.collection,
+		subdocManager: createSubdocManager(config.collection),
+		convexClient: config.convexClient,
+		api: config.api,
+		peerId: crypto.randomUUID(),
+		persistence: config.persistence,
+		proseFields: new Set(extractProseFields(config.schema)),
+		mutex: createMutex(),
+	};
+	contexts.set(config.collection, ctx);
+	return ctx;
 }
 ```
 
@@ -371,10 +370,10 @@ export function initContext(config: CollectionConfig): CollectionContext {
 ```typescript
 // src/client/cursor-tracker.ts
 export class CursorTracker {
-  constructor(config: {
-    getVector?: () => ArrayBuffer | undefined;  // Optional!
-    // ...
-  }) {}
+	constructor(config: {
+		getVector?: () => ArrayBuffer | undefined; // Optional!
+		// ...
+	}) {}
 }
 ```
 
@@ -533,9 +532,9 @@ All function parameters should follow the same single-word noun pattern as the p
 
 ```typescript
 // Public API (gold standard)
-mark({ collection, document, client, vector, cursor })
-compact({ collection, document })
-stream({ collection, cursor, limit })
+mark({ collection, document, client, vector, cursor });
+compact({ collection, document });
+stream({ collection, cursor, limit });
 ```
 
 ### Parameter Rename Mapping

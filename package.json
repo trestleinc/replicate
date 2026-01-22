@@ -1,6 +1,7 @@
 {
 	"name": "replicate-monorepo",
 	"private": true,
+	"type": "module",
 	"packageManager": "pnpm@10.12.1",
 	"scripts": {
 		"build": "pnpm --filter @trestleinc/replicate build",
@@ -10,6 +11,7 @@
 		"dev:tanstack": "pnpm --filter interval dev",
 		"dev:expo": "pnpm --filter interval-expo start",
 		"dev:sveltekit": "pnpm --filter svinterval dev",
+		"dev:convex": "convex dev",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
@@ -28,7 +30,11 @@
 		"typescript-eslint": "catalog:"
 	},
 	"dependencies": {
-		"convex": "catalog:"
+		"@convex-dev/better-auth": "^0.10.10",
+		"@trestleinc/replicate": "workspace:*",
+		"better-auth": "1.4.9",
+		"convex": "catalog:",
+		"zod": "catalog:"
 	},
 	"pnpm": {
 		"overrides": {

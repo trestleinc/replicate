@@ -7,13 +7,21 @@ This document captures the design constraints and tradeoffs for replicate's serv
 ```typescript
 // convex/intervals.ts
 export const {
-  stream, material, insert, update, remove,
-  recovery, mark, compact, sessions, presence,
-} = collection.create<Interval>(components.replicate, "intervals", {
-  hooks: {
-    evalRead: (ctx) => authorize(ctx),
-    evalWrite: (ctx, doc) => validate(doc),
-  }
+	stream,
+	material,
+	insert,
+	update,
+	remove,
+	recovery,
+	mark,
+	compact,
+	sessions,
+	presence,
+} = collection.create<Interval>(components.replicate, 'intervals', {
+	hooks: {
+		evalRead: (ctx) => authorize(ctx),
+		evalWrite: (ctx, doc) => validate(doc),
+	},
 });
 ```
 
@@ -32,12 +40,12 @@ Bridge uses a different pattern that avoids destructuring:
 ```typescript
 // Bridge: convex/bridge.ts
 const b = bridge(components.bridge)({
-  hooks: { read: authCheck }
+	hooks: { read: authCheck },
 });
 
 // Access via nested object
-b.api.card.get      // -> components.bridge.public.cardGet
-b.api.procedure.submit
+b.api.card.get; // -> components.bridge.public.cardGet
+b.api.procedure.submit;
 ```
 
 ### Why Bridge Works Differently
@@ -95,9 +103,17 @@ Flat exports with destructuring. Verbose but works.
 
 ```typescript
 export const {
-  stream, material, insert, update, remove,
-  recovery, mark, compact, sessions, presence,
-} = collection.create<Interval>(components.replicate, "intervals");
+	stream,
+	material,
+	insert,
+	update,
+	remove,
+	recovery,
+	mark,
+	compact,
+	sessions,
+	presence,
+} = collection.create<Interval>(components.replicate, 'intervals');
 ```
 
 ### Option 2: Bridge-Style (No Hooks on Core Functions)
@@ -105,7 +121,7 @@ export const {
 Move to bridge pattern where component exports base functions directly. Users write wrapper functions for auth.
 
 ```typescript
-const rp = replicate(components.replicate)({ collection: "intervals" });
+const rp = replicate(components.replicate)({ collection: 'intervals' });
 
 // Only export what's needed for SSR
 export const material = rp.api.material;

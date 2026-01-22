@@ -86,6 +86,49 @@ export type ViewFunction<TableInfo extends GenericTableInfo = GenericTableInfo> 
 // Replicate Class
 // ============================================================================
 
+interface StreamChange {
+	document: string;
+	bytes: ArrayBuffer;
+	seq: number;
+	type: string;
+}
+
+async function enrichChangesWithExistence(
+	ctx: GenericQueryCtx<GenericDataModel>,
+	collection: string,
+	changes: StreamChange[],
+	view?: ViewFunction
+): Promise<(StreamChange & { exists: boolean })[]> {
+	const docIdSet = new Set<string>();
+	for (const change of changes) {
+		docIdSet.add(change.document);
+	}
+
+	const existingDocs = new Set<string>();
+
+	for (const docId of docIdSet) {
+		const doc = await ctx.db
+			.query(collection)
+			.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
+			.first();
+
+		if (!doc) continue;
+
+		if (view) {
+			const viewQuery = await view(ctx, ctx.db.query(collection));
+			const visible = await viewQuery.filter((q: any) => q.eq(q.field('id'), docId)).first();
+			if (visible) existingDocs.add(docId);
+		} else {
+			existingDocs.add(docId);
+		}
+	}
+
+	return changes.map((c) => ({
+		...c,
+		exists: existingDocs.has(c.document),
+	}));
+}
+
 const DEFAULT_THRESHOLD = 500;
 const DEFAULT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -126,41 +169,12 @@ export class Replicate<T extends object> {
 					threshold: args.threshold,
 				});
 
-				const docIdSet = new Set<string>();
-				for (const change of result.changes) {
-					docIdSet.add((change as { document: string }).document);
-				}
-
-				const existingDocs = new Set<string>();
-
-				for (const docId of docIdSet) {
-					const doc = await ctx.db
-						.query(collection)
-						.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
-						.first();
-
-					if (!doc) continue;
-
-					if (opts?.view) {
-						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
-						const visible = await viewQuery.filter((q: any) => q.eq(q.field('id'), docId)).first();
-						if (visible) existingDocs.add(docId);
-					} else {
-						existingDocs.add(docId);
-					}
-				}
-
-				interface StreamChange {
-					document: string;
-					bytes: ArrayBuffer;
-					seq: number;
-					type: string;
-				}
-				const enrichedChanges = result.changes.map((c: StreamChange) => ({
-					...c,
-					exists: existingDocs.has(c.document),
-				}));
-
+				const enrichedChanges = await enrichChangesWithExistence(
+					ctx,
+					collection,
+					result.changes,
+					opts?.view
+				);
 				const enrichedResult = { ...result, changes: enrichedChanges };
 
 				if (opts?.onStream) {
@@ -647,41 +661,12 @@ export class Replicate<T extends object> {
 					threshold: args.threshold,
 				});
 
-				const docIdSet = new Set<string>();
-				for (const change of result.changes) {
-					docIdSet.add((change as { document: string }).document);
-				}
-
-				const existingDocs = new Set<string>();
-
-				for (const docId of docIdSet) {
-					const doc = await ctx.db
-						.query(collection)
-						.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
-						.first();
-
-					if (!doc) continue;
-
-					if (opts?.view) {
-						const viewQuery = await opts.view(ctx, ctx.db.query(collection));
-						const visible = await viewQuery.filter((q: any) => q.eq(q.field('id'), docId)).first();
-						if (visible) existingDocs.add(docId);
-					} else {
-						existingDocs.add(docId);
-					}
-				}
-
-				interface StreamChange {
-					document: string;
-					bytes: ArrayBuffer;
-					seq: number;
-					type: string;
-				}
-				const enrichedChanges = result.changes.map((c: StreamChange) => ({
-					...c,
-					exists: existingDocs.has(c.document),
-				}));
-
+				const enrichedChanges = await enrichChangesWithExistence(
+					ctx,
+					collection,
+					result.changes,
+					opts?.view
+				);
 				const enrichedResult = { mode: 'stream' as const, ...result, changes: enrichedChanges };
 
 				if (opts?.onDelta) {

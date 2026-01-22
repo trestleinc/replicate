@@ -99,10 +99,11 @@ self.onmessage = async (e: MessageEvent<Request>) => {
 				await init(name!);
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
-			case EXECUTE:
+			case EXECUTE: {
 				const result = await execute(sql!, params);
 				self.postMessage({ id, ok: true, rows: result.rows } satisfies Response);
 				break;
+			}
 			case FLUSH:
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;

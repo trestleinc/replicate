@@ -22,30 +22,33 @@
 
 ```typescript
 // convex/schema.ts - Server schema
-import { defineSchema } from "convex/server";
-import { v } from "convex/values";
-import { schema } from "@trestleinc/replicate/server";
+import { defineSchema } from 'convex/server';
+import { v } from 'convex/values';
+import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
-  intervals: schema.table({
-    id: v.string(),
-    title: v.string(),
-    description: schema.prose(),
-    status: v.string(),
-  }, t => t.index("by_doc_id", ["id"]).index("by_timestamp", ["timestamp"])),
+	intervals: schema.table(
+		{
+			id: v.string(),
+			title: v.string(),
+			description: schema.prose(),
+			status: v.string(),
+		},
+		(t) => t.index('by_doc_id', ['id']).index('by_timestamp', ['timestamp'])
+	),
 });
 ```
 
 ```typescript
 // src/types/interval.ts - DUPLICATE Zod schema
-import { z } from "zod";
-import { schema } from "@trestleinc/replicate/client";
+import { z } from 'zod';
+import { schema } from '@trestleinc/replicate/client';
 
 export const intervalSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  description: schema.prose(),  // Zod prose helper
-  status: z.string(),
+	id: z.string(),
+	title: z.string(),
+	description: schema.prose(), // Zod prose helper
+	status: z.string(),
 });
 
 export type Interval = z.infer<typeof intervalSchema>;
@@ -53,17 +56,17 @@ export type Interval = z.infer<typeof intervalSchema>;
 
 ```typescript
 // src/collections/intervals.ts - Collection with Zod schema
-import { collection } from "@trestleinc/replicate/client";
-import { intervalSchema, type Interval } from "../types/interval";
+import { collection } from '@trestleinc/replicate/client';
+import { intervalSchema, type Interval } from '../types/interval';
 
 export const intervals = collection.create({
-  persistence: pglite,
-  config: () => ({
-    schema: intervalSchema,  // Zod schema required
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.intervals,
-    getKey: (interval: Interval) => interval.id,
-  }),
+	persistence: pglite,
+	config: () => ({
+		schema: intervalSchema, // Zod schema required
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.intervals,
+		getKey: (interval: Interval) => interval.id,
+	}),
 });
 
 export type { Interval };
@@ -73,37 +76,40 @@ export type { Interval };
 
 ```typescript
 // convex/schema.ts - SINGLE source of truth (unchanged)
-import { defineSchema } from "convex/server";
-import { v } from "convex/values";
-import { schema } from "@trestleinc/replicate/server";
+import { defineSchema } from 'convex/server';
+import { v } from 'convex/values';
+import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
-  intervals: schema.table({
-    id: v.string(),
-    title: v.string(),
-    description: schema.prose(),  // Auto-detected on client!
-    status: v.string(),
-  }, t => t.index("by_doc_id", ["id"]).index("by_timestamp", ["timestamp"])),
+	intervals: schema.table(
+		{
+			id: v.string(),
+			title: v.string(),
+			description: schema.prose(), // Auto-detected on client!
+			status: v.string(),
+		},
+		(t) => t.index('by_doc_id', ['id']).index('by_timestamp', ['timestamp'])
+	),
 });
 ```
 
 ```typescript
 // src/collections/intervals.ts - NO ZOD!
-import schema from "../../convex/schema";
-import { collection } from "@trestleinc/replicate/client";
-import { api } from "../../convex/_generated/api";
+import schema from '../../convex/schema';
+import { collection } from '@trestleinc/replicate/client';
+import { api } from '../../convex/_generated/api';
 
-export const intervals = collection.create(schema, "intervals", {
-  persistence: pglite,
-  config: () => ({
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.intervals,
-    getKey: (interval) => interval.id,  // Fully typed!
-  }),
+export const intervals = collection.create(schema, 'intervals', {
+	persistence: pglite,
+	config: () => ({
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.intervals,
+		getKey: (interval) => interval.id, // Fully typed!
+	}),
 });
 
 // Optional: convenience re-export (users can also use Doc<"intervals"> directly)
-export type { Doc } from "../../convex/_generated/dataModel";
+export type { Doc } from '../../convex/_generated/dataModel';
 ```
 
 ---
@@ -134,11 +140,11 @@ collection.create(schema, "intervals", { ... })
 ```typescript
 // src/client/types.ts (NEW)
 import type {
-  SchemaDefinition,
-  DataModelFromSchemaDefinition,
-  DocumentByName,
-  TableNamesInDataModel,
-} from "convex/server";
+	SchemaDefinition,
+	DataModelFromSchemaDefinition,
+	DocumentByName,
+	TableNamesInDataModel,
+} from 'convex/server';
 
 /**
  * Extract document type from a Convex schema and table name.
@@ -146,18 +152,16 @@ import type {
  * directly with the schema object.
  */
 export type DocFromSchema<
-  Schema extends SchemaDefinition<any, any>,
-  TableName extends TableNamesFromSchema<Schema>
-> = DocumentByName<
-  DataModelFromSchemaDefinition<Schema>,
-  TableName
->;
+	Schema extends SchemaDefinition<any, any>,
+	TableName extends TableNamesFromSchema<Schema>,
+> = DocumentByName<DataModelFromSchemaDefinition<Schema>, TableName>;
 
 /**
  * Extract valid table names from a schema definition.
  */
-export type TableNamesFromSchema<Schema extends SchemaDefinition<any, any>> =
-  TableNamesInDataModel<DataModelFromSchemaDefinition<Schema>>;
+export type TableNamesFromSchema<Schema extends SchemaDefinition<any, any>> = TableNamesInDataModel<
+	DataModelFromSchemaDefinition<Schema>
+>;
 
 /**
  * Extract the document type from a LazyCollection.
@@ -244,7 +248,7 @@ Convex validators are runtime JavaScript objects with introspectable properties:
 
 ```typescript
 // src/client/validators.ts (NEW FILE)
-import type { GenericValidator } from "convex/values";
+import type { GenericValidator } from 'convex/values';
 
 /**
  * Check if a validator represents a prose field.
@@ -252,26 +256,26 @@ import type { GenericValidator } from "convex/values";
  * v.object({ type: v.literal("doc"), content: v.optional(v.array(v.any())) })
  */
 export function isProseValidator(validator: GenericValidator): boolean {
-  const v = validator as any;
+	const v = validator as any;
 
-  // Must be an object validator
-  if (v.kind !== "object" || !v.fields) return false;
+	// Must be an object validator
+	if (v.kind !== 'object' || !v.fields) return false;
 
-  const { type, content } = v.fields;
+	const { type, content } = v.fields;
 
-  // Must have "type" field that is v.literal("doc")
-  if (!type || type.kind !== "literal" || type.value !== "doc") {
-    return false;
-  }
+	// Must have "type" field that is v.literal("doc")
+	if (!type || type.kind !== 'literal' || type.value !== 'doc') {
+		return false;
+	}
 
-  // Must have "content" field that is an array (optional or required)
-  if (!content) return false;
+	// Must have "content" field that is an array (optional or required)
+	if (!content) return false;
 
-  // Handle optional wrapper
-  const contentInner = content.isOptional === "optional" ? content : content;
-  if (contentInner.kind !== "array") return false;
+	// Handle optional wrapper
+	const contentInner = content.isOptional === 'optional' ? content : content;
+	if (contentInner.kind !== 'array') return false;
 
-  return true;
+	return true;
 }
 
 /**
@@ -281,32 +285,32 @@ export function isProseValidator(validator: GenericValidator): boolean {
  * @returns Array of field names that are prose fields
  */
 export function findProseFields(validator: GenericValidator): string[] {
-  const v = validator as any;
+	const v = validator as any;
 
-  if (v.kind !== "object" || !v.fields) return [];
+	if (v.kind !== 'object' || !v.fields) return [];
 
-  const proseFields: string[] = [];
+	const proseFields: string[] = [];
 
-  for (const [fieldName, fieldValidator] of Object.entries(v.fields)) {
-    // Handle optional wrapper
-    let inner = fieldValidator as any;
-    if (inner.isOptional === "optional" && inner.kind === "object") {
-      // Optional prose field
-    }
+	for (const [fieldName, fieldValidator] of Object.entries(v.fields)) {
+		// Handle optional wrapper
+		let inner = fieldValidator as any;
+		if (inner.isOptional === 'optional' && inner.kind === 'object') {
+			// Optional prose field
+		}
 
-    if (isProseValidator(inner)) {
-      proseFields.push(fieldName);
-    }
-  }
+		if (isProseValidator(inner)) {
+			proseFields.push(fieldName);
+		}
+	}
 
-  return proseFields;
+	return proseFields;
 }
 
 /**
  * Create an empty prose value.
  */
-export function emptyProse(): { type: "doc"; content: never[] } {
-  return { type: "doc", content: [] };
+export function emptyProse(): { type: 'doc'; content: never[] } {
+	return { type: 'doc', content: [] };
 }
 ```
 
@@ -367,31 +371,28 @@ create<TSchema extends z.ZodObject<z.ZodRawShape>>  // CHANGE
 
 ```typescript
 // New imports
-import type { SchemaDefinition } from "convex/server";
-import { findProseFields } from "$/client/validators";
-import type { DocFromSchema, TableNamesFromSchema } from "$/client/types";
+import type { SchemaDefinition } from 'convex/server';
+import { findProseFields } from '$/client/validators';
+import type { DocFromSchema, TableNamesFromSchema } from '$/client/types';
 
 // New collection.create signature
 export const collection = {
-  create<
-    Schema extends SchemaDefinition<any, any>,
-    TableName extends TableNamesFromSchema<Schema>
-  >(
-    schema: Schema,
-    table: TableName,
-    options: CreateCollectionOptions<DocFromSchema<Schema, TableName>>
-  ): LazyCollection<DocFromSchema<Schema, TableName>> {
-    // Get validator from schema
-    const tableDefinition = schema.tables[table];
-    if (!tableDefinition) {
-      throw new Error(`Table "${table}" not found in schema`);
-    }
+	create<Schema extends SchemaDefinition<any, any>, TableName extends TableNamesFromSchema<Schema>>(
+		schema: Schema,
+		table: TableName,
+		options: CreateCollectionOptions<DocFromSchema<Schema, TableName>>
+	): LazyCollection<DocFromSchema<Schema, TableName>> {
+		// Get validator from schema
+		const tableDefinition = schema.tables[table];
+		if (!tableDefinition) {
+			throw new Error(`Table "${table}" not found in schema`);
+		}
 
-    const validator = tableDefinition.validator;
-    const proseFields = findProseFields(validator);
+		const validator = tableDefinition.validator;
+		const proseFields = findProseFields(validator);
 
-    // ... rest of implementation
-  }
+		// ... rest of implementation
+	},
 };
 ```
 
@@ -422,32 +423,32 @@ export function extractProseFields(schema: z.ZodObject<z.ZodRawShape>): string[]
 **Before:**
 
 ```typescript
-import { extract } from "$/client/merge";
-import { prose as proseSchema } from "$/client/prose";
+import { extract } from '$/client/merge';
+import { prose as proseSchema } from '$/client/prose';
 
 export const schema = {
-  prose: Object.assign(proseSchema, {
-    extract,
-    empty: proseSchema.empty,
-  }),
+	prose: Object.assign(proseSchema, {
+		extract,
+		empty: proseSchema.empty,
+	}),
 } as const;
 ```
 
 **After:**
 
 ```typescript
-import { extract } from "$/client/merge";
-import { emptyProse } from "$/client/validators";
+import { extract } from '$/client/merge';
+import { emptyProse } from '$/client/validators';
 
 export const schema = {
-  prose: {
-    extract,
-    empty: emptyProse,
-  },
+	prose: {
+		extract,
+		empty: emptyProse,
+	},
 } as const;
 
 // Export new type utilities
-export type { DocFromSchema, TableNamesFromSchema, CollectionDoc } from "$/client/types";
+export type { DocFromSchema, TableNamesFromSchema, CollectionDoc } from '$/client/types';
 ```
 
 #### `src/shared/types.ts`
@@ -458,7 +459,7 @@ export type { DocFromSchema, TableNamesFromSchema, CollectionDoc } from "$/clien
 declare const PROSE_BRAND: unique symbol;
 
 export interface ProseValue extends XmlFragmentJSON {
-  readonly [PROSE_BRAND]: typeof PROSE_BRAND;
+	readonly [PROSE_BRAND]: typeof PROSE_BRAND;
 }
 ```
 
@@ -500,13 +501,13 @@ None - all files have non-Zod code worth keeping.
 
 ```json
 {
-  "peerDependencies": {
-    "@tanstack/db": "^0.5.15",
-    "convex": "^1.31.0",
-    "lib0": "^0.2.0",
-    "y-protocols": "^1.0.7",
-    "yjs": "^13.6.0"
-  }
+	"peerDependencies": {
+		"@tanstack/db": "^0.5.15",
+		"convex": "^1.31.0",
+		"lib0": "^0.2.0",
+		"y-protocols": "^1.0.7",
+		"yjs": "^13.6.0"
+	}
 }
 ```
 
@@ -544,28 +545,28 @@ None - all files have non-Zod code worth keeping.
 
 ```typescript
 // src/types/task.ts
-import { z } from "zod";
+import { z } from 'zod';
 
 export const taskSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  isCompleted: z.boolean(),
+	id: z.string(),
+	text: z.string(),
+	isCompleted: z.boolean(),
 });
 
 export type Task = z.infer<typeof taskSchema>;
 
 // src/collections/tasks.ts
-import { collection } from "@trestleinc/replicate/client";
-import { taskSchema, type Task } from "../types/task";
+import { collection } from '@trestleinc/replicate/client';
+import { taskSchema, type Task } from '../types/task';
 
 export const tasks = collection.create({
-  persistence: pglite,
-  config: () => ({
-    schema: taskSchema,
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.tasks,
-    getKey: (task: Task) => task.id,
-  }),
+	persistence: pglite,
+	config: () => ({
+		schema: taskSchema,
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.tasks,
+		getKey: (task: Task) => task.id,
+	}),
 });
 
 export type { Task };
@@ -575,21 +576,21 @@ export type { Task };
 
 ```typescript
 // src/collections/tasks.ts
-import schema from "../../convex/schema";
-import { collection } from "@trestleinc/replicate/client";
-import { api } from "../../convex/_generated/api";
+import schema from '../../convex/schema';
+import { collection } from '@trestleinc/replicate/client';
+import { api } from '../../convex/_generated/api';
 
-export const tasks = collection.create(schema, "tasks", {
-  persistence: pglite,
-  config: () => ({
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.tasks,
-    getKey: (task) => task.id,  // Fully typed!
-  }),
+export const tasks = collection.create(schema, 'tasks', {
+	persistence: pglite,
+	config: () => ({
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.tasks,
+		getKey: (task) => task.id, // Fully typed!
+	}),
 });
 
 // Optional: Re-export Doc type for convenience
-export type { Doc } from "../../convex/_generated/dataModel";
+export type { Doc } from '../../convex/_generated/dataModel';
 ```
 
 ### Example 2: Collection with Prose Fields
@@ -598,29 +599,29 @@ export type { Doc } from "../../convex/_generated/dataModel";
 
 ```typescript
 // src/types/note.ts
-import { z } from "zod";
-import { schema } from "@trestleinc/replicate/client";
+import { z } from 'zod';
+import { schema } from '@trestleinc/replicate/client';
 
 export const noteSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  content: schema.prose(),  // Zod prose helper
+	id: z.string(),
+	title: z.string(),
+	content: schema.prose(), // Zod prose helper
 });
 
 export type Note = z.infer<typeof noteSchema>;
 
 // src/collections/notes.ts
-import { collection } from "@trestleinc/replicate/client";
-import { noteSchema, type Note } from "../types/note";
+import { collection } from '@trestleinc/replicate/client';
+import { noteSchema, type Note } from '../types/note';
 
 export const notes = collection.create({
-  persistence: pglite,
-  config: () => ({
-    schema: noteSchema,
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.notes,
-    getKey: (note: Note) => note.id,
-  }),
+	persistence: pglite,
+	config: () => ({
+		schema: noteSchema,
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.notes,
+		getKey: (note: Note) => note.id,
+	}),
 });
 ```
 
@@ -628,18 +629,18 @@ export const notes = collection.create({
 
 ```typescript
 // src/collections/notes.ts
-import schema from "../../convex/schema";
-import { collection } from "@trestleinc/replicate/client";
-import { api } from "../../convex/_generated/api";
+import schema from '../../convex/schema';
+import { collection } from '@trestleinc/replicate/client';
+import { api } from '../../convex/_generated/api';
 
 // Prose fields are AUTO-DETECTED from schema.tables.notes.validator!
-export const notes = collection.create(schema, "notes", {
-  persistence: pglite,
-  config: () => ({
-    convexClient: new ConvexClient(CONVEX_URL),
-    api: api.notes,
-    getKey: (note) => note.id,
-  }),
+export const notes = collection.create(schema, 'notes', {
+	persistence: pglite,
+	config: () => ({
+		convexClient: new ConvexClient(CONVEX_URL),
+		api: api.notes,
+		getKey: (note) => note.id,
+	}),
 });
 ```
 
@@ -685,12 +686,15 @@ Ensure prose fields use `schema.prose()` from `@trestleinc/replicate/server`:
 
 ```typescript
 // convex/schema.ts
-import { schema } from "@trestleinc/replicate/server";
+import { schema } from '@trestleinc/replicate/server';
 
 export default defineSchema({
-  notes: schema.table({
-    content: schema.prose(),  // ✓ Correct
-  }, t => t.index("by_doc_id", ["id"]).index("by_timestamp", ["timestamp"])),
+	notes: schema.table(
+		{
+			content: schema.prose(), // ✓ Correct
+		},
+		(t) => t.index('by_doc_id', ['id']).index('by_timestamp', ['timestamp'])
+	),
 });
 ```
 
@@ -768,17 +772,17 @@ For users who want client-side validation (rare):
 
 ```typescript
 // Users can add their own validation layer
-import { z } from "zod";
+import { z } from 'zod';
 
 const validateInterval = z.object({
-  title: z.string().min(1),
-  status: z.enum(["todo", "done"]),
+	title: z.string().min(1),
+	status: z.enum(['todo', 'done']),
 }).parse;
 
 // Use in handlers
 const handleCreate = (data: unknown) => {
-  const validated = validateInterval(data);
-  collection.insert(validated);
+	const validated = validateInterval(data);
+	collection.insert(validated);
 };
 ```
 
@@ -808,10 +812,10 @@ const handleCreate = (data: unknown) => {
 
 ### Phase 4: Update Examples (2-3 hours)
 
-- [ ] Migrate `examples/tanstack-start/`
-- [ ] Migrate `examples/sveltekit/`
-- [ ] Migrate `examples/expo/`
-- [ ] Delete all Zod schema files from examples
+- [ ] Migrate `apps/tanstack-start/`
+- [ ] Migrate `apps/sveltekit/`
+- [ ] Migrate `apps/expo/`
+- [ ] Delete all Zod schema files from apps
 
 ### Phase 5: Documentation (1-2 hours)
 
@@ -828,59 +832,59 @@ const handleCreate = (data: unknown) => {
 
 ```typescript
 // tests/validators.test.ts
-import { describe, it, expect } from "vitest";
-import { findProseFields, isProseValidator } from "../src/client/validators";
-import { v } from "convex/values";
+import { describe, it, expect } from 'vitest';
+import { findProseFields, isProseValidator } from '../src/client/validators';
+import { v } from 'convex/values';
 
-describe("isProseValidator", () => {
-  it("detects prose validator pattern", () => {
-    const proseValidator = v.object({
-      type: v.literal("doc"),
-      content: v.optional(v.array(v.any())),
-    });
-    expect(isProseValidator(proseValidator)).toBe(true);
-  });
+describe('isProseValidator', () => {
+	it('detects prose validator pattern', () => {
+		const proseValidator = v.object({
+			type: v.literal('doc'),
+			content: v.optional(v.array(v.any())),
+		});
+		expect(isProseValidator(proseValidator)).toBe(true);
+	});
 
-  it("rejects non-prose objects", () => {
-    const regularObject = v.object({
-      name: v.string(),
-      age: v.number(),
-    });
-    expect(isProseValidator(regularObject)).toBe(false);
-  });
+	it('rejects non-prose objects', () => {
+		const regularObject = v.object({
+			name: v.string(),
+			age: v.number(),
+		});
+		expect(isProseValidator(regularObject)).toBe(false);
+	});
 
-  it("rejects primitives", () => {
-    expect(isProseValidator(v.string())).toBe(false);
-    expect(isProseValidator(v.number())).toBe(false);
-  });
+	it('rejects primitives', () => {
+		expect(isProseValidator(v.string())).toBe(false);
+		expect(isProseValidator(v.number())).toBe(false);
+	});
 });
 
-describe("findProseFields", () => {
-  it("finds prose fields in table validator", () => {
-    const tableValidator = v.object({
-      id: v.string(),
-      title: v.string(),
-      content: v.object({
-        type: v.literal("doc"),
-        content: v.optional(v.array(v.any())),
-      }),
-      description: v.object({
-        type: v.literal("doc"),
-        content: v.optional(v.array(v.any())),
-      }),
-    });
+describe('findProseFields', () => {
+	it('finds prose fields in table validator', () => {
+		const tableValidator = v.object({
+			id: v.string(),
+			title: v.string(),
+			content: v.object({
+				type: v.literal('doc'),
+				content: v.optional(v.array(v.any())),
+			}),
+			description: v.object({
+				type: v.literal('doc'),
+				content: v.optional(v.array(v.any())),
+			}),
+		});
 
-    expect(findProseFields(tableValidator)).toEqual(["content", "description"]);
-  });
+		expect(findProseFields(tableValidator)).toEqual(['content', 'description']);
+	});
 
-  it("returns empty array for table without prose fields", () => {
-    const tableValidator = v.object({
-      id: v.string(),
-      name: v.string(),
-    });
+	it('returns empty array for table without prose fields', () => {
+		const tableValidator = v.object({
+			id: v.string(),
+			name: v.string(),
+		});
 
-    expect(findProseFields(tableValidator)).toEqual([]);
-  });
+		expect(findProseFields(tableValidator)).toEqual([]);
+	});
 });
 ```
 
