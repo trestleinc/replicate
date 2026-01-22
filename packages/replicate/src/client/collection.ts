@@ -24,6 +24,12 @@ import { createDeleteDelta, applyDeleteMarkerToDoc } from '$/client/deltas';
 import * as prose from '$/client/prose';
 import { getLogger } from '$/shared/logger';
 import {
+	createTransactionCoordinator,
+	type TransactionCoordinator,
+	type StagedChange,
+} from '$/client/services/transaction';
+import { createSyncQueue, type SyncQueue } from '$/client/services/sync-queue';
+import {
 	initContext,
 	getContext,
 	hasContext,
@@ -506,6 +512,17 @@ export function convexCollectionOptions<T extends object = object>(
 	// Used by onDelete and other handlers that need to sync with TanStack DB
 	let ops: BoundReplicateOps<DataType> = null as any;
 
+	// Transaction coordinator for atomic client-side mutations with rollback
+	// Ensures delete operations are atomic: if server call fails, local state is rolled back
+	let txCoordinator: TransactionCoordinator | null = null;
+
+	// Background sync queue for non-blocking server mutations
+	const syncQueue: SyncQueue = createSyncQueue({
+		maxRetries: 3,
+		baseDelayMs: 1000,
+		maxDelayMs: 30000,
+	});
+
 	// Create seq service with the persistence KV store
 	const seqService = createSeqService(persistence.kv);
 
@@ -738,30 +755,78 @@ export function convexCollectionOptions<T extends object = object>(
 		},
 
 		onDelete: async ({ transaction }: CollectionTransaction<DataType>) => {
-			const deltas = applyYjsDelete(transaction.mutations);
-
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 
-				const itemsToDelete = transaction.mutations
-					.map((mut) => mut.original)
-					.filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
-				ops.delete(itemsToDelete);
+				if (!txCoordinator) {
+					// Fallback to non-transactional delete if coordinator not ready
+					logger.warn('Transaction coordinator not initialized, using fallback delete');
+					const deltas = applyYjsDelete(transaction.mutations);
+					const itemsToDelete = transaction.mutations
+						.map((mut) => mut.original)
+						.filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
+					ops.delete(itemsToDelete);
 
-				// Process mutations in parallel for better performance
-				await Promise.all(
-					transaction.mutations.map(async (mut, i) => {
-						const delta = deltas[i];
-						if (!delta || delta.length === 0) return;
+					await Promise.all(
+						transaction.mutations.map(async (mut, i) => {
+							const delta = deltas[i];
+							if (!delta || delta.length === 0) return;
 
+							await convexClient.mutation(api.replicate, {
+								document: String(mut.key),
+								bytes: delta.buffer,
+								type: 'delete',
+							});
+						})
+					);
+					return;
+				}
+
+				// Use transaction coordinator for atomic delete with rollback support
+				await txCoordinator.transaction(async (tx) => {
+					// Process each deletion in the transaction
+					for (const mut of transaction.mutations) {
+						const documentId = String(mut.key);
+						const ydoc = docManager.get(documentId);
+
+						// Capture state for potential rollback
+						let previousState: Uint8Array | undefined;
+						if (ydoc) {
+							previousState = Y.encodeStateAsUpdateV2(ydoc);
+						}
+
+						// Stage the delete in the transaction
+						tx.stageDelete(documentId);
+
+						// Create delete delta
+						const delta = ydoc ? applyDeleteMarkerToDoc(ydoc) : createDeleteDelta();
+
+						// Store previous state for rollback
+						if (previousState) {
+							// The transaction's onRevert callback will use this to restore
+							const changes = tx.getStagedChanges();
+							const lastChange = changes[changes.length - 1];
+							if (lastChange) {
+								(lastChange as { previousState?: Uint8Array }).previousState = previousState;
+							}
+						}
+
+						// Optimistically remove from TanStack DB
+						const original = mut.original;
+						if (original && Object.keys(original).length > 0) {
+							ops.delete([original as DataType]);
+						}
+
+						// Call server mutation - if this fails, transaction will rollback
 						await convexClient.mutation(api.replicate, {
-							document: String(mut.key),
+							document: documentId,
 							bytes: delta.buffer,
 							type: 'delete',
 						});
-					})
-				);
+					}
+				});
 			} catch (error) {
+				// Transaction already rolled back if error occurred
 				handleMutationError(error);
 			}
 		},
@@ -804,6 +869,42 @@ export function convexCollectionOptions<T extends object = object>(
 						updateContext(collection, { clientId });
 
 						ops = createReplicateOps<DataType>(params);
+
+						// Initialize transaction coordinator with document-level apply/revert callbacks
+						txCoordinator = createTransactionCoordinator({
+							async onApply(change: StagedChange) {
+								// Changes are already applied optimistically before server call
+								// This callback is for any post-commit bookkeeping
+								logger.debug('Transaction change applied', {
+									type: change.type,
+									documentId: change.documentId,
+								});
+							},
+							async onRevert(change: StagedChange) {
+								// Rollback: restore previous state or re-add deleted document
+								if (change.type === 'delete' && change.previousState) {
+									// Restore the document that was deleted
+									const update = new Uint8Array(change.previousState);
+									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
+									const restoredItem = serializeDocument(docManager, change.documentId);
+									if (restoredItem) {
+										ops.insert([restoredItem as DataType]);
+									}
+									logger.debug('Rolled back delete', { documentId: change.documentId });
+								} else if (change.type === 'update' && change.previousState) {
+									// Restore previous state for updates
+									const update = new Uint8Array(change.previousState);
+									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
+									const restoredItem = serializeDocument(docManager, change.documentId);
+									if (restoredItem) {
+										ops.upsert([restoredItem as DataType]);
+									}
+									logger.debug('Rolled back update', { documentId: change.documentId });
+								}
+								// Insert rollback: nothing to do, document wasn't created
+							},
+						});
+
 						resolveOptimisticReady?.();
 
 						if (ssrCrdt) {
@@ -943,6 +1044,17 @@ export function convexCollectionOptions<T extends object = object>(
 									continue;
 								}
 
+								// Skip processing if this document is being modified in an active transaction
+								// This prevents race conditions where server echoes back our own changes
+								// or where server delete confirmation arrives during local rollback
+								if (txCoordinator?.isDocumentBeingModified(document)) {
+									logger.debug('Skipping change for document in active transaction', {
+										document,
+										changeType: type,
+									});
+									continue;
+								}
+
 								syncedDocuments.add(document);
 
 								const result =
@@ -969,28 +1081,20 @@ export function convexCollectionOptions<T extends object = object>(
 							if (newSeq !== undefined) {
 								persistence.kv.set(`cursor:${collection}`, newSeq);
 
-								// Mark presence for synced documents - fire and forget but log errors
-								// Using void to explicitly acknowledge this is intentionally not awaited
-								// as presence marking is non-critical background work
-								const markPromises = Array.from(syncedDocuments).map((document) => {
-									const vector = docManager.encodeStateVector(document);
-									return convexClient
-										.mutation(api.presence, {
+								// Mark presence for synced documents using background sync queue
+								// The queue provides retry with exponential backoff on transient failures
+								for (const document of syncedDocuments) {
+									syncQueue.enqueue(`presence:${document}`, async () => {
+										const vector = docManager.encodeStateVector(document);
+										await convexClient.mutation(api.presence, {
 											document,
 											client: clientId,
 											action: 'mark',
 											seq: newSeq,
 											vector: vector.buffer as ArrayBuffer,
-										})
-										.catch((error: Error) => {
-											logger.warn('Failed to mark presence', {
-												document,
-												collection,
-												error: error.message,
-											});
 										});
-								});
-								void Promise.all(markPromises);
+									});
+								}
 							}
 						};
 
@@ -1055,6 +1159,7 @@ export function convexCollectionOptions<T extends object = object>(
 							(ctx as any).cleanupReconnection?.();
 						}
 						subscription?.();
+						syncQueue.destroy();
 						prose.cleanup(collection);
 						deleteContext(collection);
 						docPersistence?.destroy();
