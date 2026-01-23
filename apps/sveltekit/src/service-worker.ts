@@ -20,16 +20,25 @@ const ASSETS = [
 	...files, // everything in `static`
 ];
 
+// wa-sqlite CDN assets to pre-cache for offline support and instant worker startup
+const CDN_BASE = 'https://wa-sqlite.trestle.inc/v1.0.0';
+const WASM_ASSETS = [
+	`${CDN_BASE}/dist/wa-sqlite-async.wasm`,
+	`${CDN_BASE}/dist/wa-sqlite-async.mjs`,
+	`${CDN_BASE}/src/sqlite-api.js`,
+	`${CDN_BASE}/src/examples/IDBBatchAtomicVFS.js`,
+];
+
 // App shell - the root page that handles client-side routing
 const APP_SHELL = '/';
 
 self.addEventListener('install', (event) => {
-	// Create a new cache and add all files to it
 	async function addFilesToCache() {
 		const cache = await caches.open(CACHE);
 		await cache.addAll(ASSETS);
-		// Also cache the app shell for offline navigation
 		await cache.add(APP_SHELL);
+		// Pre-cache wa-sqlite CDN assets (best-effort, don't block install on CDN failures)
+		await Promise.allSettled(WASM_ASSETS.map((url) => cache.add(url)));
 	}
 
 	event.waitUntil(addFilesToCache());

@@ -10,6 +10,9 @@ export default defineConfig({
 				if (warning.code === 'CIRCULAR_DEPENDENCY' && warning.message.includes('node_modules')) {
 					return;
 				}
+				if (warning.code === 'UNUSED_EXTERNAL_IMPORT') {
+					return;
+				}
 				warn(warning);
 			},
 		},

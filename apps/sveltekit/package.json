@@ -6,7 +6,6 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"start": "node build/index.js",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -43,6 +42,7 @@
 		"convex-svelte": "catalog:",
 		"tailwind-merge": "catalog:",
 		"wa-sqlite": "catalog:",
+		"lib0": "catalog:",
 		"y-protocols": "catalog:",
 		"yjs": "catalog:",
 		"zod": "catalog:"
@@ -71,6 +71,7 @@
 		"tw-animate-css": "catalog:",
 		"typescript": "catalog:",
 		"typescript-eslint": "catalog:",
-		"vite": "catalog:"
+		"vite": "catalog:",
+		"wrangler": "catalog:"
 	}
 }

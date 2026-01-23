@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "replicate",
+	"compatibility_date": "2026-01-20",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"env": {
+		"preview": {
+			"workers_dev": false,
+			"routes": [{ "pattern": "replicate-preview.trestle.inc", "custom_domain": true }]
+		},
+		"production": {
+			"workers_dev": false,
+			"routes": [{ "pattern": "replicate.trestle.inc", "custom_domain": true }]
+		}
+	}
+}
