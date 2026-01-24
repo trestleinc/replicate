@@ -1,6 +1,10 @@
 name: Deploy Replicate SvelteKit
 
 on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -14,7 +18,9 @@ on:
 
 jobs:
   build-and-deploy-preview:
-    if: ${{ github.event.inputs.environment == 'preview' }}
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'preview') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     name: Deploy Preview
     environment: preview
@@ -46,7 +52,7 @@ jobs:
           environment: preview
 
   build-and-deploy-production:
-    if: ${{ github.event.inputs.environment == 'production' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' }}
     runs-on: ubuntu-latest
     name: Deploy Production
     environment: production
