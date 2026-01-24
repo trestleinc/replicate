@@ -7,9 +7,9 @@
 node_modules
 dist/
 packages/*/dist
-examples/*/dist
-examples/*/.env
-examples/*/.env.local
+apps/*/dist
+apps/*/.env
+apps/*/.env.local
 
 *.env*
 .env
@@ -20,3 +20,28 @@ examples/*/.env.local
 .rsbuild
 .vite
 .svelte-kit
+.output/
+.wrangler/
+
+# Expo / React Native
+apps/expo/.expo/
+apps/expo/android/
+apps/expo/ios/
+apps/expo/web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Test results (Vitest HTML/JSON reports)
+test-results/
+
+# Test Convex deployment
+src/test/convex/_generated/
+**/build/

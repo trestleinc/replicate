@@ -1,0 +1,18 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "wa-sqlite-cdn",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-12-01",
+	"r2_buckets": [
+		{
+			"binding": "WA_SQLITE_BUCKET",
+			"bucket_name": "wa-sqlite-cdn"
+		}
+	],
+	"routes": [
+		{
+			"pattern": "wa-sqlite.trestle.inc",
+			"custom_domain": true
+		}
+	]
+}
