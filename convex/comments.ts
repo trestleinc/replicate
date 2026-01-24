@@ -4,12 +4,13 @@ import { components } from './_generated/api';
 import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { createVisibilityView, createOwnershipHooks } from './hooks';
-import { commentDocValidator } from './schema/comments';
+import { commentSchema, commentDocValidator } from './schema/comments';
 
 export const { material, delta, replicate, presence, session } = collection.create<Doc<'comments'>>(
 	components.replicate,
 	'comments',
 	{
+		schema: commentSchema,
 		view: createVisibilityView(),
 		hooks: createOwnershipHooks('comments'),
 	}

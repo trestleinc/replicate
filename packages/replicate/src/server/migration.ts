@@ -7,6 +7,8 @@
  */
 
 import type { GenericValidator, Infer } from 'convex/values';
+import { defineTable } from 'convex/server';
+import { v } from 'convex/values';
 import type { GenericMutationCtx, GenericDataModel } from 'convex/server';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,34 +58,64 @@ export type MigrationMap<T = unknown> = Record<number, MigrationDefinition<T>>;
 // Versioned Schema Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Options for .table() — configuring server-only private fields */
+export interface TableOptions {
+	/** Server-only fields that are never synced to clients */
+	private?: Record<string, GenericValidator>;
+}
+
 /** Options for schema.define() */
 export interface SchemaDefinitionOptions<TShape extends GenericValidator> {
-	/** Current schema version (increment when schema changes) */
-	version: number;
+	/** Current schema version (increment when schema changes). Defaults to 0. */
+	version?: number;
 	/** Convex validator for the document shape */
 	shape: TShape;
+	/** Additional indexes beyond the auto-applied by_doc_id and by_timestamp */
+	indexes?: (table: any) => any;
 	/** Default values for optional fields (applied during migrations) */
 	defaults?: Partial<Infer<TShape>>;
 	/** Previous schema versions for diffing */
 	history?: Record<number, GenericValidator>;
 }
 
-/** Versioned schema with migration capabilities */
-export interface VersionedSchema<TShape extends GenericValidator> {
+/**
+ * Base interface for versioned schemas without the invariant migrations() method.
+ * Used in contexts where only schema metadata (e.g. __private) is needed,
+ * avoiding TypeScript variance issues with the generic TShape parameter.
+ */
+export interface VersionedSchemaBase {
 	/** Current schema version */
 	readonly version: number;
 	/** Convex validator for the document shape */
-	readonly shape: TShape;
+	readonly shape: GenericValidator;
+	/** Additional indexes callback */
+	readonly indexes?: (table: any) => any;
 	/** Default values for optional fields */
-	readonly defaults: Partial<Infer<TShape>>;
+	readonly defaults: Partial<Record<string, unknown>>;
 	/** Previous schema versions */
 	readonly history: Record<number, GenericValidator>;
+	/** Private field names (set after .table({ private }) is called) */
+	readonly __private?: string[];
 
 	/** Get validator for a specific version */
 	getVersion(version: number): GenericValidator;
 
 	/** Compute diff between two versions */
 	diff(fromVersion: number, toVersion: number): SchemaDiff;
+
+	/**
+	 * Generate a Convex TableDefinition from this schema.
+	 * Auto-injects `timestamp` field and applies `by_doc_id` + `by_timestamp` indexes.
+	 */
+	table(options?: TableOptions): any;
+}
+
+/** Versioned schema with migration capabilities */
+export interface VersionedSchema<TShape extends GenericValidator> extends VersionedSchemaBase {
+	/** Convex validator for the document shape */
+	readonly shape: TShape;
+	/** Default values for optional fields */
+	readonly defaults: Partial<Infer<TShape>>;
 
 	/** Define server migrations for this schema */
 	migrations(definitions: MigrationMap<Infer<TShape>>): SchemaMigrations<TShape>;
@@ -316,7 +348,7 @@ function computeSchemaDiff(
 export function define<TShape extends GenericValidator>(
 	options: SchemaDefinitionOptions<TShape>
 ): VersionedSchema<TShape> {
-	const { version, shape, defaults = {}, history = {} } = options;
+	const { version = 0, shape, indexes, defaults = {}, history = {} } = options;
 
 	// Store current version in history
 	const allVersions: Record<number, GenericValidator> = {
@@ -327,14 +359,15 @@ export function define<TShape extends GenericValidator>(
 	const versionedSchema: VersionedSchema<TShape> = {
 		version,
 		shape,
+		indexes,
 		defaults: defaults as Partial<Infer<TShape>>,
 		history: allVersions,
 
-		getVersion(v: number): GenericValidator {
-			const validator = allVersions[v];
+		getVersion(ver: number): GenericValidator {
+			const validator = allVersions[ver];
 			if (!validator) {
 				throw new Error(
-					`Schema version ${v} not found. Available: ${Object.keys(allVersions).join(', ')}`
+					`Schema version ${ver} not found. Available: ${Object.keys(allVersions).join(', ')}`
 				);
 			}
 			return validator;
@@ -357,6 +390,38 @@ export function define<TShape extends GenericValidator>(
 				schema: versionedSchema,
 				definitions,
 			};
+		},
+
+		table(tableOptions?: TableOptions): any {
+			// Extract fields from the shape validator
+			const shapeFields = (shape as any).fields ?? {};
+
+			// Build table fields: user shape + private fields + injected timestamp
+			const tableFields: Record<string, any> = {
+				...shapeFields,
+				timestamp: v.number(),
+			};
+
+			if (tableOptions?.private) {
+				for (const [key, validator] of Object.entries(tableOptions.private)) {
+					tableFields[key] = validator;
+				}
+				// Store private field names for auto-stripping
+				(versionedSchema as any).__private = Object.keys(tableOptions.private);
+			}
+
+			// Create the table definition
+			let tbl = defineTable(tableFields);
+
+			// Auto-apply required indexes
+			tbl = tbl.index('by_doc_id', ['id']).index('by_timestamp', ['timestamp']);
+
+			// Apply user-defined additional indexes
+			if (indexes) {
+				tbl = indexes(tbl);
+			}
+
+			return tbl;
 		},
 	};
 

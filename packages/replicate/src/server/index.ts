@@ -20,7 +20,6 @@ import {
 	parseDuration,
 	profileValidator,
 	cursorValidator,
-	streamResultWithExistsValidator,
 	sessionValidator,
 	successSeqValidator,
 	replicateTypeValidator,
@@ -44,14 +43,15 @@ export type {
 	MigrationMap,
 	SchemaDefinitionOptions,
 	VersionedSchema,
+	VersionedSchemaBase,
 	SchemaMigrations,
+	TableOptions,
 } from '$/server/migration';
 
-import { table, prose } from '$/server/schema';
+import { prose } from '$/server/schema';
 import { define } from '$/server/migration';
 
 export const schema = {
-	table,
 	prose,
 	define,
 } as const;
@@ -147,45 +147,6 @@ export class Replicate<T extends object> {
 		this.retain = compaction?.retain ?? 0;
 	}
 
-	createStreamQuery(opts?: {
-		view?: ViewFunction;
-		onStream?: (ctx: GenericQueryCtx<GenericDataModel>, result: any) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-
-		return queryGeneric({
-			args: {
-				seq: v.number(),
-				limit: v.optional(v.number()),
-				threshold: v.optional(v.number()),
-			},
-			returns: streamResultWithExistsValidator,
-			handler: async (ctx, args) => {
-				const result = await ctx.runQuery(component.mutations.stream, {
-					collection,
-					seq: args.seq,
-					limit: args.limit,
-					threshold: args.threshold,
-				});
-
-				const enrichedChanges = await enrichChangesWithExistence(
-					ctx,
-					collection,
-					result.changes,
-					opts?.view
-				);
-				const enrichedResult = { ...result, changes: enrichedChanges };
-
-				if (opts?.onStream) {
-					await opts.onStream(ctx, enrichedResult);
-				}
-
-				return enrichedResult;
-			},
-		});
-	}
-
 	createMaterialQuery(opts?: {
 		view?: ViewFunction;
 		transform?: (docs: T[]) => T[] | Promise<T[]>;
@@ -230,191 +191,6 @@ export class Replicate<T extends object> {
 					documents: docs,
 					count: docs.length,
 				};
-			},
-		});
-	}
-
-	createInsertMutation(opts?: {
-		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
-		onInsert?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-		const { threshold, timeout, retain } = this;
-
-		return mutationGeneric({
-			args: {
-				document: v.string(),
-				bytes: v.bytes(),
-				material: v.any(),
-			},
-			returns: successSeqValidator,
-			handler: async (ctx, args) => {
-				const doc = args.material as T;
-
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, doc);
-				}
-
-				await ctx.db.insert(collection, {
-					id: args.document,
-					...(args.material as object),
-					timestamp: Date.now(),
-				});
-
-				const result = await ctx.runMutation(component.mutations.insertDocument, {
-					collection,
-					document: args.document,
-					bytes: args.bytes,
-					threshold,
-					timeout,
-					retain,
-				});
-
-				if (opts?.onInsert) {
-					await opts.onInsert(ctx, doc);
-				}
-
-				return {
-					success: true,
-					seq: result.seq,
-				};
-			},
-		});
-	}
-
-	createUpdateMutation(opts?: {
-		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
-		onUpdate?: (ctx: GenericMutationCtx<GenericDataModel>, doc: T) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-		const { threshold, timeout, retain } = this;
-
-		return mutationGeneric({
-			args: {
-				document: v.string(),
-				bytes: v.bytes(),
-				material: v.any(),
-			},
-			returns: successSeqValidator,
-			handler: async (ctx, args) => {
-				const doc = args.material as T;
-
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, doc);
-				}
-
-				const existing = await ctx.db
-					.query(collection)
-					.withIndex('by_doc_id', (q) => q.eq('id', args.document))
-					.first();
-
-				if (existing) {
-					await ctx.db.patch(existing._id, {
-						...(args.material as object),
-						timestamp: Date.now(),
-					});
-				}
-
-				const result = await ctx.runMutation(component.mutations.updateDocument, {
-					collection,
-					document: args.document,
-					bytes: args.bytes,
-					threshold,
-					timeout,
-					retain,
-				});
-
-				if (opts?.onUpdate) {
-					await opts.onUpdate(ctx, doc);
-				}
-
-				return {
-					success: true,
-					seq: result.seq,
-				};
-			},
-		});
-	}
-
-	createRemoveMutation(opts?: {
-		evalRemove?: (ctx: GenericMutationCtx<GenericDataModel>, docId: string) => void | Promise<void>;
-		onRemove?: (ctx: GenericMutationCtx<GenericDataModel>, docId: string) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-		const { threshold, timeout, retain } = this;
-
-		return mutationGeneric({
-			args: {
-				document: v.string(),
-				bytes: v.bytes(),
-			},
-			returns: successSeqValidator,
-			handler: async (ctx, args) => {
-				if (opts?.evalRemove) {
-					await opts.evalRemove(ctx, args.document);
-				}
-
-				const existing = await ctx.db
-					.query(collection)
-					.withIndex('by_doc_id', (q) => q.eq('id', args.document))
-					.first();
-
-				if (existing) {
-					await ctx.db.delete(existing._id);
-				}
-
-				const result = await ctx.runMutation(component.mutations.deleteDocument, {
-					collection,
-					document: args.document,
-					bytes: args.bytes,
-					threshold,
-					timeout,
-					retain,
-				});
-
-				if (opts?.onRemove) {
-					await opts.onRemove(ctx, args.document);
-				}
-
-				return {
-					success: true,
-					seq: result.seq,
-				};
-			},
-		});
-	}
-
-	createMarkMutation(opts?: {
-		evalWrite?: (ctx: GenericMutationCtx<GenericDataModel>, client: string) => void | Promise<void>;
-	}) {
-		const component = this.component;
-		const collection = this.collectionName;
-
-		return mutationGeneric({
-			args: {
-				document: v.string(),
-				client: v.string(),
-				seq: v.optional(v.number()),
-				vector: v.optional(v.bytes()),
-			},
-			returns: v.null(),
-			handler: async (ctx, args) => {
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, args.client);
-				}
-
-				await ctx.runMutation(component.mutations.mark, {
-					collection,
-					document: args.document,
-					client: args.client,
-					seq: args.seq,
-					vector: args.vector,
-				});
-
-				return null;
 			},
 		});
 	}

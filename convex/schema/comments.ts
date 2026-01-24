@@ -11,8 +11,6 @@ import { schema } from '@trestleinc/replicate/server';
  * 4. Add defaults for any new optional fields
  */
 export const commentSchema = schema.define({
-	version: 1,
-
 	shape: v.object({
 		id: v.string(),
 		ownerId: v.optional(v.string()),
@@ -23,12 +21,16 @@ export const commentSchema = schema.define({
 		updatedAt: v.number(),
 	}),
 
-	// Default values for optional fields (applied during migrations)
+	indexes: (t: any) =>
+		t
+			.index('by_interval', ['intervalId'])
+			.index('by_owner', ['ownerId'])
+			.index('by_public', ['isPublic']),
+
 	defaults: {
 		isPublic: false,
 	},
 
-	// Previous schema versions (empty for v1)
 	history: {},
 });
 

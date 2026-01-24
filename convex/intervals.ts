@@ -4,11 +4,12 @@ import { components } from './_generated/api';
 import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { createVisibilityView, createOwnershipHooks } from './hooks';
-import { intervalDocValidator } from './schema/intervals';
+import { intervalSchema, intervalDocValidator } from './schema/intervals';
 
 export const { material, delta, replicate, presence, session } = collection.create<
 	Doc<'intervals'>
 >(components.replicate, 'intervals', {
+	schema: intervalSchema,
 	view: createVisibilityView(),
 	hooks: createOwnershipHooks('intervals'),
 });

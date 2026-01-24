@@ -27,8 +27,6 @@ const priorityValidator = v.union(
  * 4. Add defaults for any new optional fields
  */
 export const intervalSchema = schema.define({
-	version: 1,
-
 	shape: v.object({
 		id: v.string(),
 		ownerId: v.optional(v.string()),
@@ -41,14 +39,20 @@ export const intervalSchema = schema.define({
 		updatedAt: v.number(),
 	}),
 
-	// Default values for optional fields (applied during migrations)
+	indexes: (t: any) =>
+		t
+			.index('by_status', ['status'])
+			.index('by_priority', ['priority'])
+			.index('by_updated', ['updatedAt'])
+			.index('by_owner', ['ownerId'])
+			.index('by_public', ['isPublic']),
+
 	defaults: {
 		isPublic: false,
 		status: 'backlog',
 		priority: 'none',
 	},
 
-	// Previous schema versions (empty for v1)
 	history: {},
 });
 
