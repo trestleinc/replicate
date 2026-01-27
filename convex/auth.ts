@@ -6,7 +6,7 @@ import { query } from './_generated/server';
 import { betterAuth } from 'better-auth/minimal';
 import authConfig from './auth.config';
 
-const siteUrl = process.env.PUBLIC_CONVEX_SITE_URL!;
+const siteUrl = process.env.SITE_URL!;
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
