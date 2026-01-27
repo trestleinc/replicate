@@ -5,6 +5,12 @@
 	// PERFORMANCE: Static arrays at module scope - shared across all instances
 	const statusOptions = Object.values(Status) as StatusValue[];
 	const priorityOptions = Object.values(Priority) as PriorityValue[];
+
+	// Visibility labels
+	const VisibilityLabels = {
+		public: 'Public',
+		private: 'Private',
+	} as const;
 </script>
 
 <script lang="ts">
@@ -18,6 +24,8 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { Globe, Lock } from '@lucide/svelte';
+	import { getAuthClient } from '$lib/auth-client';
 
 	interface Props {
 		intervalId: string;
@@ -26,6 +34,23 @@
 	}
 
 	let { intervalId, interval, onPropertyUpdate }: Props = $props();
+
+	// Auth state for ownership check
+	let sessionData = $state<{ user?: { id: string } } | null>(null);
+
+	$effect(() => {
+		const authClient = getAuthClient();
+		const session = authClient.useSession();
+		const unsubscribe = session.subscribe((s) => {
+			sessionData = s.data;
+		});
+		return unsubscribe;
+	});
+
+	// Check if current user owns this interval
+	const isOwner = $derived(
+		sessionData?.user?.id != null && sessionData.user.id === interval.ownerId
+	);
 
 	// Get collection from context for mutations
 	const intervalsCtx = getIntervalsContext();
@@ -278,6 +303,28 @@
 							</DropdownMenu.RadioGroup>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
+
+					{#if isOwner}
+						<div class="bg-border mx-2 h-4 w-px"></div>
+						<button
+							type="button"
+							class="hover:bg-muted transition-fast flex items-center gap-2 px-2 py-1"
+							onclick={() => {
+								intervalsCtx.collection.update(interval.id, (draft) => {
+									draft.isPublic = !draft.isPublic;
+									draft.updatedAt = Date.now();
+								});
+							}}
+						>
+							{#if interval.isPublic}
+								<Globe class="text-muted-foreground h-3.5 w-3.5" />
+								<span class="text-sm">{VisibilityLabels.public}</span>
+							{:else}
+								<Lock class="text-muted-foreground h-3.5 w-3.5" />
+								<span class="text-sm">{VisibilityLabels.private}</span>
+							{/if}
+						</button>
+					{/if}
 				</div>
 
 				{#if remoteUsers.length > 0}

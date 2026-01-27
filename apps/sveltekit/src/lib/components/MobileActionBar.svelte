@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 	import { getIntervalsContext } from '$lib/contexts/intervals.svelte';
+	import { getAuthClient } from '$lib/auth-client';
 	import { schema } from '@trestleinc/replicate/client';
 
 	type Props = {
@@ -18,12 +19,28 @@
 	// Get collection from context for mutations
 	const intervalsCtx = getIntervalsContext();
 
+	// Auth state for determining default visibility
+	let sessionData = $state<{ user?: { id: string } } | null>(null);
+
+	$effect(() => {
+		const authClient = getAuthClient();
+		const session = authClient.useSession();
+		const unsubscribe = session.subscribe((s) => {
+			sessionData = s.data;
+		});
+		return unsubscribe;
+	});
+
 	function createInterval() {
 		const id = crypto.randomUUID();
 		const now = Date.now();
+		const user = sessionData?.user;
+		// Default to private if authenticated, public if anonymous
+		const isPublic = !user;
 		intervalsCtx.collection.insert({
 			id,
-			isPublic: true,
+			ownerId: user?.id,
+			isPublic,
 			title: 'New Interval',
 			description: schema.prose.empty(),
 			status: 'backlog',

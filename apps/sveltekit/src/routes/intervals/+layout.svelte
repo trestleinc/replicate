@@ -64,10 +64,12 @@
 		return unsubscribe;
 	});
 
-	function createInterval(isPublic: boolean = true) {
+	function createInterval() {
 		const id = crypto.randomUUID();
 		const now = Date.now();
 		const user = sessionData?.user;
+		// Default to private if authenticated, public if anonymous
+		const isPublic = !user;
 		collection.insert({
 			id,
 			ownerId: user?.id,
@@ -87,7 +89,7 @@
 	<Navbar
 		onsearchopen={() => (searchOpen = true)}
 		onfilteropen={() => (filterOpen = true)}
-		oncreate={() => createInterval(true)}
+		oncreate={() => createInterval()}
 		{hasActiveFilters}
 		onmenuopen={() => (mobileMenuOpen = !mobileMenuOpen)}
 	/>
