@@ -16,7 +16,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import type { Editor } from '@tiptap/core';
-	import type { EditorBinding } from '@trestleinc/replicate/client';
+	import type { EditorBinding, CounterBinding, SetBinding, RegisterBinding } from '@trestleinc/replicate/client';
 	import { getIntervalsContext } from '$lib/contexts/intervals.svelte';
 	import type { Interval } from '$collections/useIntervals';
 	import StatusIcon from './StatusIcon.svelte';
@@ -24,16 +24,16 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { Globe, Lock } from '@lucide/svelte';
+	import { Globe, Lock, X } from '@lucide/svelte';
 	import { getAuthClient } from '$lib/auth-client';
 
 	interface Props {
 		intervalId: string;
 		interval: Interval;
-		onPropertyUpdate?: (updates: Partial<Pick<Interval, 'status' | 'priority'>>) => void;
+		showProperties?: boolean;
 	}
 
-	let { intervalId, interval, onPropertyUpdate }: Props = $props();
+	let { intervalId, interval, showProperties = false }: Props = $props();
 
 	// Auth state for ownership check
 	let sessionData = $state<{ user?: { id: string } } | null>(null);
@@ -59,6 +59,8 @@
 	let editorElement = $state<HTMLDivElement | null>(null);
 	let editor = $state<Editor | null>(null);
 	let binding = $state<EditorBinding | null>(null);
+	let counter = $state<CounterBinding | null>(null);
+	let viewCount = $state<number>(0);
 	let error = $state<string | null>(null);
 	let isLoading = $state(true);
 
@@ -75,6 +77,17 @@
 	let editingTitle = $state('');
 	let titleInputRef = $state<HTMLInputElement | null>(null);
 
+	// Tags state
+	let newTagInput = $state('');
+	let tagsBinding = $state<SetBinding<string> | null>(null);
+	let tags = $state<string[]>([]);
+
+	// Status and Priority bindings (CRDT registers)
+	let statusBinding = $state<RegisterBinding<StatusValue> | null>(null);
+	let priorityBinding = $state<RegisterBinding<PriorityValue> | null>(null);
+	let status = $state<StatusValue>(interval.status as StatusValue);
+	let priority = $state<PriorityValue>(interval.priority as PriorityValue);
+
 	const title = $derived(isEditingTitle ? editingTitle : interval.title);
 
 	$effect(() => {
@@ -82,6 +95,26 @@
 			titleInputRef?.focus();
 		}
 	});
+
+
+	function addTag(tag: string) {
+		const normalized = tag.trim().toLowerCase();
+		if (!normalized || tags.includes(normalized)) return;
+
+		tagsBinding?.add(normalized);
+		newTagInput = '';
+	}
+
+	function removeTag(tag: string) {
+		tagsBinding?.remove(tag);
+	}
+
+	function handleTagKeyDown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			addTag(newTagInput);
+		}
+	}
 
 	// Subscribe to awareness changes for remote user avatars
 	$effect(() => {
@@ -165,11 +198,13 @@
 
 		return () => {
 			binding?.destroy();
+			counter?.destroy();
 			if (editor) {
 				editor.destroy();
 				editor = null;
 			}
 			binding = null;
+			counter = null;
 		};
 	});
 
@@ -195,6 +230,113 @@
 		};
 
 		initBinding();
+	});
+
+	// Initialize counter binding for page view tracking
+	$effect(() => {
+		if (!browser) return;
+
+		const initCounter = async () => {
+			try {
+				counter = await intervalsCtx.collection.utils.counter(intervalId, 'viewCount');
+				// Auto-increment view count on page load
+				counter.increment(1);
+				// Subscribe to view count changes
+				counter.subscribe((value) => {
+					viewCount = value;
+				});
+			} catch (err) {
+				// Counter errors are non-fatal, just log them
+				console.error('Failed to initialize view counter:', err);
+			}
+		};
+
+		initCounter();
+
+		return () => {
+			counter?.destroy();
+		};
+	});
+
+	// Initialize tags binding for CRDT set
+	$effect(() => {
+		if (!browser) return;
+
+		const initTags = async () => {
+			try {
+				tagsBinding = await intervalsCtx.collection.utils.set<string>(intervalId, 'tags', {
+					serialize: (item) => item,
+					deserialize: (key) => key,
+				});
+				// Subscribe to tag changes
+				tagsBinding.subscribe((values) => {
+					tags = values;
+				});
+			} catch (err) {
+				console.error('Failed to initialize tags binding:', err);
+			}
+		};
+
+		initTags();
+
+		return () => {
+			tagsBinding?.destroy();
+			tagsBinding = null;
+		};
+	});
+
+	// Initialize status binding for CRDT register
+	$effect(() => {
+		if (!browser) return;
+
+		const initStatus = async () => {
+			try {
+				statusBinding = await intervalsCtx.collection.utils.register<StatusValue>(
+					intervalId,
+					'status'
+				);
+				// Subscribe to status changes
+				statusBinding.subscribe((value) => {
+					status = value;
+				});
+			} catch (err) {
+				console.error('Failed to initialize status binding:', err);
+			}
+		};
+
+		initStatus();
+
+		return () => {
+			statusBinding?.destroy();
+			statusBinding = null;
+		};
+	});
+
+	// Initialize priority binding for CRDT register
+	$effect(() => {
+		if (!browser) return;
+
+		const initPriority = async () => {
+			try {
+				priorityBinding = await intervalsCtx.collection.utils.register<PriorityValue>(
+					intervalId,
+					'priority'
+				);
+				// Subscribe to priority changes
+				priorityBinding.subscribe((value) => {
+					priority = value;
+				});
+			} catch (err) {
+				console.error('Failed to initialize priority binding:', err);
+			}
+		};
+
+		initPriority();
+
+		return () => {
+			priorityBinding?.destroy();
+			priorityBinding = null;
+		};
 	});
 
 	function startEditing() {
@@ -255,7 +397,7 @@
 			</button>
 		{/if}
 
-		{#if onPropertyUpdate}
+		{#if showProperties}
 			<div
 				class="border-border mt-4 mb-6 flex items-center justify-between gap-4 border-b pb-4 text-sm"
 			>
@@ -264,18 +406,18 @@
 						<DropdownMenu.Trigger
 							class="hover:bg-muted transition-fast flex items-center gap-2 px-2 py-1"
 						>
-							<StatusIcon status={interval.status as StatusValue} size={14} />
-							<span class="text-sm">{StatusLabels[interval.status as StatusValue]}</span>
+							<StatusIcon {status} size={14} />
+							<span class="text-sm">{StatusLabels[status]}</span>
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="start">
 							<DropdownMenu.RadioGroup
-								value={interval.status}
-								onValueChange={(v) => onPropertyUpdate({ status: v as StatusValue })}
+								value={status}
+								onValueChange={(v) => statusBinding?.set(v as StatusValue)}
 							>
-								{#each statusOptions as status (status)}
-									<DropdownMenu.RadioItem value={status}>
-										<StatusIcon {status} size={14} />
-										<span class="ml-2">{StatusLabels[status]}</span>
+								{#each statusOptions as statusOption (statusOption)}
+									<DropdownMenu.RadioItem value={statusOption}>
+										<StatusIcon status={statusOption} size={14} />
+										<span class="ml-2">{StatusLabels[statusOption]}</span>
 									</DropdownMenu.RadioItem>
 								{/each}
 							</DropdownMenu.RadioGroup>
@@ -286,18 +428,18 @@
 						<DropdownMenu.Trigger
 							class="hover:bg-muted transition-fast flex items-center gap-2 px-2 py-1"
 						>
-							<PriorityIcon priority={interval.priority as PriorityValue} size={14} />
-							<span class="text-sm">{PriorityLabels[interval.priority as PriorityValue]}</span>
+							<PriorityIcon {priority} size={14} />
+							<span class="text-sm">{PriorityLabels[priority]}</span>
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="start">
 							<DropdownMenu.RadioGroup
-								value={interval.priority}
-								onValueChange={(v) => onPropertyUpdate({ priority: v as PriorityValue })}
+								value={priority}
+								onValueChange={(v) => priorityBinding?.set(v as PriorityValue)}
 							>
-								{#each priorityOptions as priority (priority)}
-									<DropdownMenu.RadioItem value={priority}>
-										<PriorityIcon {priority} size={14} />
-										<span class="ml-2">{PriorityLabels[priority]}</span>
+								{#each priorityOptions as priorityOption (priorityOption)}
+									<DropdownMenu.RadioItem value={priorityOption}>
+										<PriorityIcon priority={priorityOption} size={14} />
+										<span class="ml-2">{PriorityLabels[priorityOption]}</span>
 									</DropdownMenu.RadioItem>
 								{/each}
 							</DropdownMenu.RadioGroup>
@@ -325,7 +467,42 @@
 							{/if}
 						</button>
 					{/if}
+
+					<!-- Tags Section -->
+					<div class="bg-border mx-2 h-4 w-px"></div>
+
+					<div class="flex items-center gap-1.5">
+						{#each tags as tag (tag)}
+							<span
+								class="bg-secondary text-secondary-foreground flex items-center gap-1 px-2 py-0.5 text-xs font-medium"
+							>
+								{tag}
+								<button
+									type="button"
+									class="hover:text-destructive -mr-0.5 p-0.5 transition-fast"
+									onclick={() => removeTag(tag)}
+									aria-label="Remove {tag} tag"
+								>
+									<X class="h-3 w-3" />
+								</button>
+							</span>
+						{/each}
+
+						<input
+							type="text"
+							bind:value={newTagInput}
+							onkeydown={handleTagKeyDown}
+							placeholder="+ tag"
+							class="bg-transparent text-muted-foreground placeholder:text-muted-foreground/50 h-6 w-16 px-1 text-xs outline-none transition-fast focus:w-24"
+						/>
+					</div>
 				</div>
+
+				{#if viewCount > 0}
+					<div class="text-muted-foreground text-sm" aria-label="View count">
+						{viewCount} view{viewCount === 1 ? '' : 's'}
+					</div>
+				{/if}
 
 				{#if remoteUsers.length > 0}
 					<Tooltip.Provider>

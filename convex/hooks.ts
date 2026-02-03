@@ -1,8 +1,27 @@
 import { ConvexError } from 'convex/values';
 import { getAuthUserId } from './authUtils';
 
+// ============================================================================
+// Predicate Functions - Single source of truth for access checks
+// ============================================================================
+
+/**
+ * Check if document is publicly visible.
+ */
+const isPublicDoc = (doc: OwnedDocument): boolean => doc.isPublic === true;
+
+/**
+ * Check if user owns the document.
+ */
+const isOwner = (doc: OwnedDocument, userId: string | null): boolean =>
+	userId !== null && doc.ownerId === userId;
+
+// ============================================================================
+// Types
+// ============================================================================
+
 interface OwnedDocument {
-	[x: string]: any;
+	[x: string]: unknown;
 	isPublic?: boolean;
 	ownerId?: string;
 }
@@ -26,14 +45,18 @@ export function createVisibilityView() {
 
 /**
  * Shared ownership hooks factory for evalWrite and evalRemove.
+ * Uses predicate functions for clean, testable access control.
  */
 export function createOwnershipHooks(collectionName: string) {
 	return {
 		evalWrite: async (ctx: any, doc: OwnedDocument) => {
-			if (doc.isPublic) return;
+			// Early return for public docs
+			if (isPublicDoc(doc)) return;
 
 			const userId = await getAuthUserId(ctx);
-			if (!userId || doc.ownerId !== userId) {
+
+			// Guard clause - not owner
+			if (!isOwner(doc, userId)) {
 				throw new ConvexError({
 					code: 'FORBIDDEN',
 					message: `Cannot edit private ${collectionName} you don't own`,
@@ -47,11 +70,13 @@ export function createOwnershipHooks(collectionName: string) {
 				.withIndex('by_doc_id', (q: any) => q.eq('id', docId))
 				.first();
 
+			// Early returns - no nested ifs
 			if (!doc) return;
-			if (doc.isPublic) return;
+			if (isPublicDoc(doc)) return;
 
 			const userId = await getAuthUserId(ctx);
-			if (!userId || doc.ownerId !== userId) {
+
+			if (!isOwner(doc, userId)) {
 				throw new ConvexError({
 					code: 'FORBIDDEN',
 					message: `Cannot delete private ${collectionName} you don't own`,

@@ -40,7 +40,18 @@ function createSyncFn(
 	collectionRef: Collection<any>
 ): () => Promise<void> {
 	return async () => {
-		const material = serializeYMapValue(ymap);
+		// Serialize with error handling - skip sync on failure
+		let material: unknown;
+		try {
+			material = serializeYMapValue(ymap);
+		} catch (error) {
+			logger.error('Failed to serialize prose content', {
+				document,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return; // Early return - skip this sync
+		}
+
 		const delta = Y.encodeStateAsUpdateV2(ydoc);
 		const bytes = delta.buffer as ArrayBuffer;
 

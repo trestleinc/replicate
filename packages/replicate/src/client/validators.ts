@@ -1,43 +1,45 @@
 import type { GenericValidator } from 'convex/values';
+import {
+	isCrdtValidator,
+	getCrdtType,
+	CRDT_MARKER,
+	type CrdtType,
+	type CrdtFieldInfo,
+	type CrdtValidator,
+} from '$/shared/crdt';
+
+type FieldExtractor = (v: CrdtValidator) => Partial<CrdtFieldInfo>;
+
+const fieldExtractors = new Map<CrdtType, FieldExtractor>([
+	['register', (v) => ({ resolve: v[CRDT_MARKER].resolve })],
+	['prose', () => ({})],
+	['counter', () => ({})],
+	['set', () => ({})],
+]);
 
 interface ValidatorShape {
 	kind: string;
 	fields?: Record<string, ValidatorShape>;
-	value?: unknown;
-	isOptional?: 'required' | 'optional';
 }
 
-function isProseValidator(validator: GenericValidator): boolean {
+/**
+ * Find all CRDT fields in a validator using the CRDT marker system.
+ *
+ * Uses functional pipeline: filter -> map
+ */
+export function findCrdtFields(validator: GenericValidator): CrdtFieldInfo[] {
 	const v = validator as unknown as ValidatorShape;
-
-	if (v.kind !== 'object' || !v.fields) return false;
-
-	const { type, content } = v.fields;
-
-	if (!type || type.kind !== 'literal' || type.value !== 'doc') {
-		return false;
-	}
-
-	if (!content) return false;
-
-	const contentValidator = content.isOptional === 'optional' ? content : content;
-	return contentValidator.kind === 'array' || (content.kind === 'object' && !!content.fields);
-}
-
-export function findProseFields(validator: GenericValidator): string[] {
-	const v = validator as unknown as ValidatorShape;
-
 	if (v.kind !== 'object' || !v.fields) return [];
 
-	const proseFields: string[] = [];
-
-	for (const [fieldName, fieldValidator] of Object.entries(v.fields)) {
-		if (isProseValidator(fieldValidator as unknown as GenericValidator)) {
-			proseFields.push(fieldName);
-		}
-	}
-
-	return proseFields;
+	return Object.entries(v.fields)
+		.filter(([, fieldValidator]) => isCrdtValidator(fieldValidator as unknown as GenericValidator))
+		.map(([fieldName, fieldValidator]) => {
+			const crdtValidator = fieldValidator as unknown as CrdtValidator;
+			const type = getCrdtType(crdtValidator);
+			const extractor = fieldExtractors.get(type);
+			const extra = extractor ? extractor(crdtValidator) : {};
+			return { field: fieldName, type, ...extra };
+		});
 }
 
 export function emptyProse(): { type: 'doc'; content: never[] } {

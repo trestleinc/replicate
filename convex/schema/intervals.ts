@@ -1,4 +1,4 @@
-import { v } from 'convex/values';
+import { v, type Infer } from 'convex/values';
 import { schema } from '@trestleinc/replicate/server';
 
 const statusValidator = v.union(
@@ -33,8 +33,30 @@ export const intervalSchema = schema.define({
 		isPublic: v.boolean(),
 		title: v.string(),
 		description: schema.prose(),
-		status: statusValidator,
-		priority: priorityValidator,
+
+		// CRDT Registers - preserve concurrent changes with custom resolution
+		// Priority order: done > in_progress > todo > backlog > canceled
+		status: schema.register<Infer<typeof statusValidator>>(statusValidator, {
+			resolve: (conflict) => {
+				const priority = { done: 4, in_progress: 3, todo: 2, backlog: 1, canceled: 0 };
+				return conflict.values.sort((a, b) => (priority[b] ?? 0) - (priority[a] ?? 0))[0];
+			},
+		}),
+
+		// Priority order: urgent > high > medium > low > none
+		priority: schema.register<Infer<typeof priorityValidator>>(priorityValidator, {
+			resolve: (conflict) => {
+				const priority = { urgent: 4, high: 3, medium: 2, low: 1, none: 0 };
+				return conflict.values.sort((a, b) => (priority[b] ?? 0) - (priority[a] ?? 0))[0];
+			},
+		}),
+
+		// CRDT Set - add-wins semantics for tags
+		tags: schema.set(v.string()),
+
+		// CRDT Counter - track page views
+		viewCount: schema.counter(),
+
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}),
@@ -51,6 +73,8 @@ export const intervalSchema = schema.define({
 		isPublic: false,
 		status: 'backlog',
 		priority: 'none',
+		tags: [],
+		viewCount: 0,
 	},
 
 	history: {},

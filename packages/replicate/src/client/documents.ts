@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import type { PersistenceProvider } from '$/client/persistence/types';
-import { fragmentToJSON } from '$/client/merge';
+import { serializeYMapWithCrdt } from '$/client/merge';
+import type { CrdtFieldInfo } from '$/shared/crdt';
 
 export type DocPersistenceFactory = (document: string, ydoc: Y.Doc) => PersistenceProvider;
 
@@ -158,26 +159,25 @@ export function createDocumentManager(collection: string): DocumentManager {
 	return manager;
 }
 
+/**
+ * Serialize document to plain JS object.
+ *
+ * @param manager - Document manager instance
+ * @param id - Document ID
+ * @param crdtFields - Optional CRDT field info for UI serialization.
+ *   - If provided: Resolves CRDT fields to display values (register="done", counter=42)
+ *   - If omitted: Preserves raw CRDT structure for server material
+ */
 export function serializeDocument(
 	manager: DocumentManager,
-	id: string
+	id: string,
+	crdtFields?: Map<string, CrdtFieldInfo>
 ): Record<string, unknown> | null {
 	const fields = manager.getFields(id);
 	if (!fields) return null;
 
-	const result: Record<string, unknown> = { id };
-
-	fields.forEach((value, key) => {
-		if (value instanceof Y.XmlFragment) {
-			result[key] = fragmentToJSON(value);
-		} else if (value instanceof Y.Map) {
-			result[key] = value.toJSON();
-		} else if (value instanceof Y.Array) {
-			result[key] = value.toJSON();
-		} else {
-			result[key] = value;
-		}
-	});
+	const result = serializeYMapWithCrdt(fields, crdtFields);
+	result.id = id;
 
 	return result;
 }
@@ -189,12 +189,23 @@ export function isDocumentDeleted(manager: DocumentManager, id: string): boolean
 	return meta.get('_deleted') === true;
 }
 
-export function extractAllDocuments(manager: DocumentManager): Record<string, unknown>[] {
+/**
+ * Extract all documents as plain JS objects.
+ *
+ * @param manager - Document manager instance
+ * @param crdtFields - Optional CRDT field info for UI serialization.
+ *   - If provided: Resolves CRDT fields to display values (register="done", counter=42)
+ *   - If omitted: Preserves raw CRDT structure for server material
+ */
+export function extractAllDocuments(
+	manager: DocumentManager,
+	crdtFields?: Map<string, CrdtFieldInfo>
+): Record<string, unknown>[] {
 	const documents: Record<string, unknown>[] = [];
 
 	for (const id of manager.documents()) {
 		if (isDocumentDeleted(manager, id)) continue;
-		const doc = serializeDocument(manager, id);
+		const doc = serializeDocument(manager, id, crdtFields);
 		if (doc) {
 			documents.push(doc);
 		}

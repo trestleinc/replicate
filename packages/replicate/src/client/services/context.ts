@@ -4,6 +4,7 @@ import type { Collection } from '@tanstack/db';
 import type { Persistence } from '$/client/persistence/types';
 import type { DocumentManager } from '$/client/documents';
 import type { AnonymousPresenceConfig, UserIdentity } from '$/client/identity';
+import type { CrdtFieldInfo } from '$/shared/crdt';
 
 interface ConvexCollectionApi {
 	material: FunctionReference<'query'>;
@@ -19,7 +20,25 @@ export interface CollectionContext {
 	client: ConvexClient;
 	api: ConvexCollectionApi;
 	persistence: Persistence;
+
+	/**
+	 * Unified CRDT registry - maps field names to CRDT metadata.
+	 * Replaces the legacy prose-specific `fields: Set<string>`.
+	 */
+	crdtFields: Map<string, CrdtFieldInfo>;
+
+	/**
+	 * Resolvers for register CRDT fields.
+	 * Maps field name to its conflict resolution function.
+	 */
+	crdtResolvers?: Map<string, (conflict: unknown) => unknown>;
+
+	/**
+	 * Legacy prose field names - maintained for backward compatibility.
+	 * @deprecated Use crdtFields instead
+	 */
 	fields: Set<string>;
+
 	fragmentObservers: Map<string, () => void>;
 	cleanup?: () => void;
 	clientId?: string;
@@ -46,7 +65,7 @@ export function hasContext(collection: string): boolean {
 
 type InitContextConfig = Omit<
 	CollectionContext,
-	'fragmentObservers' | 'cleanup' | 'clientId' | 'ref'
+	'fragmentObservers' | 'cleanup' | 'clientId' | 'ref' | 'crdtResolvers'
 >;
 
 export function initContext(config: InitContextConfig): CollectionContext {
@@ -60,8 +79,17 @@ export function initContext(config: InitContextConfig): CollectionContext {
 		actorResolver = r;
 	});
 
+	// Build resolvers map from crdtFields
+	const crdtResolvers = new Map<string, (conflict: unknown) => unknown>();
+	for (const [fieldName, info] of config.crdtFields) {
+		if (info.type === 'register' && info.resolve) {
+			crdtResolvers.set(fieldName, info.resolve);
+		}
+	}
+
 	const ctx: CollectionContext = {
 		...config,
+		crdtResolvers,
 		fragmentObservers: new Map(),
 		synced,
 		resolve: resolver!,
@@ -107,3 +135,16 @@ export function updateContext(
 	Object.assign(ctx, updates);
 	return ctx;
 }
+
+/**
+ * Validate that a field is a specific CRDT type.
+ * Returns the field info if valid, undefined otherwise.
+ */
+export const validateCrdtField = (
+	ctx: CollectionContext,
+	field: string,
+	expectedType: CrdtFieldInfo['type']
+): CrdtFieldInfo | undefined => {
+	const info = ctx.crdtFields.get(field);
+	return info?.type === expectedType ? info : undefined;
+};

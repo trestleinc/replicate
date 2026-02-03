@@ -48,9 +48,17 @@ export function transactWithDelta<A>(
 // ============================================================================
 // Yjs uses `instanceof AbstractType` internally in toJSON() which breaks when
 // multiple Yjs module instances exist (common with bundlers). We detect Yjs
-// types by their internal structure (`doc`, `_map`, `_start` properties) which
-// is stable across instances, then manually iterate using forEach/toArray.
+// types via duck-typing since instanceof checks fail across module boundaries.
+//
+// Uses data-driven detection (array for precedence) + Map-based dispatch.
+// All Yjs types have toJSON() as universal fallback for unknown types.
 // ============================================================================
+
+/**
+ * Yjs type discriminant - single source of truth.
+ * 'text' covers Y.Text and Y.XmlText (both have toDelta()).
+ */
+type YjsType = 'map' | 'array' | 'text' | 'xmlfragment' | 'primitive';
 
 /**
  * Check if a value is a Yjs AbstractType by checking internal properties.
@@ -65,66 +73,107 @@ function isYjsAbstractType(value: unknown): boolean {
 }
 
 /**
- * Check if a value is a Y.Map.
- * Y.Map has keys() method which Y.XmlFragment does not.
+ * Type detection rules - array for precedence order.
+ * Each rule: [type, predicate]. First match wins.
+ *
+ * IMPORTANT: All Yjs types inherit push() from AbstractType.
+ * Use distinctive properties to differentiate:
+ * - Y.XmlFragment/Y.XmlElement: have `firstChild` property
+ * - Y.Text/Y.XmlText: have `toDelta()` method
+ * - Y.Map: has `keys()` method
+ * - Y.Array: has `push()` (fallback after more specific checks)
  */
-function isYMap(value: unknown): boolean {
-	if (!isYjsAbstractType(value)) return false;
+const typeDetectors: readonly [YjsType, (v: Record<string, unknown>) => boolean][] = [
+	['map', (v) => typeof v.keys === 'function'],
+	['xmlfragment', (v) => 'firstChild' in v], // Before array! XML types have firstChild
+	['text', (v) => typeof v.toDelta === 'function'],
+	['array', (v) => typeof v.push === 'function'], // Fallback - all AbstractTypes have push
+];
+
+/**
+ * Detect Yjs type using duck-typing.
+ * Uses array for ordered precedence, returns first match.
+ */
+function detectYjsType(value: unknown): YjsType {
+	if (!isYjsAbstractType(value)) return 'primitive';
 	const v = value as Record<string, unknown>;
-	return typeof v.keys === 'function' && typeof v.get === 'function';
+	return typeDetectors.find(([, detect]) => detect(v))?.[0] ?? 'primitive';
 }
 
 /**
- * Check if a value is a Y.Array (has toArray but not get - distinguishes from Y.Map).
- */
-function isYArray(value: unknown): boolean {
-	if (!isYjsAbstractType(value)) return false;
-	const v = value as Record<string, unknown>;
-	return typeof v.toArray === 'function' && typeof v.get !== 'function';
-}
-
-/**
- * Check if a value is a Y.XmlFragment or Y.XmlElement.
- * XmlFragment has toArray() and get(index), but NOT keys() like Y.Map.
+ * Check if a value is a Y.XmlFragment or Y.XmlElement (duck-typed).
  */
 function isYXmlFragment(value: unknown): value is Y.XmlFragment {
-	if (!isYjsAbstractType(value)) return false;
-	const v = value as Record<string, unknown>;
-	// XmlFragment has toArray() but NOT keys() - keys() is unique to Y.Map
-	return typeof v.toArray === 'function' && typeof v.keys !== 'function';
+	return detectYjsType(value) === 'xmlfragment';
 }
 
 /**
- * Recursively serialize a Yjs value to plain JavaScript.
- * Handles Y.Map, Y.Array, Y.XmlFragment without using instanceof.
+ * Check if a value is a Y.Map (duck-typed).
+ */
+function isYMap(value: unknown): boolean {
+	return detectYjsType(value) === 'map';
+}
+
+/**
+ * Check if XmlFragment child is an element (has nodeName property).
+ * Duck-type check since instanceof fails across bundler boundaries.
+ */
+function isXmlElement(child: unknown): child is Y.XmlElement {
+	return (
+		detectYjsType(child) === 'xmlfragment' && typeof (child as Record<string, unknown>).nodeName === 'string'
+	);
+}
+
+/**
+ * Check if XmlFragment child is text (has toDelta method).
+ * Duck-type check since instanceof fails across bundler boundaries.
+ */
+function isXmlText(child: unknown): child is Y.XmlText {
+	return detectYjsType(child) === 'text';
+}
+
+/**
+ * Serializer registry - Map-based dispatch.
+ * Each serializer handles one Yjs type, calling serialize() recursively.
+ * Uses toJSON() as fallback for unknown Yjs types in 'primitive' case.
+ */
+const serializers = new Map<YjsType, (value: unknown) => unknown>([
+	[
+		'map',
+		(v) => {
+			const result: Record<string, unknown> = {};
+			(v as Y.Map<unknown>).forEach((val, k) => {
+				result[k] = serialize(val);
+			});
+			return result;
+		},
+	],
+	['array', (v) => (v as Y.Array<unknown>).toArray().map(serialize)],
+	['text', (v) => (v as Y.Text).toJSON()],
+	['xmlfragment', (v) => fragmentToJSON(v as Y.XmlFragment)],
+	[
+		'primitive',
+		(v) => {
+			// toJSON fallback for unknown Yjs types
+			if (v && typeof v === 'object' && typeof (v as Record<string, unknown>).toJSON === 'function') {
+				return (v as { toJSON(): unknown }).toJSON();
+			}
+			return v;
+		},
+	],
+]);
+
+/**
+ * Serialize any Yjs value to plain JS.
+ * Uses type detection + Map dispatch - no if chains.
  */
 function serialize(value: unknown): unknown {
-	// Primitives pass through
 	if (value === null || value === undefined) return value;
 	if (typeof value !== 'object') return value;
 
-	// Check for XmlFragment first (converts to ProseMirror JSON)
-	if (isYXmlFragment(value)) {
-		return fragmentToJSON(value);
-	}
-
-	// Y.Map - iterate with forEach and recursively serialize values
-	if (isYMap(value)) {
-		const result: Record<string, unknown> = {};
-		const ymap = value as Y.Map<unknown>;
-		ymap.forEach((v, k) => {
-			result[k] = serialize(v);
-		});
-		return result;
-	}
-
-	// Y.Array - convert to array and recursively serialize elements
-	if (isYArray(value)) {
-		return (value as Y.Array<unknown>).toArray().map(serialize);
-	}
-
-	// Regular object/array (not a Yjs type) - return as-is
-	return value;
+	const type = detectYjsType(value);
+	const serializer = serializers.get(type)!;
+	return serializer(value);
 }
 
 /**
@@ -175,14 +224,15 @@ export function isDoc(value: unknown): value is XmlFragmentJSON {
 
 /**
  * Convert a Y.XmlFragment to ProseMirror-compatible JSON.
+ * Uses duck-typing to detect child types (instanceof fails across bundlers).
  */
 export function fragmentToJSON(fragment: Y.XmlFragment): XmlFragmentJSON {
 	const content: XmlNodeJSON[] = [];
 
 	for (const child of fragment.toArray()) {
-		if (child instanceof Y.XmlElement) {
+		if (isXmlElement(child)) {
 			content.push(xmlElementToJSON(child));
-		} else if (child instanceof Y.XmlText) {
+		} else if (isXmlText(child)) {
 			const textContent = xmlTextToJSON(child);
 			if (textContent.length > 0) {
 				content.push({
@@ -199,6 +249,10 @@ export function fragmentToJSON(fragment: Y.XmlFragment): XmlFragmentJSON {
 	};
 }
 
+/**
+ * Convert a Y.XmlElement to ProseMirror-compatible JSON node.
+ * Uses duck-typing to detect child types (instanceof fails across bundlers).
+ */
 function xmlElementToJSON(element: Y.XmlElement): XmlNodeJSON {
 	const result: XmlNodeJSON = {
 		type: element.nodeName,
@@ -211,9 +265,9 @@ function xmlElementToJSON(element: Y.XmlElement): XmlNodeJSON {
 
 	const content: XmlNodeJSON[] = [];
 	for (const child of element.toArray()) {
-		if (child instanceof Y.XmlElement) {
+		if (isXmlElement(child)) {
 			content.push(xmlElementToJSON(child));
-		} else if (child instanceof Y.XmlText) {
+		} else if (isXmlText(child)) {
 			content.push(...xmlTextToJSON(child));
 		}
 	}
@@ -342,3 +396,103 @@ export function getFragmentFromYMap(
 
 	return null;
 }
+
+// ============================================================================
+// CRDT Serialization - extends base Yjs serialization
+// ============================================================================
+
+import type { CrdtFieldInfo, CrdtType } from '$/shared/crdt';
+
+/**
+ * Serialize a register Y.Map to its resolved value.
+ * Picks the entry with the latest timestamp (last-write-wins).
+ */
+function serializeRegister(value: unknown): unknown {
+	if (detectYjsType(value) !== 'map') return value;
+
+	let latestValue: unknown = undefined;
+	let latestTimestamp = 0;
+
+	(value as Y.Map<unknown>).forEach((entry) => {
+		const e = entry as { value?: unknown; timestamp?: number } | null;
+		if (e && typeof e === 'object' && 'value' in e && 'timestamp' in e) {
+			if ((e.timestamp ?? 0) > latestTimestamp) {
+				latestTimestamp = e.timestamp ?? 0;
+				latestValue = e.value;
+			}
+		}
+	});
+
+	return latestValue;
+}
+
+/**
+ * Serialize a counter Y.Array to its summed value.
+ */
+function serializeCounter(value: unknown): number {
+	if (detectYjsType(value) !== 'array') return 0;
+
+	let sum = 0;
+	for (const entry of (value as Y.Array<unknown>).toArray()) {
+		const e = entry as { delta?: number } | null;
+		if (e && typeof e === 'object' && 'delta' in e) {
+			sum += e.delta ?? 0;
+		}
+	}
+	return sum;
+}
+
+/**
+ * Serialize a set Y.Map to an array of values.
+ */
+function serializeSet(value: unknown): unknown[] {
+	if (detectYjsType(value) !== 'map') return [];
+
+	const values: unknown[] = [];
+	(value as Y.Map<unknown>).forEach((_, key) => {
+		try {
+			values.push(JSON.parse(key));
+		} catch {
+			values.push(key);
+		}
+	});
+	return values;
+}
+
+/**
+ * CRDT serializer registry - Map-based dispatch.
+ */
+const crdtSerializers = new Map<CrdtType, (value: unknown) => unknown>([
+	['prose', (v) => fragmentToJSON(v as Y.XmlFragment)],
+	['register', serializeRegister],
+	['counter', serializeCounter],
+	['set', serializeSet],
+]);
+
+/**
+ * Serialize a CRDT field value to plain JS.
+ */
+export function serializeCrdtField(value: unknown, type: CrdtType): unknown {
+	const serializer = crdtSerializers.get(type);
+	return serializer ? serializer(value) : serialize(value);
+}
+
+/**
+ * Serialize a Y.Map to plain JS, with optional CRDT field awareness.
+ */
+export function serializeYMapWithCrdt(
+	ymap: Y.Map<unknown>,
+	crdtFields?: Map<string, CrdtFieldInfo>
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+
+	ymap.forEach((value, key) => {
+		const crdtInfo = crdtFields?.get(key);
+		result[key] = crdtInfo ? serializeCrdtField(value, crdtInfo.type) : serialize(value);
+	});
+
+	return result;
+}
+
+// Export type detection functions for use elsewhere
+export { detectYjsType, isYjsAbstractType };

@@ -9,6 +9,19 @@
  * 3. No duplicate interfaces - types come from validators
  */
 
+// CRDT Type System
+export {
+	CRDT_MARKER,
+	isCrdtValidator,
+	getCrdtType,
+	assertNever,
+	type CrdtType,
+	type CrdtValidator,
+	type CrdtFieldInfo,
+	type Conflict,
+	type ResolveFn,
+} from './crdt';
+
 import { type Infer, v } from 'convex/values';
 
 // ============================================================================

@@ -34,16 +34,6 @@
 
 	// True "not found" only when: not loading and no interval (current or cached)
 	const notFound = $derived(!intervalsCtx.isLoading && interval === null);
-
-	function handlePropertyUpdate(updates: Partial<Pick<Interval, 'status' | 'priority'>>) {
-		if (interval) {
-			intervalsCtx.collection.update(interval.id, (draft) => {
-				if (updates.status !== undefined) draft.status = updates.status;
-				if (updates.priority !== undefined) draft.priority = updates.priority;
-				draft.updatedAt = Date.now();
-			});
-		}
-	}
 </script>
 
 {#if intervalsCtx.isLoading && !interval}
@@ -58,7 +48,7 @@
 {:else if interval && id}
 	<div class="flex-1 overflow-auto">
 		{#key id}
-			<IntervalEditor intervalId={id} {interval} onPropertyUpdate={handlePropertyUpdate} />
+			<IntervalEditor intervalId={id} {interval} showProperties />
 		{/key}
 		<CommentList intervalId={id} isPublic={interval.isPublic} />
 	</div>

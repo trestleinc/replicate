@@ -13,15 +13,23 @@ import type { GenericValidator } from 'convex/values';
 import type { VersionedSchema } from '$/server/migration';
 import type { MigrationErrorHandler, ClientMigrationMap } from '$/client/migration';
 import { runMigrations } from '$/client/migration';
-import { findProseFields } from '$/client/validators';
+import { findCrdtFields } from '$/client/validators';
 import { ProseError, NonRetriableError } from '$/client/errors';
+import { initializeCrdtField, getDefaultForCrdtType } from '$/client/crdt-handlers';
+import { createCounterBinding, createRegisterBinding, createSetBinding } from '$/client/bindings';
+import type { CounterBinding, RegisterBinding, SetBinding } from '$/client/bindings';
+import type { CrdtFieldInfo } from '$/shared/crdt';
 import { createSeqService, type Seq } from '$/client/services/seq';
 import { getClientId } from '$/client/services/session';
 import { createReplicateOps, type BoundReplicateOps } from '$/client/ops';
-import { isDoc, fragmentFromJSON } from '$/client/merge';
-import { createDocumentManager, serializeDocument, extractAllDocuments } from '$/client/documents';
+import {
+	createDocumentManager,
+	serializeDocument,
+	extractAllDocuments,
+} from '$/client/documents';
 import { createDeleteDelta, applyDeleteMarkerToDoc } from '$/client/deltas';
 import * as prose from '$/client/prose';
+import { detectYjsType, isYjsAbstractType } from '$/client/merge';
 import { getLogger } from '$/shared/logger';
 import {
 	createTransactionCoordinator,
@@ -54,6 +62,27 @@ enum YjsOrigin {
 }
 
 const logger = getLogger(['replicate', 'collection']);
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Higher-order function for error isolation in handlers.
+ * Catches errors and calls errorHandler, returning its result.
+ */
+const withErrorIsolation = <T extends unknown[], R>(
+	fn: (...args: T) => R,
+	errorHandler: (error: unknown, ...args: T) => R
+) => {
+	return (...args: T): R => {
+		try {
+			return fn(...args);
+		} catch (error) {
+			return errorHandler(error, ...args);
+		}
+	};
+};
 
 import type { ProseFields } from '$/shared';
 
@@ -202,6 +231,25 @@ export interface ProseOptions {
 
 interface ConvexCollectionUtils<T extends object> {
 	prose(document: string, field: ProseFields<T>, options?: ProseOptions): Promise<EditorBinding>;
+	counter(
+		document: string,
+		field: string,
+		options?: { debounceMs?: number }
+	): Promise<CounterBinding>;
+	register<U>(
+		document: string,
+		field: string,
+		options?: { resolve?: (conflict: unknown) => U }
+	): Promise<RegisterBinding<U>>;
+	set<U>(
+		document: string,
+		field: string,
+		options: {
+			serialize: (item: U) => string;
+			deserialize: (key: string) => U;
+			debounceMs?: number;
+		}
+	): Promise<SetBinding<U>>;
 }
 
 export interface SessionInfo {
@@ -254,12 +302,19 @@ export function convexCollectionOptions<T extends object = object>(
 		throw new Error('Could not extract collection name from api.delta function reference');
 	}
 
-	const proseFields: string[] = validator ? findProseFields(validator) : [];
+	// Find all CRDT fields (including prose) using the unified system
+	const crdtFieldsList: CrdtFieldInfo[] = validator ? findCrdtFields(validator) : [];
+	const crdtFields = new Map<string, CrdtFieldInfo>(
+		crdtFieldsList.map((info) => [info.field, info])
+	);
+
+	// Derive prose fields from CRDT fields
+	const proseFieldSet = new Set<string>(
+		crdtFieldsList.filter((info) => info.type === 'prose').map((info) => info.field)
+	);
 
 	// DataType is 'any' in implementation - type safety comes from overload signatures
 	type DataType = any;
-	// Create a Set for O(1) lookup of prose fields
-	const proseFieldSet = new Set<string>(proseFields);
 
 	const utils: ConvexCollectionUtils<DataType> = {
 		async prose(
@@ -386,6 +441,184 @@ export function convexCollectionOptions<T extends object = object>(
 
 			return binding;
 		},
+
+		/**
+		 * Create a counter binding for a document field.
+		 */
+		async counter(
+			document: string,
+			field: string,
+			options?: { debounceMs?: number }
+		): Promise<CounterBinding> {
+			const fieldStr = String(field);
+			const crdtInfo = crdtFields.get(fieldStr);
+
+			if (crdtInfo?.type !== 'counter') {
+				throw new Error(
+					`Field "${fieldStr}" is not a counter (type: ${crdtInfo?.type ?? 'unknown'})`
+				);
+			}
+
+			const ctx = hasContext(collection) ? getContext(collection) : null;
+			if (!ctx) {
+				throw new Error(`Collection ${collection} not initialized`);
+			}
+
+			await ctx.synced;
+
+			const fieldsMap = ctx.docManager.getFields(document);
+			if (!fieldsMap) {
+				throw new Error(`Document ${document} not found`);
+			}
+
+			let array = fieldsMap.get(fieldStr) as
+				| Y.Array<{ client: string; delta: number; timestamp: number }>
+				| undefined;
+			if (!array) {
+				array = new Y.Array();
+				fieldsMap.set(fieldStr, array);
+			}
+
+			const subdoc = ctx.docManager.getOrCreate(document);
+			const collectionRef = ctx.ref;
+
+			if (!collectionRef) {
+				throw new Error(`Collection reference not available`);
+			}
+
+			if (!ctx.clientId) {
+				throw new Error(`Client ID not available`);
+			}
+
+			return createCounterBinding({
+				collection,
+				document,
+				field: fieldStr,
+				array,
+				ydoc: subdoc,
+				ymap: fieldsMap,
+				collectionRef,
+				clientId: ctx.clientId,
+				debounceMs: options?.debounceMs,
+				getMaterial: () => serializeDocument(ctx.docManager, document),
+			});
+		},
+
+		/**
+		 * Create a register binding for a document field.
+		 */
+		async register<T>(
+			document: string,
+			field: string,
+			options?: { resolve?: (conflict: unknown) => T }
+		): Promise<RegisterBinding<T>> {
+			const fieldStr = String(field);
+			const crdtInfo = crdtFields.get(fieldStr);
+
+			if (crdtInfo?.type !== 'register') {
+				throw new Error(
+					`Field "${fieldStr}" is not a register (type: ${crdtInfo?.type ?? 'unknown'})`
+				);
+			}
+
+			const ctx = hasContext(collection) ? getContext(collection) : null;
+			if (!ctx) {
+				throw new Error(`Collection ${collection} not initialized`);
+			}
+
+			await ctx.synced;
+
+			const fieldsMap = ctx.docManager.getFields(document);
+			if (!fieldsMap) {
+				throw new Error(`Document ${document} not found`);
+			}
+
+			let map = fieldsMap.get(fieldStr) as Y.Map<{ value: T; timestamp: number }> | undefined;
+			if (!map) {
+				map = new Y.Map();
+				fieldsMap.set(fieldStr, map);
+			}
+
+			if (!ctx.clientId) {
+				throw new Error(`Client ID not available`);
+			}
+
+			// Use provided resolve, or stored resolver, or default to latest()
+			const resolve =
+				options?.resolve ??
+				(ctx.crdtResolvers?.get(fieldStr) as ((conflict: unknown) => T) | undefined) ??
+				((c: { latest: () => T }) => c.latest());
+
+			return createRegisterBinding({
+				ymap: map,
+				clientId: ctx.clientId,
+				resolve,
+			});
+		},
+
+		/**
+		 * Create a set binding for a document field.
+		 */
+		async set<T>(
+			document: string,
+			field: string,
+			options: {
+				serialize: (item: T) => string;
+				deserialize: (key: string) => T;
+				debounceMs?: number;
+			}
+		): Promise<SetBinding<T>> {
+			const fieldStr = String(field);
+			const crdtInfo = crdtFields.get(fieldStr);
+
+			if (crdtInfo?.type !== 'set') {
+				throw new Error(`Field "${fieldStr}" is not a set (type: ${crdtInfo?.type ?? 'unknown'})`);
+			}
+
+			const ctx = hasContext(collection) ? getContext(collection) : null;
+			if (!ctx) {
+				throw new Error(`Collection ${collection} not initialized`);
+			}
+
+			await ctx.synced;
+
+			const fieldsMap = ctx.docManager.getFields(document);
+			if (!fieldsMap) {
+				throw new Error(`Document ${document} not found`);
+			}
+
+			let map = fieldsMap.get(fieldStr) as Y.Map<{ addedBy: string; addedAt: number }> | undefined;
+			if (!map) {
+				map = new Y.Map();
+				fieldsMap.set(fieldStr, map);
+			}
+
+			const subdoc = ctx.docManager.getOrCreate(document);
+			const collectionRef = ctx.ref;
+
+			if (!collectionRef) {
+				throw new Error(`Collection reference not available`);
+			}
+
+			if (!ctx.clientId) {
+				throw new Error(`Client ID not available`);
+			}
+
+			return createSetBinding({
+				collection,
+				document,
+				field: fieldStr,
+				ymap: map,
+				ydoc: subdoc,
+				fieldsMap,
+				collectionRef,
+				clientId: ctx.clientId,
+				serialize: options.serialize,
+				deserialize: options.deserialize,
+				debounceMs: options.debounceMs,
+				getMaterial: () => serializeDocument(ctx.docManager, document),
+			});
+		},
 	};
 
 	const documentHandles = new Map<string, DocumentHandle<DataType>>();
@@ -503,6 +736,7 @@ export function convexCollectionOptions<T extends object = object>(
 		client: convexClient,
 		api,
 		persistence,
+		crdtFields,
 		fields: proseFieldSet,
 		userGetter,
 		anonymousPresence,
@@ -596,12 +830,27 @@ export function convexCollectionOptions<T extends object = object>(
 			const delta = docManager.transactWithDelta(
 				document,
 				(fieldsMap) => {
-					Object.entries(mut.modified as Record<string, unknown>).forEach(([k, v]) => {
-						if (proseFieldSet.has(k) && isDoc(v)) {
-							const fragment = new Y.XmlFragment();
-							fieldsMap.set(k, fragment);
-							fragmentFromJSON(fragment, v);
-						} else {
+					const modified = mut.modified as Record<string, unknown>;
+					const ctx = hasContext(collection) ? getContext(collection) : null;
+					const effectiveClientId = ctx?.clientId ?? 'init';
+
+					// Initialize ALL CRDT fields from schema (not just provided ones)
+					// This ensures fields like viewCount get proper Yjs structures
+					// even when not included in the insert mutation
+					for (const [fieldName, crdtInfo] of crdtFields) {
+						// Use provided value or get default for type
+						const value = modified[fieldName] ?? getDefaultForCrdtType(crdtInfo.type);
+						initializeCrdtField(crdtInfo.type, {
+							value,
+							clientId: effectiveClientId,
+							fieldsMap,
+							fieldName,
+						});
+					}
+
+					// Set non-CRDT fields
+					Object.entries(modified).forEach(([k, v]) => {
+						if (!crdtFields.has(k)) {
 							fieldsMap.set(k, v);
 						}
 					});
@@ -633,13 +882,34 @@ export function convexCollectionOptions<T extends object = object>(
 			const delta = docManager.transactWithDelta(
 				document,
 				(fields) => {
+					const ctx = hasContext(collection) ? getContext(collection) : null;
+					const effectiveClientId = ctx?.clientId ?? 'local';
+
 					Object.entries(modifiedFields).forEach(([k, v]) => {
-						if (proseFieldSet.has(k)) {
+						const crdtInfo = crdtFields.get(k);
+
+						// Handle register updates specially - set value with client ID
+						if (crdtInfo?.type === 'register') {
+							let registerMap = fields.get(k);
+							if (detectYjsType(registerMap) !== 'map') {
+								registerMap = new Y.Map();
+								fields.set(k, registerMap);
+							}
+							(registerMap as Y.Map<unknown>).set(effectiveClientId, {
+								value: v,
+								timestamp: Date.now(),
+							});
 							return;
 						}
 
+						// Skip other CRDT types - they have dedicated bindings
+						if (crdtInfo) {
+							return;
+						}
+
+						// Never overwrite existing Yjs CRDT values
 						const existingValue = fields.get(k);
-						if (existingValue instanceof Y.XmlFragment) {
+						if (isYjsAbstractType(existingValue)) {
 							return;
 						}
 
@@ -692,7 +962,10 @@ export function convexCollectionOptions<T extends object = object>(
 						if (!delta || delta.length === 0) return;
 
 						const document = String(mut.key);
-						const materializedDoc = serializeDocument(docManager, document) ?? mut.modified;
+						const materializedDoc = serializeDocument(docManager, document);
+						if (!materializedDoc) {
+							throw new Error(`Cannot serialize document ${document} for insert`);
+						}
 
 						await convexClient.mutation(api.replicate, {
 							document: document,
@@ -738,7 +1011,10 @@ export function convexCollectionOptions<T extends object = object>(
 							if (!delta || delta.length === 0) return;
 
 							const docId = String(mut.key);
-							const fullDoc = serializeDocument(docManager, docId) ?? mut.modified;
+							const fullDoc = serializeDocument(docManager, docId);
+							if (!fullDoc) {
+								throw new Error(`Cannot serialize document ${docId} for update`);
+							}
 
 							await convexClient.mutation(api.replicate, {
 								document: docId,
@@ -783,6 +1059,9 @@ export function convexCollectionOptions<T extends object = object>(
 				}
 
 				// Use transaction coordinator for atomic delete with rollback support
+				// Map to store previousState for rollback (keyed by documentId)
+				const rollbackStates = new Map<string, Uint8Array>();
+
 				await txCoordinator.transaction(async (tx) => {
 					// Process each deletion in the transaction
 					for (const mut of transaction.mutations) {
@@ -790,9 +1069,9 @@ export function convexCollectionOptions<T extends object = object>(
 						const ydoc = docManager.get(documentId);
 
 						// Capture state for potential rollback
-						let previousState: Uint8Array | undefined;
 						if (ydoc) {
-							previousState = Y.encodeStateAsUpdateV2(ydoc);
+							const previousState = Y.encodeStateAsUpdateV2(ydoc);
+							rollbackStates.set(documentId, previousState);
 						}
 
 						// Stage the delete in the transaction
@@ -801,14 +1080,12 @@ export function convexCollectionOptions<T extends object = object>(
 						// Create delete delta
 						const delta = ydoc ? applyDeleteMarkerToDoc(ydoc) : createDeleteDelta();
 
-						// Store previous state for rollback
-						if (previousState) {
-							// The transaction's onRevert callback will use this to restore
-							const changes = tx.getStagedChanges();
-							const lastChange = changes[changes.length - 1];
-							if (lastChange) {
-								(lastChange as { previousState?: Uint8Array }).previousState = previousState;
-							}
+						// Attach previousState to the staged change for rollback
+						const changes = tx.getStagedChanges();
+						const lastChange = changes[changes.length - 1];
+						if (lastChange && rollbackStates.has(documentId)) {
+							// StagedChange interface allows previousState, safe to assign via mutable reference
+							(lastChange as StagedChange).previousState = rollbackStates.get(documentId);
 						}
 
 						// Optimistically remove from TanStack DB
@@ -881,27 +1158,36 @@ export function convexCollectionOptions<T extends object = object>(
 								});
 							},
 							async onRevert(change: StagedChange) {
-								// Rollback: restore previous state or re-add deleted document
+								// Delete rollback - restore document
 								if (change.type === 'delete' && change.previousState) {
-									// Restore the document that was deleted
 									const update = new Uint8Array(change.previousState);
 									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
-									const restoredItem = serializeDocument(docManager, change.documentId);
-									if (restoredItem) {
-										ops.insert([restoredItem as DataType]);
+									const restoredItem = serializeDocument(docManager, change.documentId, crdtFields);
+									if (!restoredItem) {
+										throw new Error(`Cannot serialize document ${change.documentId} for rollback`);
 									}
+									ops.insert([restoredItem as DataType]);
 									logger.debug('Rolled back delete', { documentId: change.documentId });
-								} else if (change.type === 'update' && change.previousState) {
-									// Restore previous state for updates
+									return;
+								}
+
+								// Update rollback - restore previous state
+								if (change.type === 'update' && change.previousState) {
 									const update = new Uint8Array(change.previousState);
 									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
-									const restoredItem = serializeDocument(docManager, change.documentId);
-									if (restoredItem) {
-										ops.upsert([restoredItem as DataType]);
+									const restoredItem = serializeDocument(docManager, change.documentId, crdtFields);
+									if (!restoredItem) {
+										throw new Error(`Cannot serialize document ${change.documentId} for rollback`);
 									}
+									ops.upsert([restoredItem as DataType]);
 									logger.debug('Rolled back update', { documentId: change.documentId });
+									return;
 								}
-								// Insert rollback: nothing to do, document wasn't created
+
+								// Insert rollback - delete (no-op, document wasn't persisted)
+								if (change.type === 'insert') {
+									ops.delete([{ id: change.documentId } as DataType]);
+								}
 							},
 						});
 
@@ -918,7 +1204,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 						const docIds = docManager.documents();
 						if (docIds.length > 0) {
-							const items = extractAllDocuments(docManager) as DataType[];
+							const items = extractAllDocuments(docManager, crdtFields) as DataType[];
 							ops.replace(items);
 						} else {
 							ops.replace([]);
@@ -945,85 +1231,101 @@ export function convexCollectionOptions<T extends object = object>(
 							isDelete: boolean;
 						} | null;
 
-						const handleSnapshotChange = (
-							bytes: ArrayBuffer,
-							document: string,
-							exists: boolean
-						): ChangeResult => {
-							const hadLocally = docManager.has(document);
-
-							if (!exists && hadLocally) {
-								const itemBefore = serializeDocument(docManager, document);
-								docManager.delete(document);
-								if (itemBefore) {
-									return { item: itemBefore as DataType, isNew: false, isDelete: true };
-								}
-								return null;
+						// Clean up presence provider when a document is deleted
+						const cleanupDocumentPresence = (documentId: string) => {
+							const provider = presenceProviders.get(documentId);
+							if (provider) {
+								provider.destroy();
+								presenceProviders.delete(documentId);
 							}
-
-							if (!exists && !hadLocally) {
-								return null;
-							}
-
-							// Apply update - use hadLocally for existence check (avoid double serialization)
-							const update = new Uint8Array(bytes);
-							docManager.applyUpdate(document, update, YjsOrigin.Server);
-							const itemAfter = serializeDocument(docManager, document);
-
-							if (itemAfter) {
-								return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
-							} else if (hadLocally) {
-								// Serialization failed - log warning but don't return item
-								logger.warn('Document serialization returned null after snapshot update', {
-									document,
-									collection,
-									hadFieldsAfter: !!docManager.getFields(document),
-								});
-							}
-							return null;
+							documentHandles.delete(documentId);
 						};
 
-						const handleDeltaChange = (
-							bytes: ArrayBuffer,
-							document: string | undefined,
-							exists: boolean
-						): ChangeResult => {
-							if (!document) {
-								return null;
-							}
+						const handleSnapshotChange = withErrorIsolation(
+							(bytes: ArrayBuffer, document: string, exists: boolean): ChangeResult => {
+								const hadLocally = docManager.has(document);
 
-							const hadLocally = docManager.has(document);
+								if (!exists && hadLocally) {
+									const itemBefore = serializeDocument(docManager, document, crdtFields);
+									docManager.delete(document);
+									cleanupDocumentPresence(document);
+									if (itemBefore) {
+										return { item: itemBefore as DataType, isNew: false, isDelete: true };
+									}
+									return null;
+								}
 
-							if (!exists && hadLocally) {
-								const itemBefore = serializeDocument(docManager, document);
-								docManager.delete(document);
-								if (itemBefore) {
-									return { item: itemBefore as DataType, isNew: false, isDelete: true };
+								if (!exists && !hadLocally) {
+									return null;
+								}
+
+								// Apply update - use hadLocally for existence check (avoid double serialization)
+								const update = new Uint8Array(bytes);
+								docManager.applyUpdate(document, update, YjsOrigin.Server);
+								const itemAfter = serializeDocument(docManager, document, crdtFields);
+
+								if (itemAfter) {
+									return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
+								} else if (hadLocally) {
+									// Serialization failed - log warning but don't return item
+									logger.warn('Document serialization returned null after snapshot update', {
+										document,
+										collection,
+										hadFieldsAfter: !!docManager.getFields(document),
+									});
 								}
 								return null;
-							}
-
-							if (!exists && !hadLocally) {
+							},
+							(error, _bytes, document) => {
+								logger.error('Error processing snapshot change', { document, collection, error });
 								return null;
 							}
+						);
 
-							// Apply update - use hadLocally for existence check (avoid double serialization)
-							const update = new Uint8Array(bytes);
-							docManager.applyUpdate(document, update, YjsOrigin.Server);
-							const itemAfter = serializeDocument(docManager, document);
+						const handleDeltaChange = withErrorIsolation(
+							(bytes: ArrayBuffer, document: string | undefined, exists: boolean): ChangeResult => {
+								if (!document) {
+									return null;
+								}
 
-							if (itemAfter) {
-								return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
-							} else if (hadLocally) {
-								// Serialization failed - log warning but don't return item
-								logger.warn('Document serialization returned null after delta update', {
-									document,
-									collection,
-									hadFieldsAfter: !!docManager.getFields(document),
-								});
+								const hadLocally = docManager.has(document);
+
+								if (!exists && hadLocally) {
+									const itemBefore = serializeDocument(docManager, document, crdtFields);
+									docManager.delete(document);
+									cleanupDocumentPresence(document);
+									if (itemBefore) {
+										return { item: itemBefore as DataType, isNew: false, isDelete: true };
+									}
+									return null;
+								}
+
+								if (!exists && !hadLocally) {
+									return null;
+								}
+
+								// Apply update - use hadLocally for existence check (avoid double serialization)
+								const update = new Uint8Array(bytes);
+								docManager.applyUpdate(document, update, YjsOrigin.Server);
+								const itemAfter = serializeDocument(docManager, document, crdtFields);
+
+								if (itemAfter) {
+									return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
+								} else if (hadLocally) {
+									// Serialization failed - log warning but don't return item
+									logger.warn('Document serialization returned null after delta update', {
+										document,
+										collection,
+										hadFieldsAfter: !!docManager.getFields(document),
+									});
+								}
+								return null;
+							},
+							(error, _bytes, document) => {
+								logger.error('Error processing delta change', { document, collection, error });
+								return null;
 							}
-							return null;
-						};
+						);
 
 						let lastProcessedSeq = cursor;
 
@@ -1176,6 +1478,12 @@ export function convexCollectionOptions<T extends object = object>(
 						subscription?.();
 						syncQueue.destroy();
 						prose.cleanup(collection);
+						// Clean up presence providers to prevent memory leaks
+						for (const provider of presenceProviders.values()) {
+							provider.destroy();
+						}
+						presenceProviders.clear();
+						documentHandles.clear();
 						deleteContext(collection);
 						docPersistence?.destroy();
 						docManager?.destroy();

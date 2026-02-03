@@ -16,6 +16,9 @@ export {
 	type SessionAPI,
 } from '$/client/collection';
 
+// CRDT Binding types
+export type { CounterBinding, RegisterBinding, SetBinding } from '$/client/bindings';
+
 export type { DocFromSchema, TableNamesFromSchema, InferDoc } from '$/client/types';
 
 export { identity, type UserIdentity, type AnonymousPresenceConfig } from '$/client/identity';

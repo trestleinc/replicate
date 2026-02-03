@@ -15,6 +15,7 @@ import type {
 	Query,
 } from 'convex/server';
 import { queryGeneric, mutationGeneric } from 'convex/server';
+import { ConvexError } from 'convex/values';
 import {
 	type CompactionConfig,
 	parseDuration,
@@ -25,6 +26,42 @@ import {
 	replicateTypeValidator,
 	sessionActionValidator,
 } from '$/shared';
+
+// ============================================================================
+// Guard Functions
+// ============================================================================
+
+/**
+ * Validate material is provided for non-delete operations.
+ * Throws ConvexError with context if material is undefined.
+ */
+const requireMaterial = <T>(material: T | undefined, operation: string): T => {
+	if (material === undefined) {
+		throw new ConvexError({ code: 'INVALID_ARGS', message: `material required for ${operation}` });
+	}
+	return material;
+};
+
+/**
+ * Safely invoke a hook with error context wrapping.
+ * Returns immediately if hook is undefined.
+ */
+const safeHook = async <T>(
+	hookName: string,
+	hook: ((ctx: any, arg: T) => void | Promise<void>) | undefined,
+	ctx: any,
+	arg: T
+): Promise<void> => {
+	if (!hook) return;
+	try {
+		await hook(ctx, arg);
+	} catch (error) {
+		throw new ConvexError({
+			code: 'HOOK_FAILED',
+			message: `${hookName} failed: ${error instanceof Error ? error.message : String(error)}`,
+		});
+	}
+};
 
 // ============================================================================
 // Re-exports
@@ -48,11 +85,14 @@ export type {
 	TableOptions,
 } from '$/server/migration';
 
-import { prose } from '$/server/schema';
+import { prose, counter, register, set } from '$/server/schema';
 import { define } from '$/server/migration';
 
 export const schema = {
 	prose,
+	counter,
+	register,
+	set,
 	define,
 } as const;
 
@@ -217,10 +257,9 @@ export class Replicate<T extends object> {
 			handler: async (ctx, args) => {
 				const { document, bytes, material, type } = args;
 
+				// Delete operation - no material required
 				if (type === 'delete') {
-					if (opts?.evalRemove) {
-						await opts.evalRemove(ctx, document);
-					}
+					await safeHook('evalRemove', opts?.evalRemove, ctx, document);
 
 					const existing = await ctx.db
 						.query(collection)
@@ -240,22 +279,19 @@ export class Replicate<T extends object> {
 						retain,
 					});
 
-					if (opts?.onRemove) {
-						await opts.onRemove(ctx, document);
-					}
-
+					await safeHook('onRemove', opts?.onRemove, ctx, document);
 					return { success: true, seq: result.seq };
 				}
 
-				const doc = material as T;
-				if (opts?.evalWrite) {
-					await opts.evalWrite(ctx, doc);
-				}
+				// Insert/Update - require material
+				const doc = requireMaterial(material, type) as T;
+				await safeHook('evalWrite', opts?.evalWrite, ctx, doc);
 
+				// Insert operation
 				if (type === 'insert') {
 					await ctx.db.insert(collection, {
 						id: document,
-						...(material as object),
+						...(doc as object),
 						timestamp: Date.now(),
 					});
 
@@ -268,13 +304,11 @@ export class Replicate<T extends object> {
 						retain,
 					});
 
-					if (opts?.onInsert) {
-						await opts.onInsert(ctx, doc);
-					}
-
+					await safeHook('onInsert', opts?.onInsert, ctx, doc);
 					return { success: true, seq: result.seq };
 				}
 
+				// Update operation (fallthrough)
 				const existing = await ctx.db
 					.query(collection)
 					.withIndex('by_doc_id', (q) => q.eq('id', document))
@@ -282,7 +316,7 @@ export class Replicate<T extends object> {
 
 				if (existing) {
 					await ctx.db.patch(existing._id, {
-						...(material as object),
+						...(doc as object),
 						timestamp: Date.now(),
 					});
 				}
@@ -296,10 +330,7 @@ export class Replicate<T extends object> {
 					retain,
 				});
 
-				if (opts?.onUpdate) {
-					await opts.onUpdate(ctx, doc);
-				}
-
+				await safeHook('onUpdate', opts?.onUpdate, ctx, doc);
 				return { success: true, seq: result.seq };
 			},
 		});
@@ -418,7 +449,10 @@ export class Replicate<T extends object> {
 			returns: v.any(),
 			handler: async (ctx, args) => {
 				if (args.vector !== undefined && args.document === undefined) {
-					throw new Error("'document' is required when 'vector' is provided");
+					throw new ConvexError({
+						code: 'INVALID_ARGS',
+						message: "'document' is required when 'vector' is provided",
+					});
 				}
 
 				if (args.vector !== undefined && args.document !== undefined) {
