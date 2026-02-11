@@ -1,0 +1,736 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource/ibm-plex-mono/700.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================
+   INTERVAL - Sharp Dark Theme
+   ============================================
+   OpenCode-inspired design language
+   - Zero border radius (sharp corners)
+   - Dark blue-black base
+   - Orange/rust accent
+   - Fast linear animations
+   ============================================ */
+
+:root {
+	/* ZERO radius - sharp corners everywhere */
+	--radius: 0;
+
+	/* Dark theme as default */
+	--background: oklch(0.11 0.015 260);
+	--foreground: oklch(0.93 0.008 60);
+
+	/* Card/Surface - slightly elevated */
+	--card: oklch(0.14 0.015 260);
+	--card-foreground: oklch(0.93 0.008 60);
+
+	/* Popover */
+	--popover: oklch(0.14 0.015 260);
+	--popover-foreground: oklch(0.93 0.008 60);
+
+	/* Primary - warm orange/rust accent */
+	--primary: oklch(0.68 0.17 45);
+	--primary-foreground: oklch(0.11 0.015 260);
+
+	/* Secondary */
+	--secondary: oklch(0.18 0.015 260);
+	--secondary-foreground: oklch(0.93 0.008 60);
+
+	/* Muted */
+	--muted: oklch(0.18 0.015 260);
+	--muted-foreground: oklch(0.55 0.015 260);
+
+	/* Accent - same as primary */
+	--accent: oklch(0.68 0.17 45);
+	--accent-foreground: oklch(0.11 0.015 260);
+
+	/* Destructive */
+	--destructive: oklch(0.6 0.2 25);
+
+	/* Border/Input - subtle but visible */
+	--border: oklch(0.22 0.015 260);
+	--input: oklch(0.18 0.015 260);
+	--ring: oklch(0.68 0.17 45);
+
+	/* Chart colors */
+	--chart-1: oklch(0.68 0.17 45);
+	--chart-2: oklch(0.6 0.12 185);
+	--chart-3: oklch(0.5 0.1 280);
+	--chart-4: oklch(0.7 0.15 140);
+	--chart-5: oklch(0.65 0.18 330);
+
+	/* Sidebar */
+	--sidebar: oklch(0.09 0.015 260);
+	--sidebar-foreground: oklch(0.93 0.008 60);
+	--sidebar-primary: oklch(0.68 0.17 45);
+	--sidebar-primary-foreground: oklch(0.11 0.015 260);
+	--sidebar-accent: oklch(0.68 0.17 45);
+	--sidebar-accent-foreground: oklch(0.11 0.015 260);
+	--sidebar-border: oklch(0.18 0.015 260);
+	--sidebar-ring: oklch(0.68 0.17 45);
+
+	/* Layout */
+	--sidebar-width: 260px;
+	--navbar-height: 48px;
+
+	/* Typography */
+	--font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+	--font-display: 'Inter Variable', 'Inter', -apple-system, sans-serif;
+
+	/* Animation - fast and linear */
+	--duration-fast: 100ms;
+	--duration-normal: 150ms;
+	--duration-slow: 200ms;
+	--ease: linear;
+}
+
+/* Tailwind theme mapping */
+@theme inline {
+	--radius-sm: 0;
+	--radius-md: 0;
+	--radius-lg: 0;
+	--radius-xl: 0;
+	--radius-2xl: 0;
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--font-sans: 'Inter Variable', sans-serif;
+	--font-display: 'Inter Variable', sans-serif;
+	--font-mono: 'IBM Plex Mono', monospace;
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	html {
+		/* Force dark mode */
+		color-scheme: dark;
+	}
+	body {
+		@apply bg-background text-foreground font-sans antialiased;
+	}
+}
+
+/* ============================================
+   Skeleton & Loading States
+   ============================================ */
+
+@keyframes skeleton-pulse {
+	0%,
+	100% {
+		opacity: 0.4;
+	}
+	50% {
+		opacity: 0.7;
+	}
+}
+
+.skeleton {
+	@apply bg-muted;
+	animation: skeleton-pulse 1.2s linear infinite;
+}
+
+/* Delayed skeleton - prevents flash on fast loads */
+.skeleton-delayed {
+	opacity: 0;
+	animation:
+		skeleton-fade-in 100ms linear 100ms forwards,
+		skeleton-pulse 1.2s linear 100ms infinite;
+}
+
+@keyframes skeleton-fade-in {
+	to {
+		opacity: 1;
+	}
+}
+
+/* Content hydration animation */
+.content-hydrated {
+	animation: content-enter 150ms linear;
+}
+
+@keyframes content-enter {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* ============================================
+   App Layout
+   ============================================ */
+
+.app-layout {
+	@apply bg-background flex h-dvh flex-col overflow-hidden;
+}
+
+.app-main {
+	@apply flex min-h-0 flex-1 overflow-hidden;
+}
+
+.main-content {
+	@apply bg-card border-border flex min-w-0 flex-1 flex-col overflow-hidden border-l;
+}
+
+.main-scroll-area {
+	@apply flex-1 overflow-auto pb-20 md:pb-0;
+}
+
+/* ============================================
+   Navbar
+   ============================================ */
+
+.navbar {
+	@apply bg-background border-border flex h-[var(--navbar-height)] min-h-[var(--navbar-height)] items-center justify-between border-b px-4;
+}
+
+.navbar-brand {
+	@apply text-foreground flex items-center gap-2 font-mono text-sm font-semibold tracking-tight no-underline;
+}
+
+.navbar-brand-icon {
+	@apply text-primary h-5 w-5;
+}
+
+.navbar-center {
+	@apply flex flex-1 justify-center;
+}
+
+.navbar-actions {
+	@apply flex items-center gap-1;
+}
+
+/* Search trigger in navbar */
+.search-trigger {
+	@apply text-muted-foreground bg-muted border-border flex items-center gap-3 border px-3 py-1.5 text-sm transition-colors;
+	transition-duration: var(--duration-fast);
+}
+
+.search-trigger:hover {
+	@apply bg-secondary text-foreground border-border;
+}
+
+.search-trigger kbd {
+	@apply text-muted-foreground bg-background border-border border px-1.5 py-0.5 font-mono text-xs;
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+
+.sidebar {
+	@apply bg-sidebar border-sidebar-border hidden h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col overflow-hidden border-r md:flex;
+}
+
+.sidebar-header {
+	@apply border-sidebar-border flex items-center justify-between border-b px-3 py-2;
+}
+
+.sidebar-title {
+	@apply text-muted-foreground font-mono text-xs font-medium tracking-wider uppercase;
+}
+
+.sidebar-content {
+	@apply flex-1 overflow-auto;
+}
+
+.sidebar-footer {
+	@apply border-sidebar-border border-t p-3;
+}
+
+/* Sidebar list items */
+.sidebar-item {
+	@apply flex items-center gap-2 px-3 py-2 text-sm no-underline transition-colors;
+	transition-duration: var(--duration-fast);
+}
+
+.sidebar-item:not(.sidebar-item-active) {
+	@apply text-muted-foreground hover:bg-muted hover:text-foreground;
+}
+
+.sidebar-item-active {
+	@apply bg-muted text-foreground border-primary border-l-2;
+}
+
+/* ============================================
+   Floating Islands (Mobile Navigation)
+   ============================================ */
+
+.floating-island {
+	@apply fixed bottom-4 z-40 md:hidden;
+	@apply bg-card/95 border-border border;
+	@apply pb-[env(safe-area-inset-bottom)];
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow:
+		0 4px 24px rgba(0, 0, 0, 0.4),
+		0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.floating-island-back {
+	@apply left-4;
+	animation: island-slide-up 150ms linear;
+}
+
+.floating-island-actions {
+	@apply right-4;
+	animation: island-slide-up 150ms linear;
+}
+
+@keyframes island-slide-up {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* ============================================
+   Editor
+   ============================================ */
+
+.editor-container {
+	@apply mx-auto flex w-full max-w-[720px] flex-1 flex-col px-6 py-8 pb-16;
+}
+
+.editor-header {
+	@apply border-border mb-6 border-b pb-4;
+}
+
+.editor-header-top {
+	@apply flex items-start gap-3;
+}
+
+.editor-title {
+	@apply text-foreground m-0 mb-2 flex-1 cursor-text border-none bg-transparent p-0 text-left font-sans text-2xl leading-tight font-medium transition-colors;
+	transition-duration: var(--duration-fast);
+}
+
+.editor-title:hover {
+	@apply text-primary;
+}
+
+.editor-title-input {
+	@apply text-foreground border-primary m-0 mb-2 w-full flex-1 border-b-2 border-none bg-transparent p-0 pb-1 font-sans text-2xl leading-tight font-medium outline-none;
+}
+
+.editor-meta {
+	@apply text-muted-foreground m-0 font-mono text-xs;
+}
+
+.editor-content {
+	@apply relative flex-1 bg-transparent;
+}
+
+/* TipTap Editor */
+.tiptap-editor {
+	@apply text-foreground min-h-[200px] outline-none;
+}
+
+.tiptap-editor.comment-editor {
+	@apply min-h-0;
+}
+
+.tiptap-editor.comment-editor p {
+	@apply m-0;
+}
+
+.tiptap-editor p.is-editor-empty:first-child::before {
+	@apply text-muted-foreground pointer-events-none float-left h-0;
+	content: attr(data-placeholder);
+}
+
+.editor-loading {
+	@apply text-muted-foreground flex flex-col items-center justify-center gap-4 p-16;
+}
+
+.editor-loading-spinner {
+	@apply border-border border-t-primary h-5 w-5 animate-spin border-2;
+}
+
+/* ============================================
+   Welcome Page
+   ============================================ */
+
+.welcome-page {
+	@apply flex flex-1 items-center justify-center p-8;
+}
+
+.welcome-content {
+	@apply max-w-[400px] text-center;
+}
+
+.welcome-flourish {
+	@apply text-primary mx-auto mb-6 flex h-16 w-16 items-center justify-center;
+}
+
+.welcome-title {
+	@apply text-foreground m-0 mb-3 font-sans text-2xl leading-tight font-medium;
+}
+
+.welcome-subtitle {
+	@apply text-muted-foreground m-0 mb-6 text-sm leading-relaxed;
+}
+
+.welcome-hint {
+	@apply text-muted-foreground mt-6 text-xs;
+}
+
+.welcome-hint kbd {
+	@apply bg-muted border-border mx-0.5 inline-block border px-1.5 py-0.5 font-mono text-[0.625rem];
+}
+
+/* ============================================
+   Empty & Error States
+   ============================================ */
+
+.empty-state,
+.error-state {
+	@apply flex flex-1 items-center justify-center p-8;
+}
+
+.empty-state-content,
+.error-state-content {
+	@apply max-w-[280px] text-center;
+}
+
+.empty-state-icon,
+.error-state-icon {
+	@apply text-muted-foreground mb-4 inline-flex h-12 w-12 items-center justify-center;
+}
+
+.empty-state-icon svg,
+.error-state-icon svg {
+	@apply h-8 w-8;
+}
+
+.empty-state-content h2,
+.error-state-content h2 {
+	@apply text-foreground m-0 mb-2 font-sans text-lg font-medium;
+}
+
+.empty-state-content p,
+.error-state-content p {
+	@apply text-muted-foreground m-0 mb-2 text-sm;
+}
+
+.error-state-icon {
+	@apply text-destructive;
+}
+
+/* Keyboard key styling */
+.kbd-key {
+	@apply bg-muted border-border text-muted-foreground mx-0.5 inline-block border px-1.5 py-0.5 font-mono text-[0.625rem];
+}
+
+/* ============================================
+   Prose (Content Renderer)
+   ============================================ */
+
+.prose {
+	@apply text-foreground font-sans text-base leading-relaxed;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+	@apply mt-6 mb-2 font-sans font-medium;
+}
+
+.prose h1 {
+	@apply text-xl;
+}
+.prose h2 {
+	@apply text-lg;
+}
+.prose h3 {
+	@apply text-base;
+}
+.prose h4 {
+	@apply text-sm;
+}
+
+.prose p {
+	@apply m-0 mb-4;
+}
+.prose ul,
+.prose ol {
+	@apply m-0 mb-4 pl-6;
+}
+.prose li {
+	@apply mb-1;
+}
+
+.prose blockquote {
+	@apply border-primary text-muted-foreground my-4 border-l-2 pl-4;
+}
+
+.prose pre {
+	@apply bg-muted border-border my-4 overflow-x-auto border p-3 font-mono text-sm;
+}
+
+.prose code {
+	@apply bg-muted px-1 py-0.5 font-mono text-sm;
+}
+
+.prose pre code {
+	@apply bg-transparent p-0;
+}
+
+.prose a {
+	@apply text-primary underline underline-offset-2;
+}
+
+.prose hr {
+	@apply border-border my-8 border-t border-none;
+}
+
+.prose img {
+	@apply h-auto max-w-full;
+}
+
+.prose table {
+	@apply my-4 w-full border-collapse;
+}
+
+.prose th,
+.prose td {
+	@apply border-border border p-2 text-left;
+}
+
+.prose th {
+	@apply bg-muted font-medium;
+}
+
+/* ============================================
+   Collaboration Cursors & Presence
+   ============================================ */
+
+:root {
+	/* Collaboration colors - warm palette */
+	--collab-rust: oklch(0.65 0.18 30);
+	--collab-terracotta: oklch(0.62 0.16 45);
+	--collab-amber: oklch(0.68 0.14 60);
+	--collab-gold: oklch(0.65 0.16 75);
+	--collab-olive: oklch(0.58 0.12 120);
+	--collab-teal: oklch(0.6 0.12 180);
+	--collab-blue: oklch(0.6 0.14 240);
+	--collab-purple: oklch(0.6 0.16 300);
+	--collab-pink: oklch(0.65 0.16 340);
+}
+
+/* Cursor caret - vertical line */
+.collaboration-carets__caret {
+	position: relative;
+	margin-left: -1px;
+	margin-right: -1px;
+	border-left: 2px solid currentColor;
+	word-break: normal;
+	pointer-events: none;
+}
+
+/* Label - minimal name tag */
+.collaboration-carets__label {
+	position: absolute;
+	bottom: 100%;
+	left: -1px;
+	font-family: var(--font-mono);
+	font-size: 0.625rem;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	padding: 0.125rem 0.375rem;
+	color: white;
+	user-select: none;
+	pointer-events: none;
+	animation: collab-label-enter 150ms linear;
+	transform-origin: bottom left;
+}
+
+@keyframes collab-label-enter {
+	from {
+		opacity: 0;
+		transform: translateY(4px) scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+/* Selection highlight */
+.collaboration-carets__selection {
+	opacity: 0.2;
+}
+
+/* Avatar presence animation */
+.avatar-presence-enter {
+	animation: avatar-slide-in 150ms linear;
+}
+
+@keyframes avatar-slide-in {
+	from {
+		opacity: 0;
+		transform: translateX(8px) scale(0.9);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0) scale(1);
+	}
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
+
+::-webkit-scrollbar {
+	@apply h-2 w-2;
+}
+
+::-webkit-scrollbar-track {
+	@apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	@apply bg-border;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	@apply bg-muted-foreground;
+}
+
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+}
+
+/* ============================================
+   Table
+   ============================================ */
+
+.data-table {
+	@apply w-full;
+}
+
+.data-table-row {
+	@apply border-border border-b transition-colors;
+	transition-duration: var(--duration-fast);
+}
+
+.data-table-row:hover {
+	@apply bg-muted/50;
+}
+
+.data-table-cell {
+	@apply px-3 py-2;
+}
+
+.data-table-cell-title {
+	@apply text-foreground font-sans text-sm;
+}
+
+.data-table-cell-meta {
+	@apply text-muted-foreground font-mono text-xs;
+}
+
+/* ============================================
+   Responsive
+   ============================================ */
+
+@media (max-width: 768px) {
+	.main-content {
+		@apply border-l-0;
+	}
+
+	.editor-container {
+		@apply px-4 py-6;
+	}
+
+	.editor-title {
+		@apply text-xl;
+	}
+
+	.welcome-hint {
+		@apply hidden;
+	}
+
+	.navbar {
+		@apply px-3;
+	}
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+.transition-fast {
+	transition-duration: var(--duration-fast);
+	transition-timing-function: linear;
+}
+
+.transition-normal {
+	transition-duration: var(--duration-normal);
+	transition-timing-function: linear;
+}
+
+.animate-in {
+	animation: fade-in 150ms linear;
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Focus ring - sharp */
+.focus-ring {
+	@apply ring-ring ring-offset-background ring-1 ring-offset-1 outline-none;
+}

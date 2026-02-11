@@ -1,0 +1,126 @@
+{
+	"name": "@trestleinc/replicate",
+	"version": "2.0.0-preview.0",
+	"private": false,
+	"description": "Offline-first data replication with Yjs CRDTs and Convex",
+	"keywords": [
+		"convex",
+		"crdt",
+		"offline-first",
+		"replicate",
+		"tanstack",
+		"yjs"
+	],
+	"homepage": "https://github.com/trestleinc/replicate#readme",
+	"bugs": {
+		"url": "https://github.com/trestleinc/replicate/issues"
+	},
+	"license": "Apache-2.0",
+	"repository": "github:trestleinc/replicate",
+	"files": [
+		"dist",
+		"LICENSE",
+		"README.md",
+		"src"
+	],
+	"type": "module",
+	"main": "./dist/shared/index.js",
+	"module": "./dist/shared/index.js",
+	"types": "./dist/shared/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/shared/index.d.ts",
+			"import": {
+				"default": "./dist/shared/index.js"
+			}
+		},
+		"./package.json": "./package.json",
+		"./client": {
+			"types": "./dist/client/index.d.ts",
+			"import": {
+				"@convex-dev/component-source": "./src/client/index.ts",
+				"default": "./dist/client/index.js"
+			}
+		},
+		"./server": {
+			"types": "./dist/server/index.d.ts",
+			"import": {
+				"default": "./dist/server/index.js"
+			}
+		},
+		"./convex.config": {
+			"types": "./dist/component/convex.config.d.ts",
+			"import": {
+				"@convex-dev/component-source": "./src/component/convex.config.ts",
+				"default": "./dist/component/convex.config.js"
+			}
+		},
+		"./worker": {
+			"import": "./dist/client/persistence/sqlite/worker.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "tsdown --watch",
+		"clean": "rm -rf dist",
+		"codegen": "convex codegen --component-dir ./src/component",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"format": "prettier --write .",
+		"format:check": "prettier --check ."
+	},
+	"dependencies": {
+		"@logtape/logtape": "catalog:",
+		"@logtape/pretty": "catalog:"
+	},
+	"devDependencies": {
+		"@convex-dev/eslint-plugin": "catalog:",
+		"@edge-runtime/vm": "5.0.0",
+		"@eslint/js": "catalog:",
+		"@microsoft/api-extractor": "7.55.2",
+		"@tanstack/db": "catalog:",
+		"@testing-library/jest-dom": "6.9.1",
+		"@types/node": "catalog:",
+		"@types/sql.js": "1.4.9",
+		"@typescript/native-preview": "7.0.0-dev.20260118.1",
+		"@vitest/browser": "catalog:",
+		"@vitest/browser-playwright": "catalog:",
+		"convex": "catalog:",
+		"convex-test": "catalog:",
+		"dotenv": "17.2.3",
+		"eslint": "catalog:",
+		"eslint-config-prettier": "catalog:",
+		"fake-indexeddb": "6.2.5",
+		"globals": "catalog:",
+		"lib0": "catalog:",
+		"playwright": "catalog:",
+		"prettier": "catalog:",
+		"publint": "0.3.16",
+		"tsdown": "0.20.0-beta.3",
+		"typescript": "catalog:",
+		"typescript-eslint": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"@op-engineering/op-sqlite": "15.1.14",
+		"@tanstack/db": "^0.5.20",
+		"convex": "^1.31.4",
+		"lib0": "^0.2.0",
+		"wa-sqlite": "1.0.0",
+		"y-protocols": "1.0.7",
+		"yjs": "13.6.29"
+	},
+	"peerDependenciesMeta": {
+		"wa-sqlite": {
+			"optional": true
+		},
+		"@op-engineering/op-sqlite": {
+			"optional": true
+		}
+	}
+}

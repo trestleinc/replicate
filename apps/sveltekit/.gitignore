@@ -1,0 +1,16 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+dev-dist
+*.local
+count.txt
+.env
+.tanstack
+.wrangler
+.vinxi
+todos.json
+
+# Generated files
+convex/_generated/
+src/routeTree.gen.ts
