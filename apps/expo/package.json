@@ -24,7 +24,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "catalog:",
     "convex": "1.31.2",
-    "effect": "3.19.13",
+    "effect": "3.20.0",
     "expo": "~54.0.0",
     "expo-router": "6.0.21",
     "expo-splash-screen": "~31.0.13",
