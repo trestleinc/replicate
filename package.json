@@ -136,7 +136,7 @@
 	"dependencies": {
 		"@convex-dev/better-auth": "^0.10.10",
 		"@trestleinc/replicate": "workspace:*",
-		"better-auth": "1.4.9",
+		"better-auth": "1.6.2",
 		"convex": "catalog:",
 		"zod": "catalog:"
 	}

@@ -35,7 +35,7 @@
 		"@tiptap/pm": "catalog:",
 		"@tiptap/starter-kit": "catalog:",
 		"@trestleinc/replicate": "workspace:*",
-		"better-auth": "1.4.9",
+		"better-auth": "1.6.2",
 		"bits-ui": "^2.14.4",
 		"clsx": "catalog:",
 		"convex": "catalog:",
