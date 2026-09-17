@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deletion and recovery absence drain/delete durable document state; failed writes cannot advance cursors or acknowledge undurable vectors.
 - Raw updates with missing Yjs dependencies survive restart; stale network generations cannot repopulate reset replicas.
 - Disconnect/reset followed by collection cleanup stops each Convex subscription once and ignores queued callbacks after unsubscribe.
+- Full-row updates remove omitted optional fields, SQLite document clearing is atomic, and browser worker shutdown drains accepted work while rejecting new work after closing starts.
 - Snapshot/delta discovery works after compaction, including scheduled compaction and writes between small pages.
 
 ### Upgrade notes

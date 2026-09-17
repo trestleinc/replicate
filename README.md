@@ -38,7 +38,7 @@ graph TB
         App[Application]
         Collection[TanStack DB Collection]
         Yjs[Yjs CRDT Documents]
-        SQLite[SQLite / OPFS]
+        SQLite[SQLite / IndexedDB]
     end
 
     subgraph Server
@@ -192,6 +192,7 @@ import type { Infer } from 'convex/values';
 
 const sqlite = persistence.web.sqlite.once({
 	name: 'myapp',
+	assetBase: '/replicate-sqlite',
 	worker: async () => {
 		const { default: SqliteWorker } = await import('@trestleinc/replicate/worker?worker');
 		return new SqliteWorker();
@@ -210,6 +211,9 @@ export const tasks = collection.create({
 
 export type Task = Infer<typeof taskSchema.shape>;
 ```
+
+For offline startup, copy the packaged runtime with `replicate-sqlite-assets public/replicate-sqlite`
+and precache it with the application shell. See [Durable offline replicas](docs/offline-replicas.md#browser-assets-and-offline-startup).
 
 ### Step 4: Initialize and Use
 
@@ -362,19 +366,20 @@ const empty = schema.prose.empty();
 
 Replicate ships with several persistence backends:
 
-| Provider                                     | Platform     | Description                                    |
-| -------------------------------------------- | ------------ | ---------------------------------------------- |
-| `persistence.web.sqlite.create(options)`     | Browser      | wa-sqlite in a Web Worker with OPFS storage    |
-| `persistence.web.sqlite.once(options)`       | Browser      | Same as above, but returns a singleton factory |
-| `persistence.native.sqlite.create(db, name)` | React Native | op-sqlite integration                          |
-| `persistence.memory.create()`                | Any          | In-memory (for testing)                        |
-| `persistence.custom.create(adapter)`         | Any          | Bring your own `StorageAdapter`                |
+| Provider                                     | Platform     | Description                                      |
+| -------------------------------------------- | ------------ | ------------------------------------------------ |
+| `persistence.web.sqlite.create(options)`     | Browser      | wa-sqlite in a Web Worker with IndexedDB storage |
+| `persistence.web.sqlite.once(options)`       | Browser      | Same as above, but returns a singleton factory   |
+| `persistence.native.sqlite.create(db, name)` | React Native | op-sqlite integration                            |
+| `persistence.memory.create()`                | Any          | In-memory (for testing)                          |
+| `persistence.custom.create(adapter)`         | Any          | Bring your own `StorageAdapter`                  |
 
 **Web SQLite options:**
 
 ```typescript
 interface WebSqliteOptions {
-	name: string; // Database name in OPFS
+	name: string; // Database name in IndexedDB
+	assetBase?: string; // Base URL for the compatible wa-sqlite runtime graph
 	worker: Worker | (() => Worker | Promise<Worker>);
 }
 ```
@@ -639,37 +644,34 @@ await configure({
 
 ### Encrypted Storage
 
-Encrypt the local SQLite database using WebAuthn PRF (Passkey-derived keys):
+Encrypt persisted document payloads and application key-value payloads using WebAuthn PRF (Passkey-derived keys). Storage metadata, including key names and the document-ID discovery index, remains visible to the backing persistence provider:
 
 ```typescript
 import { persistence } from '@trestleinc/replicate/client';
 
 // Check if the browser supports PRF
 const supported = await persistence.web.encryption.webauthn.supported();
+if (!supported) throw new Error('WebAuthn PRF is required by this configuration');
 
-// Create an encryption manager (handles key lifecycle)
-const manager = persistence.web.encryption.manager({
-	rpId: 'example.com',
-	rpName: 'My App',
-	onStateChange: (state) => {
-		/* update UI */
+const storage = await persistence.web.sqlite.create({
+	name: 'myapp-encrypted',
+	assetBase: '/replicate-sqlite',
+	worker: async () => {
+		const { default: W } = await import('@trestleinc/replicate/worker?worker');
+		return new W();
 	},
 });
 
-// Create encrypted persistence
-const encrypted = () =>
-	persistence.web.encryption.create({
-		manager,
-		name: 'myapp-encrypted',
-		worker: async () => {
-			const { default: W } = await import('@trestleinc/replicate/worker?worker');
-			return new W();
-		},
-	});
+const encrypted = await persistence.web.encryption.create({
+	storage,
+	user: currentUser.id,
+	unlock: { webauthn: true },
+});
+await encrypted.unlock();
 
 const tasks = collection.create({
 	schema: taskSchema,
-	persistence: encrypted,
+	persistence: async () => encrypted,
 	config: () => ({
 		/* ... */
 	}),
@@ -837,6 +839,9 @@ function create<T extends object>(options: CreateCollectionOptions<T>): LazyColl
 interface CreateCollectionOptions<T> {
 	schema: VersionedSchema<GenericValidator>;
 	persistence: () => Promise<Persistence>;
+	networkMode?: 'auto' | 'manual'; // Defaults to auto
+	readOnly?: boolean; // Defaults to false
+	requestArgs?: () => Record<string, Value>; // Captured for each connection
 	config: () => {
 		convexClient: ConvexClient;
 		api: ConvexCollectionApi;
@@ -848,6 +853,10 @@ interface CreateCollectionOptions<T> {
 	pagination?: PaginationConfig;
 }
 ```
+
+`tasks.get()` returns the TanStack collection with `connect()`, `disconnect()`, and `reset()`
+methods. In manual mode, call and await `connect()` after credentials are available. Await
+`disconnect()` before changing account context and `reset()` when clearing the durable replica.
 
 #### `LazyCollection<T>`
 
@@ -996,11 +1005,11 @@ interface UserIdentity {
 }
 ```
 
-### Shared Types (`@trestleinc/replicate/shared`)
+### Shared Types (`@trestleinc/replicate`)
 
 ```typescript
-import type { ProseValue, Duration, CompactionConfig } from '@trestleinc/replicate/shared';
-import { parseDuration } from '@trestleinc/replicate/shared';
+import type { ProseValue, Duration, CompactionConfig } from '@trestleinc/replicate';
+import { parseDuration } from '@trestleinc/replicate';
 
 // Duration strings
 type Duration = `${number}${'m' | 'h' | 'd'}`;
@@ -1066,7 +1075,7 @@ A full-featured offline-first issue tracker demonstrating real-world usage.
 
 **Features demonstrated:**
 
-- Offline-first with wa-sqlite persistence (SQLite in OPFS)
+- Offline-first with wa-sqlite persistence (SQLite in IndexedDB)
 - Rich text editing with TipTap + Yjs collaboration
 - PWA with custom service worker for offline navigation
 - Real-time sync across devices

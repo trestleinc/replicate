@@ -68,6 +68,7 @@ async function disk(path?: string, before?: (sql: string, params?: unknown[]) =>
 		path = join(directory, 'replica.sqlite');
 	}
 	const db = new DatabaseSync(path);
+	let closed = false;
 	const persistence = await createNativeSqlitePersistence(
 		{
 			async execute(sql, params = []) {
@@ -79,12 +80,13 @@ async function disk(path?: string, before?: (sql: string, params?: unknown[]) =>
 				return { rows: [] };
 			},
 			close() {
+				closed = true;
 				db.close();
 			},
 		},
 		path
 	);
-	return { persistence, path };
+	return { persistence, path, database: db, isClosed: () => closed };
 }
 async function seed(p: Persistence, id = 'a') {
 	const doc = new Y.Doc();
@@ -448,6 +450,40 @@ test('writable default still inserts and sends document updates', async () => {
 	await vi.waitFor(() => expect(rows.get('new')?.title).toBe('edited'));
 });
 
+test('full-row updates remove omitted optional fields from outbound and reopened data', async () => {
+	const first = await disk();
+	disposals.push(() => first.persistence.close!());
+	const net = transport();
+	const { rows } = await open(first.persistence, net, { networkMode: 'manual' });
+	let seq = 0;
+	net.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate')
+			net.emit(page({ ...args, seq: ++seq, exists: true }));
+		return { success: true, seq };
+	});
+	await rows.connect();
+	await rows.insert({ id: 'optional', title: 'row', note: 'remove me' }).isPersisted.promise;
+	await rows.update('optional', (row) => {
+		row.note = undefined;
+	}).isPersisted.promise;
+	await vi.waitFor(() => expect(rows.get('optional')).not.toHaveProperty('note'));
+	const update = net.client.mutation.mock.calls
+		.filter(
+			([ref, args]: any) => getFunctionName(ref) === 'offline:replicate' && args.type === 'update'
+		)
+		.at(-1)?.[1];
+	expect(update.material).not.toHaveProperty('note');
+	await rows.disconnect();
+	await rows.cleanup();
+	disposals.pop();
+	await first.persistence.close!();
+
+	const reopened = await disk(first.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('optional')).toEqual({ id: 'optional', title: 'row' });
+});
+
 test('delayed data and cursor writes cannot be overtaken by marks or concurrent callbacks', async () => {
 	const dataGate = deferred();
 	const cursorGate = deferred();
@@ -467,11 +503,16 @@ test('delayed data and cursor writes cannot be overtaken by marks or concurrent 
 	callback(page(change('a', 1)));
 	callback(page(change('a', 1), change('b', 2)));
 	await new Promise((resolve) => setTimeout(resolve, 20));
-	expect(await db.persistence.kv.get('cursor:offline')).toBeUndefined();
+	expect(
+		db.database.prepare("SELECT value FROM kv WHERE key = 'cursor:offline'").get()
+	).toBeUndefined();
 	expect(network.client.mutation).not.toHaveBeenCalled();
 	delayData = false;
 	dataGate.resolve();
 	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(
+		db.database.prepare("SELECT value FROM kv WHERE key = 'cursor:offline'").get()
+	).toBeUndefined();
 	expect(network.client.mutation).not.toHaveBeenCalled();
 	delayCursor = false;
 	cursorGate.resolve();
@@ -617,6 +658,77 @@ test('raw incremental update survives disk restart before its compacted base arr
 		page({ document: 'a', seq: 2, type: 'snapshot', exists: true, bytes: base.buffer })
 	);
 	await vi.waitFor(() => expect(next.rows.get('a')?.title).toBe('latest'));
+});
+
+test('SQLite clear rolls back both tables, fences writes, and survives reopen', async () => {
+	const first = await disk();
+	const source = new Y.Doc();
+	source.getMap('fields').set('title', 'base');
+	const base = Y.encodeStateAsUpdate(source);
+	const vector = Y.encodeStateVector(source);
+	source.getMap('fields').set('title', 'complete');
+	const delta = Y.encodeStateAsUpdate(source, vector);
+	first.database
+		.prepare('INSERT INTO snapshots (collection, data) VALUES (?, ?)')
+		.run('offline:a', base);
+	first.database
+		.prepare('INSERT INTO deltas (collection, data) VALUES (?, ?)')
+		.run('offline:a', delta);
+	first.database.exec(`
+		CREATE TRIGGER reject_delta_delete
+		BEFORE DELETE ON deltas
+		BEGIN SELECT RAISE(ABORT, 'blocked delta delete'); END
+	`);
+	const loaded = new Y.Doc();
+	const provider = first.persistence.createDocPersistence('offline:a', loaded);
+	await provider.whenSynced;
+	expect(loaded.getMap('fields').get('title')).toBe('complete');
+	await expect(provider.clear!()).rejects.toThrow('blocked delta delete');
+	expect(
+		first.database
+			.prepare("SELECT count(*) AS count FROM snapshots WHERE collection = 'offline:a'")
+			.get()
+	).toHaveProperty('count', 1);
+	expect(
+		first.database
+			.prepare("SELECT count(*) AS count FROM deltas WHERE collection = 'offline:a'")
+			.get()
+	).toHaveProperty('count', 1);
+	first.database.exec('DROP TRIGGER reject_delta_delete');
+	await first.persistence.close!();
+
+	const reopened = await disk(first.path);
+	const restored = new Y.Doc();
+	const retry = reopened.persistence.createDocPersistence('offline:a', restored);
+	await retry.whenSynced;
+	expect(restored.getMap('fields').get('title')).toBe('complete');
+	await retry.clear!();
+	await expect(retry.storeUpdate!(base)).rejects.toThrow('closed');
+	await reopened.persistence.close!();
+
+	const final = await disk(first.path);
+	disposals.push(() => final.persistence.close!());
+	expect(await final.persistence.listDocuments('offline')).toEqual([]);
+	source.destroy();
+	loaded.destroy();
+	restored.destroy();
+});
+
+test('SQLite close releases the database after a queued write fails', async () => {
+	const first = await disk(undefined, async (sql) => {
+		if (sql.startsWith('INSERT INTO deltas')) throw new Error('injected write failure');
+	});
+	const doc = new Y.Doc();
+	const provider = first.persistence.createDocPersistence('offline:a', doc);
+	await provider.whenSynced;
+	doc.getMap('fields').set('title', 'failure');
+	await expect(provider.flush!()).rejects.toThrow('injected write failure');
+	await expect(first.persistence.close!()).rejects.toThrow('injected write failure');
+	expect(first.isClosed()).toBe(true);
+	const reopened = await disk(first.path);
+	disposals.push(() => reopened.persistence.close!());
+	expect(await reopened.persistence.listDocuments('offline')).toEqual([]);
+	doc.destroy();
 });
 
 test('custom adapter drains delayed updates before durable removal', async () => {

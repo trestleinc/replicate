@@ -62,14 +62,14 @@ schema.prose(); // Validator for prose fields
 
 ```typescript
 collection.create(); // Main entry point - create lazy-initialized collections
-persistence.web.sqlite(); // Browser wa-sqlite Web Worker + OPFSCoopSyncVFS
+persistence.web.sqlite.create(); // Browser wa-sqlite Web Worker + IDBBatchAtomicVFS (IndexedDB)
 persistence.web.sqlite.once(); // SQLite singleton mode (shared across collections)
-persistence.web.encrypted(); // Browser encrypted storage (WebAuthn PRF)
-persistence.native.sqlite(); // React Native SQLite persistence (op-sqlite)
-persistence.native.encrypted(); // React Native encrypted storage (not yet implemented)
-persistence.memory(); // In-memory persistence (testing)
-persistence.custom(); // Custom storage adapter
-schema.prose(); // Zod schema for prose fields
+persistence.web.encryption.create(); // Browser encrypted storage (WebAuthn PRF)
+persistence.web.encryption.manager(); // Optional encryption lifecycle manager
+persistence.native.sqlite.create(); // React Native SQLite persistence (op-sqlite)
+persistence.native.encryption.create(); // React Native encrypted storage (not yet implemented)
+persistence.memory.create(); // In-memory persistence (testing)
+persistence.custom.create(); // Custom storage adapter
 schema.prose.extract(); // Extract plain text from prose JSON
 schema.prose.empty(); // Create empty prose value
 ```

@@ -1,10 +1,11 @@
-import { createPersistenceFromExecutor, type Executor } from './schema.js';
+import { createPersistenceFromExecutor, type Executor, type SqliteStatement } from './schema.js';
 import type { Persistence } from '../types.js';
 import { compileWasmModule, CDN_BASE } from './preload.js';
 
 const INIT = 0;
 const EXECUTE = 1;
 const CLOSE = 2;
+const TRANSACTION = 4;
 
 interface Request {
 	id: number;
@@ -14,6 +15,7 @@ interface Request {
 	assetBase?: string;
 	sql?: string;
 	params?: unknown[];
+	statements?: readonly SqliteStatement[];
 }
 
 interface Response {
@@ -33,6 +35,7 @@ class WorkerExecutor implements Executor {
 	private nextId = 0;
 	private pending = new Map<number, PendingRequest>();
 	private terminated = false;
+	private closePromise: Promise<void> | null = null;
 
 	constructor(worker: Worker) {
 		this.worker = worker;
@@ -64,6 +67,7 @@ class WorkerExecutor implements Executor {
 
 	private rejectAllPending(error: Error): void {
 		this.terminated = true;
+		this.worker.terminate();
 		for (const [, handler] of this.pending) {
 			handler.reject(error);
 		}
@@ -72,13 +76,18 @@ class WorkerExecutor implements Executor {
 
 	private send(type: number, payload: Partial<Request> = {}): Promise<Record<string, unknown>[]> {
 		return new Promise((resolve, reject) => {
-			if (this.terminated) {
-				reject(new Error('Worker has been terminated'));
+			if (this.terminated || (this.closePromise && type !== CLOSE)) {
+				reject(new Error(this.terminated ? 'Worker has been terminated' : 'Worker is closing'));
 				return;
 			}
 			const id = this.nextId++;
 			this.pending.set(id, { resolve, reject });
-			this.worker.postMessage({ id, type, ...payload } satisfies Request);
+			try {
+				this.worker.postMessage({ id, type, ...payload } satisfies Request);
+			} catch (error) {
+				this.pending.delete(id);
+				reject(error);
+			}
 		});
 	}
 
@@ -91,11 +100,26 @@ class WorkerExecutor implements Executor {
 		return { rows };
 	}
 
+	async transaction(statements: readonly SqliteStatement[]): Promise<void> {
+		await this.send(TRANSACTION, { statements });
+	}
+
 	async close(): Promise<void> {
 		if (this.terminated) return;
-		await this.send(CLOSE);
-		this.terminated = true;
-		this.worker.terminate();
+		if (!this.closePromise) {
+			this.closePromise = this.send(CLOSE).then(
+				() => {
+					this.terminated = true;
+					this.worker.terminate();
+				},
+				(error) => {
+					this.terminated = true;
+					this.worker.terminate();
+					throw error;
+				}
+			);
+		}
+		await this.closePromise;
 	}
 }
 

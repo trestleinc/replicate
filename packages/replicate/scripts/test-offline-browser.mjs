@@ -152,7 +152,12 @@ try {
 	assert.equal(requests, requestCount);
 	assert.deepEqual(errors, []);
 	checks++;
-	await page.evaluate(() => window.replica.close());
+	assert.deepEqual(await page.evaluate(() => window.replica.closeRace()), {
+		acceptedCompleted: true,
+		closeMessages: 1,
+		lateRejected: true,
+	});
+	checks++;
 	process.stdout.write(`${checks} real Chromium offline/process-restart checks passed\n`);
 } finally {
 	await context?.close();

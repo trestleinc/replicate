@@ -28,6 +28,7 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 	private updateHandler: (update: Uint8Array, origin: unknown) => void;
 	private updateCounter = 0;
 	private writes = new PersistenceWrites();
+	private acceptingWrites = true;
 	readonly whenSynced: Promise<void>;
 
 	constructor(
@@ -38,7 +39,7 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== 'custom' && origin !== 'replicate-persisted') {
+			if (this.acceptingWrites && origin !== 'custom' && origin !== 'replicate-persisted') {
 				this.writes.add(async () => {
 					await this.whenSynced;
 					await this.saveUpdate(update);
@@ -76,6 +77,7 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 	}
 
 	async storeUpdate(update: Uint8Array): Promise<void> {
+		if (!this.acceptingWrites) throw new Error('Persistence provider is closed');
 		const bytes = Y.convertUpdateFormatV2ToV1(update);
 		this.writes.add(async () => {
 			await this.whenSynced;
@@ -99,6 +101,7 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 	}
 
 	destroy(): void {
+		this.acceptingWrites = false;
 		this.ydoc.off('update', this.updateHandler);
 	}
 }

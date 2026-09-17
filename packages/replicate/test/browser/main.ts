@@ -31,9 +31,16 @@ const transport = {
 		};
 	},
 };
+let closeMessages = 0;
+const sqliteWorker = new Worker();
+const postMessage = sqliteWorker.postMessage.bind(sqliteWorker);
+sqliteWorker.postMessage = ((message: { type?: number }, options?: StructuredSerializeOptions) => {
+	if (message.type === 2) closeMessages++;
+	postMessage(message, options);
+}) as typeof sqliteWorker.postMessage;
 const local = await persistence.web.sqlite.create({
 	name: 'offline-browser',
-	worker: () => new Worker(),
+	worker: sqliteWorker,
 	assetBase: '/sqlite',
 });
 const lazy = collection.create<{ id: string; title: string }>({
@@ -65,6 +72,24 @@ Object.assign(window, {
 			await rows.disconnect();
 			await rows.cleanup();
 			await local.close!();
+		},
+		closeRace: async () => {
+			await rows.disconnect();
+			await rows.cleanup();
+			let acceptedCompleted = false;
+			const accepted = local.kv.set('accepted-before-close', true).then(() => {
+				acceptedCompleted = true;
+			});
+			const first = local.close!();
+			const second = local.close!();
+			let lateRejected = false;
+			try {
+				await local.kv.get('late');
+			} catch {
+				lateRejected = true;
+			}
+			await Promise.all([accepted, first, second]);
+			return { acceptedCompleted, closeMessages, lateRejected };
 		},
 		emit: (id: string, seq: number, exists = true, raw?: number[]) => {
 			const doc = new Y.Doc();

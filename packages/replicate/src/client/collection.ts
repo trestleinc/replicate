@@ -1029,9 +1029,21 @@ export function convexCollectionOptions<T extends object = object>(
 				(fields) => {
 					const ctx = hasContext(collection) ? getContext(collection) : null;
 					const effectiveClientId = ctx?.clientId ?? 'local';
+					const modifiedKeys = new Set(
+						Object.entries(modifiedFields)
+							.filter(([key, value]) => crdtFields.has(key) || value !== undefined)
+							.map(([key]) => key)
+					);
+					fields.forEach((_, key) => {
+						if (!crdtFields.has(key) && !modifiedKeys.has(key)) fields.delete(key);
+					});
 
 					Object.entries(modifiedFields).forEach(([k, v]) => {
 						const crdtInfo = crdtFields.get(k);
+						if (!crdtInfo && v === undefined) {
+							fields.delete(k);
+							return;
+						}
 
 						// Handle register updates specially - set value with client ID
 						if (crdtInfo?.type === 'register') {

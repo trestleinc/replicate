@@ -82,6 +82,7 @@ class EncryptedKeyValueStore implements KeyValueStore {
 class EncryptedPersistenceProvider implements PersistenceProvider {
 	private updateHandler: (update: Uint8Array, origin: unknown) => void;
 	private writes = new PersistenceWrites();
+	private acceptingWrites = true;
 	readonly whenSynced: Promise<void>;
 
 	constructor(
@@ -94,7 +95,7 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== 'encrypted-load' && origin !== 'replicate-persisted') {
+			if (this.acceptingWrites && origin !== 'encrypted-load' && origin !== 'replicate-persisted') {
 				this.writes.add(async () => {
 					await this.whenSynced;
 					await this.saveUpdate(update);
@@ -154,6 +155,7 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 	}
 
 	async storeUpdate(update: Uint8Array): Promise<void> {
+		if (!this.acceptingWrites) throw new Error('Persistence provider is closed');
 		this.writes.add(async () => {
 			await this.whenSynced;
 			await this.saveUpdate(Y.convertUpdateFormatV2ToV1(update));
@@ -170,6 +172,7 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 	}
 
 	destroy(): void {
+		this.acceptingWrites = false;
 		this.ydoc.off('update', this.updateHandler);
 	}
 }
