@@ -294,7 +294,7 @@ describe('SQLite Persistence', () => {
 	});
 
 	afterEach(async () => {
-		await db.close();
+		await db.close!();
 	});
 
 	test('persists and retrieves data', async () => {
@@ -306,7 +306,7 @@ describe('SQLite Persistence', () => {
 
 	test('reopens IDBBatchAtomicVFS data from IndexedDB', async () => {
 		await db.kv.set('key', 'durable');
-		await db.close();
+		await db.close!();
 		db = await persistence.web.sqlite.create({
 			name,
 			assetBase: '/replicate-sqlite',
