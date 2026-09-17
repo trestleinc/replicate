@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persisted rows become ready without waiting for network recovery.
 - Deletion and recovery absence drain/delete durable document state; failed writes cannot advance cursors or acknowledge undurable vectors.
 - Raw updates with missing Yjs dependencies survive restart; stale network generations cannot repopulate reset replicas.
+- Disconnect/reset followed by collection cleanup stops each Convex subscription once and ignores queued callbacks after unsubscribe.
 - Snapshot/delta discovery works after compaction, including scheduled compaction and writes between small pages.
 
 ### Upgrade notes

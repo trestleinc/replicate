@@ -49,6 +49,7 @@ function transport() {
 			const sub = { args, callback, stopped: false };
 			subscriptions.push(sub);
 			return () => {
+				if (sub.stopped) throw new Error('Subscription already stopped');
 				sub.stopped = true;
 			};
 		}),
@@ -124,6 +125,56 @@ const page = (...changes: any[]) => ({
 	changes,
 	seq: changes.at(-1).seq,
 	more: false,
+});
+
+test.each(['disconnect', 'reset'] as const)(
+	'%s followed by reconnect and cleanup stops each transport subscription once',
+	async (action) => {
+		const db = await disk();
+		disposals.push(() => db.persistence.close!());
+		const { rows, network } = await open(db.persistence, transport(), { networkMode: 'manual' });
+		await rows.connect();
+		const first = [...network.subscriptions];
+		expect(first.length).toBeGreaterThan(0);
+		await rows[action]();
+		expect(first.every((sub) => sub.stopped)).toBe(true);
+		await rows.connect();
+		expect(network.subscriptions.some((sub) => !sub.stopped)).toBe(true);
+		await rows.disconnect();
+		await rows.cleanup();
+		expect(network.subscriptions.every((sub) => sub.stopped)).toBe(true);
+	}
+);
+
+test('unsubscribing suppresses queued callbacks without disconnecting other subscriptions', () => {
+	const callbacks: { value: (value: unknown) => void; error: (error: Error) => void }[] = [];
+	const stop = vi.fn();
+	const connection = createConnection(
+		{
+			onUpdate: (_ref: unknown, _args: unknown, value: any, error: any) => {
+				callbacks.push({ value, error });
+				return stop;
+			},
+		} as any,
+		{}
+	);
+	connection.connect();
+	const value = vi.fn();
+	const error = vi.fn();
+	const remaining = vi.fn();
+	const unsubscribe = connection.client.onUpdate(api.delta, {}, value, error);
+	connection.client.onUpdate(api.delta, {}, remaining);
+	unsubscribe();
+	unsubscribe();
+	callbacks[0].value({});
+	callbacks[0].error(new Error('queued'));
+	callbacks[1].value({});
+	expect(value).not.toHaveBeenCalled();
+	expect(error).not.toHaveBeenCalled();
+	expect(remaining).toHaveBeenCalledOnce();
+	expect(stop).toHaveBeenCalledOnce();
+	connection.disconnect();
+	expect(stop).toHaveBeenCalledTimes(2);
 });
 
 test('manual session subscribers start on connect and reject old callbacks after reconnect', async () => {

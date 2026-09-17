@@ -60,19 +60,22 @@ export function createConnection(client: ConvexClient, options: ConnectionOption
 				return (reference: any, protocol: any, callback: any, onError?: any) => {
 					const token = generation;
 					if (!active) return () => {};
+					let listening = true;
 					const stop = target.onUpdate(
 						reference,
 						{ ...args, ...protocol },
 						(value: any) => {
-							if (active && token === generation) callback(value);
+							if (listening && active && token === generation) callback(value);
 						},
 						(error: Error) => {
-							if (active && token === generation) onError?.(error);
+							if (listening && active && token === generation) onError?.(error);
 						}
 					);
 					const unsubscribe = () => {
-						stop();
+						if (!listening) return;
+						listening = false;
 						subscriptions.delete(unsubscribe);
+						stop();
 					};
 					subscriptions.add(unsubscribe);
 					return unsubscribe;
