@@ -1,6 +1,8 @@
 # Replicate
 
-A local-first sync engine for [Convex](https://convex.dev). Replicate keeps a full copy of your data in client-side SQLite (via OPFS on web, op-sqlite on React Native) and syncs changes through Convex using CRDTs (Yjs). Users get instant reads, offline writes, and real-time collaboration without writing conflict resolution logic.
+A local-first sync engine for [Convex](https://convex.dev). Replicate keeps a full copy of your data in client-side SQLite (via IndexedDB-backed SQLite on web, op-sqlite on React Native) and syncs changes through Convex using CRDTs (Yjs). Users get instant reads, offline writes, and real-time collaboration without writing conflict resolution logic.
+
+For gated synchronization, read-only replicas, durable reset, browser precaching, and existing-component upgrades, see [Durable offline replicas](docs/offline-replicas.md). Existing v2 snapshots require the documented migration before streaming.
 
 ## Architecture
 
@@ -79,7 +81,7 @@ Install the Replicate component in your Convex project:
 ```typescript
 // convex/convex.config.ts
 import { defineApp } from 'convex/server';
-import replicate from '@trestleinc/replicate/component';
+import replicate from '@trestleinc/replicate/convex.config';
 
 const app = defineApp();
 app.use(replicate);

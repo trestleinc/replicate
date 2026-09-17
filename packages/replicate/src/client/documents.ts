@@ -12,10 +12,13 @@ export interface DocumentManager {
 	getOrCreate(id: string): Y.Doc;
 	has(id: string): boolean;
 	delete(id: string): void;
+	remove(id: string): Promise<void>;
+	flush(ids?: Iterable<string>): Promise<void>;
 
 	getFields(id: string): Y.Map<unknown> | null;
 	getFragment(id: string, field: string): Y.XmlFragment | null;
 
+	applyRemote(id: string, update: Uint8Array): Promise<void>;
 	applyUpdate(id: string, update: Uint8Array, origin?: string): void;
 	encodeState(id: string): Uint8Array;
 	encodeStateVector(id: string): Uint8Array;
@@ -72,6 +75,26 @@ export function createDocumentManager(collection: string): DocumentManager {
 			}
 		},
 
+		async remove(id: string): Promise<void> {
+			const provider = persistence.get(id);
+			if (provider && !provider.clear) {
+				throw new Error('PersistenceProvider.clear() is required for durable removal');
+			}
+			await provider?.clear?.();
+			this.delete(id);
+		},
+
+		async flush(ids: Iterable<string> = persistence.keys()): Promise<void> {
+			for (const id of ids) {
+				const provider = persistence.get(id);
+				if (!provider) continue;
+				await provider.whenSynced;
+				if (!provider.flush)
+					throw new Error('PersistenceProvider.flush() is required for durable progress');
+				await provider.flush();
+			}
+		},
+
 		getFields(id: string): Y.Map<unknown> | null {
 			const doc = docs.get(id);
 			return doc ? doc.getMap('fields') : null;
@@ -87,6 +110,20 @@ export function createDocumentManager(collection: string): DocumentManager {
 			}
 
 			return null;
+		},
+
+		async applyRemote(id: string, update: Uint8Array): Promise<void> {
+			const doc = this.getOrCreate(id);
+			const provider = persistence.get(id);
+			if (provider) {
+				if (!provider.storeUpdate)
+					throw new Error(
+						'PersistenceProvider.storeUpdate() is required for durable remote updates'
+					);
+				await provider.whenSynced;
+				await provider.storeUpdate(update);
+			}
+			Y.applyUpdateV2(doc, update, 'replicate-persisted');
 		},
 
 		applyUpdate(id: string, update: Uint8Array, origin?: string): void {

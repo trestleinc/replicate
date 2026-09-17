@@ -36,6 +36,10 @@ export interface PersistenceProvider {
 	readonly whenSynced: Promise<void>;
 	destroy(): void;
 	flush?(): Promise<void>;
+	/** Detach, drain pending writes, and delete this document's durable state. */
+	clear?(): Promise<void>;
+	/** Persist a raw Yjs V2 update, including unresolved dependencies, before applying it. */
+	storeUpdate?(update: Uint8Array): Promise<void>;
 }
 
 /**
@@ -59,6 +63,8 @@ export interface Persistence {
 	readonly kv: KeyValueStore;
 	/** Direct SQL access for migrations (only available with SQLite persistence) */
 	readonly db?: MigrationDatabase;
+	/** Drain providers and release the database/worker. */
+	close?(): Promise<void>;
 }
 
 export interface KeyValueStore {

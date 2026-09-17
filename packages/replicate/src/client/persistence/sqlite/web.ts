@@ -1,6 +1,6 @@
 import { createPersistenceFromExecutor, type Executor } from './schema.js';
 import type { Persistence } from '../types.js';
-import { compileWasmModule } from './preload.js';
+import { compileWasmModule, CDN_BASE } from './preload.js';
 
 const INIT = 0;
 const EXECUTE = 1;
@@ -11,6 +11,7 @@ interface Request {
 	type: number;
 	name?: string;
 	wasmModule?: WebAssembly.Module;
+	assetBase?: string;
 	sql?: string;
 	params?: unknown[];
 }
@@ -81,8 +82,8 @@ class WorkerExecutor implements Executor {
 		});
 	}
 
-	async init(name: string, wasmModule: WebAssembly.Module): Promise<void> {
-		await this.send(INIT, { name, wasmModule });
+	async init(name: string, wasmModule: WebAssembly.Module, assetBase: string): Promise<void> {
+		await this.send(INIT, { name, wasmModule, assetBase });
 	}
 
 	async execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> {
@@ -90,36 +91,40 @@ class WorkerExecutor implements Executor {
 		return { rows };
 	}
 
-	close(): void {
-		for (const [, handler] of this.pending) {
-			handler.reject(new Error('Worker terminated'));
-		}
-		this.pending.clear();
-		this.send(CLOSE).catch(() => {});
+	async close(): Promise<void> {
+		if (this.terminated) return;
+		await this.send(CLOSE);
+		this.terminated = true;
 		this.worker.terminate();
 	}
 }
 
 export interface WebSqliteOptions {
 	name: string;
+	/** Base URL of a compatible wa-sqlite runtime graph, including dist/ and src/. */
+	assetBase?: string;
 	worker: Worker | (() => Worker | Promise<Worker>);
 }
 
 export async function createWebSqlitePersistence(options: WebSqliteOptions): Promise<Persistence> {
 	const { name, worker } = options;
+	const assetBase = new URL(options.assetBase ?? CDN_BASE, document.baseURI).href.replace(
+		/\/$/,
+		''
+	);
 
 	// Compile WASM in parallel with worker creation for maximum performance.
 	// compileWasmModule() consumes the <link rel="preload"> cache entry and
 	// uses WebAssembly.compileStreaming for streaming compilation.
 	const [resolvedWorker, wasmModule] = await Promise.all([
 		typeof worker === 'function' ? worker() : worker,
-		compileWasmModule(),
+		compileWasmModule(assetBase),
 	]);
 
 	const executor = new WorkerExecutor(resolvedWorker);
 
 	try {
-		await executor.init(name, wasmModule);
+		await executor.init(name, wasmModule, assetBase);
 	} catch (error) {
 		resolvedWorker.terminate();
 		throw new Error(`Failed to initialize: ${error}`);

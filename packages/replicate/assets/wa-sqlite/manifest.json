@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/rhashimoto/wa-sqlite",
+  "revision": "55bf0b6646ac1bb81b00b9c25636b59a87e4a918",
+  "buildRevision": "44cc640c65f29de9bfbc2004974c9f6c2c690c2b",
+  "sha256": {
+    "dist/wa-sqlite-async.mjs": "0ba7e66b84408267ac00a5f75b1f3c733f258fbc6b6dc91baa567e0e963892a9",
+    "dist/wa-sqlite-async.wasm": "c3af64afbe6034af23fb756bb040e7d8d73aaf6596f9f2b3ea463c8c036bf5e5",
+    "src/examples/IDBBatchAtomicVFS.js": "0b72ab6b1a692c5e5d56a0dd387c3de5a65265c91a0da8baf90407a7f0dd043e",
+    "src/FacadeVFS.js": "dd00dc59720c0bebb91b6f982e5339351997467ff868a608e915cc020e13fbca",
+    "src/VFS.js": "55e7455e2ec0000cc4ba7a8bf7882f414a40f2a0ba6eb4c4ac847f379f54d92f",
+    "src/WebLocksMixin.js": "1ea5c7e9e02dc94566b910b396f17a3c93aeab04a208177e8c1bd3bb65618d44",
+    "src/sqlite-api.js": "8d7a59fa1df49859e584561945307b61460d3b544e10f9d2cb2514aef1ecfd42",
+    "src/sqlite-constants.js": "f7b570f0c39e4b54c99f2598b6ad42018d4d8bf791861ede20d295628ae49f8f",
+    "LICENSE": "547f9e97e461bd369cc64b6fc12d724e8b02764b8db7812691f29f0ec572be79",
+    "ACKNOWLEDGMENTS.md": "5dae12fa0c82fe1a6a70fcf6b765298b5f32b7d32449f4d72ae1c12468457762"
+  }
+}

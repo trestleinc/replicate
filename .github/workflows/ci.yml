@@ -14,6 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -23,8 +27,23 @@ jobs:
       - name: Build packages
         run: bun run build:packages
 
+      - name: Test replication contracts
+        run: bun run test
+
+      - name: Verify SQLite assets
+        run: bun run --filter @trestleinc/replicate test:assets
+
+      - name: Install Chromium
+        working-directory: packages/replicate
+        run: bunx playwright install --with-deps chromium
+
+      - name: Test offline browser restarts
+        run: bun run --filter @trestleinc/replicate test:browser
+
       - name: Lint
         run: bun run lint
 
       - name: Type check
+        env:
+          PUBLIC_CONVEX_URL: https://example.convex.cloud
         run: bun run check

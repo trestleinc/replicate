@@ -21,7 +21,9 @@
 		"dist",
 		"LICENSE",
 		"README.md",
-		"src"
+		"src",
+		"assets",
+		"scripts/copy-sqlite-assets.mjs"
 	],
 	"type": "module",
 	"main": "./dist/shared/index.js",
@@ -57,7 +59,8 @@
 		},
 		"./worker": {
 			"import": "./dist/client/persistence/sqlite/worker.js"
-		}
+		},
+		"./sqlite-assets/*": "./assets/wa-sqlite/*"
 	},
 	"publishConfig": {
 		"access": "public"
@@ -72,7 +75,9 @@
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"test:browser": "node scripts/test-offline-browser.mjs",
+		"test:assets": "node scripts/copy-sqlite-assets.mjs --verify"
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:",
@@ -104,7 +109,8 @@
 		"tsdown": "0.20.0-beta.3",
 		"typescript": "catalog:",
 		"typescript-eslint": "catalog:",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"vite": "catalog:"
 	},
 	"peerDependencies": {
 		"@op-engineering/op-sqlite": "15.1.14",
@@ -122,5 +128,8 @@
 		"@op-engineering/op-sqlite": {
 			"optional": true
 		}
+	},
+	"bin": {
+		"replicate-sqlite-assets": "./scripts/copy-sqlite-assets.mjs"
 	}
 }

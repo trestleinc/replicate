@@ -63,6 +63,13 @@ describe('Replicate Component Mutations', () => {
 	});
 
 	describe('scheduleCompaction', () => {
+		const validUpdate = () => {
+			const doc = new Y.Doc();
+			doc.getMap('fields').set('title', 'scheduled');
+			const update = Y.encodeStateAsUpdateV2(doc);
+			doc.destroy();
+			return update.buffer as ArrayBuffer;
+		};
 		it('should schedule compaction for a document', async () => {
 			vi.useFakeTimers();
 
@@ -70,7 +77,7 @@ describe('Replicate Component Mutations', () => {
 			await t.mutation(api.mutations.insertDocument, {
 				collection: 'test-collection',
 				document: 'test-doc',
-				bytes: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer,
+				bytes: validUpdate(),
 			});
 
 			const result = await t.mutation(api.mutations.scheduleCompaction, {
@@ -94,7 +101,7 @@ describe('Replicate Component Mutations', () => {
 			await t.mutation(api.mutations.insertDocument, {
 				collection: 'test-collection',
 				document: 'test-doc',
-				bytes: new Uint8Array([1, 2, 3]).buffer as ArrayBuffer,
+				bytes: validUpdate(),
 			});
 
 			// Schedule first compaction

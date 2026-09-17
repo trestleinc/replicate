@@ -1,7 +1,5 @@
 import { initSchema, type Executor } from './schema.js';
 
-const CDN_BASE = 'https://wa-sqlite.trestle.inc/v1.0.0';
-
 const INIT = 0;
 const EXECUTE = 1;
 const CLOSE = 2;
@@ -12,6 +10,7 @@ interface Request {
 	type: typeof INIT | typeof EXECUTE | typeof CLOSE | typeof FLUSH;
 	name?: string;
 	wasmModule?: WebAssembly.Module;
+	assetBase?: string;
 	sql?: string;
 	params?: unknown[];
 }
@@ -28,11 +27,15 @@ let db: number;
 let vfs: any;
 let mutex: Promise<unknown> = Promise.resolve();
 
-async function init(name: string, wasmModule: WebAssembly.Module): Promise<void> {
+async function init(
+	name: string,
+	wasmModule: WebAssembly.Module,
+	assetBase: string
+): Promise<void> {
 	const [{ default: SQLiteESMFactory }, { IDBBatchAtomicVFS }, SQLite] = await Promise.all([
-		import(/* @vite-ignore */ `${CDN_BASE}/dist/wa-sqlite-async.mjs`),
-		import(/* @vite-ignore */ `${CDN_BASE}/src/examples/IDBBatchAtomicVFS.js`),
-		import(/* @vite-ignore */ `${CDN_BASE}/src/sqlite-api.js`),
+		import(/* @vite-ignore */ `${assetBase}/dist/wa-sqlite-async.mjs`),
+		import(/* @vite-ignore */ `${assetBase}/src/examples/IDBBatchAtomicVFS.js`),
+		import(/* @vite-ignore */ `${assetBase}/src/sqlite-api.js`),
 	]);
 
 	const module = await SQLiteESMFactory({
@@ -52,7 +55,7 @@ async function init(name: string, wasmModule: WebAssembly.Module): Promise<void>
 	db = await sqlite3.open_v2(name);
 
 	await sqlite3.exec(db, 'PRAGMA cache_size = -8000;');
-	await sqlite3.exec(db, 'PRAGMA synchronous = NORMAL;');
+	await sqlite3.exec(db, 'PRAGMA synchronous = FULL;');
 	await sqlite3.exec(db, 'PRAGMA temp_store = MEMORY;');
 
 	const executor: Executor = {
@@ -103,7 +106,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
 	try {
 		switch (type) {
 			case INIT:
-				await init(name!, e.data.wasmModule!);
+				await init(name!, e.data.wasmModule!, e.data.assetBase!);
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 			case EXECUTE: {
@@ -115,8 +118,9 @@ self.onmessage = async (e: MessageEvent<Request>) => {
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 			case CLOSE:
-				sqlite3.close(db);
-				vfs.close();
+				await mutex;
+				await sqlite3.close(db);
+				await vfs.close();
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 		}

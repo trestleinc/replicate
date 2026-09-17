@@ -92,7 +92,7 @@ export function observeFragment(config: ProseObserverConfig): () => void {
 	logger.debug('Fragment observer registered', { collection, document, field });
 
 	const observerHandler = (_events: Y.YEvent<any>[], transaction: Y.Transaction) => {
-		if (transaction.origin === SERVER_ORIGIN) {
+		if (transaction.origin === SERVER_ORIGIN || transaction.origin === 'replicate-persisted') {
 			return;
 		}
 

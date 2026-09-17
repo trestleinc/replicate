@@ -1,3 +1,4 @@
+import { PersistenceWrites } from '../writes.js';
 import * as Y from 'yjs';
 import type { Persistence, PersistenceProvider, KeyValueStore } from '../types.js';
 import type { WebEncryptionConfig, EncryptionPersistence, EncryptionState } from './types.js';
@@ -80,25 +81,23 @@ class EncryptedKeyValueStore implements KeyValueStore {
 
 class EncryptedPersistenceProvider implements PersistenceProvider {
 	private updateHandler: (update: Uint8Array, origin: unknown) => void;
-	private pendingWrites: Promise<void>[] = [];
+	private writes = new PersistenceWrites();
 	readonly whenSynced: Promise<void>;
 
 	constructor(
 		private innerStorage: Persistence,
 		private collection: string,
 		private ydoc: Y.Doc,
-		private encryptionKey: CryptoKey
+		private encryptionKey: CryptoKey,
+		private index: (name: string, remove?: boolean) => Promise<void>
 	) {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== 'encrypted-load') {
-				const writePromise = this.saveUpdate(update).catch((err: Error) => {
-					console.error('[EncryptedPersistence] Save failed:', err);
-				});
-				this.pendingWrites.push(writePromise);
-				writePromise.finally(() => {
-					this.pendingWrites = this.pendingWrites.filter((p) => p !== writePromise);
+			if (origin !== 'encrypted-load' && origin !== 'replicate-persisted') {
+				this.writes.add(async () => {
+					await this.whenSynced;
+					await this.saveUpdate(update);
 				});
 			}
 		};
@@ -126,6 +125,7 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 
 	private async saveUpdate(update: Uint8Array): Promise<void> {
 		const deltasKey = `${DOC_PREFIX}${this.collection}:deltas`;
+		await this.index(this.collection);
 
 		const encrypted = await encrypt(this.encryptionKey, update);
 		const existingDeltas = (await this.innerStorage.kv.get<number[][]>(deltasKey)) ?? [];
@@ -133,15 +133,15 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 		await this.innerStorage.kv.set(deltasKey, existingDeltas);
 
 		if (existingDeltas.length >= 50) {
-			await this.compact();
+			await this.compact(update);
 		}
 	}
 
-	private async compact(): Promise<void> {
+	private async compact(update: Uint8Array): Promise<void> {
 		const snapshotKey = `${DOC_PREFIX}${this.collection}:snapshot`;
 		const deltasKey = `${DOC_PREFIX}${this.collection}:deltas`;
 
-		const snapshot = Y.encodeStateAsUpdate(this.ydoc);
+		const snapshot = Y.mergeUpdates([Y.encodeStateAsUpdate(this.ydoc), update]);
 		const encrypted = await encrypt(this.encryptionKey, snapshot);
 
 		await this.innerStorage.kv.set(snapshotKey, Array.from(encrypted));
@@ -149,7 +149,24 @@ class EncryptedPersistenceProvider implements PersistenceProvider {
 	}
 
 	async flush(): Promise<void> {
-		await Promise.all(this.pendingWrites);
+		await this.whenSynced;
+		await this.writes.flush();
+	}
+
+	async storeUpdate(update: Uint8Array): Promise<void> {
+		this.writes.add(async () => {
+			await this.whenSynced;
+			await this.saveUpdate(Y.convertUpdateFormatV2ToV1(update));
+		});
+		await this.flush();
+	}
+
+	async clear(): Promise<void> {
+		this.destroy();
+		await this.flush();
+		await this.innerStorage.kv.del(`${DOC_PREFIX}${this.collection}:snapshot`);
+		await this.innerStorage.kv.del(`${DOC_PREFIX}${this.collection}:deltas`);
+		await this.index(this.collection, true);
 	}
 
 	destroy(): void {
@@ -280,6 +297,19 @@ export async function createWebEncryptionPersistence(
 		throw new Error('No unlock method configured');
 	};
 
+	const indexWrites = new PersistenceWrites();
+	const index = async (name: string, remove = false) => {
+		indexWrites.add(async () => {
+			const separator = name.indexOf(':');
+			const key = `enc:documents:${name.slice(0, separator)}`;
+			const id = name.slice(separator + 1);
+			const ids = new Set((await storage.kv.get<string[]>(key)) ?? []);
+			if (remove) ids.delete(id);
+			else ids.add(id);
+			await storage.kv.set(key, [...ids]);
+		});
+		await indexWrites.flush();
+	};
 	const encryptedKv = new EncryptedKeyValueStore(storage.kv, () => encryptionKey);
 
 	return {
@@ -306,12 +336,13 @@ export async function createWebEncryptionPersistence(
 			if (!encryptionKey) {
 				throw new Error('Encryption locked - call unlock() first');
 			}
-			return new EncryptedPersistenceProvider(storage, collection, ydoc, encryptionKey);
+			return new EncryptedPersistenceProvider(storage, collection, ydoc, encryptionKey, index);
 		},
 
 		async listDocuments(prefix: string): Promise<string[]> {
-			const keys = await storage.listDocuments(prefix);
-			return keys;
+			const existing = await storage.listDocuments(prefix);
+			const indexed = (await storage.kv.get<string[]>(`enc:documents:${prefix}`)) ?? [];
+			return [...new Set([...existing, ...indexed])];
 		},
 
 		kv: encryptedKv,

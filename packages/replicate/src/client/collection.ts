@@ -1,3 +1,5 @@
+import { cleanupSyncManager } from './bindings/sync-registry';
+import { createConnection, type ConnectionOptions } from './services/connection';
 import * as Y from 'yjs';
 import type { Persistence, PersistenceProvider } from '$/client/persistence/types';
 import type { ConvexClient } from 'convex/browser';
@@ -26,6 +28,7 @@ import {
 	createDocumentManager,
 	serializeDocument,
 	extractAllDocuments,
+	isDocumentDeleted,
 } from '$/client/documents';
 import { createDeleteDelta, applyDeleteMarkerToDoc } from '$/client/deltas';
 import * as prose from '$/client/prose';
@@ -66,23 +69,6 @@ const logger = getLogger(['replicate', 'collection']);
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Higher-order function for error isolation in handlers.
- * Catches errors and calls errorHandler, returning its result.
- */
-const withErrorIsolation = <T extends unknown[], R>(
-	fn: (...args: T) => R,
-	errorHandler: (error: unknown, ...args: T) => R
-) => {
-	return (...args: T): R => {
-		try {
-			return fn(...args);
-		} catch (error) {
-			return errorHandler(error, ...args);
-		}
-	};
-};
 
 import type { ProseFields } from '$/shared';
 
@@ -164,10 +150,8 @@ interface ConvexCollectionApi {
 	session: FunctionReference<'query'>;
 }
 
-export interface ConvexCollectionConfig<T extends object = object> extends Omit<
-	BaseCollectionConfig<T, string, never>,
-	'schema'
-> {
+export interface ConvexCollectionConfig<T extends object = object>
+	extends Omit<BaseCollectionConfig<T, string, never>, 'schema'>, ConnectionOptions {
 	validator?: GenericValidator;
 	convexClient: ConvexClient;
 	api: ConvexCollectionApi;
@@ -274,6 +258,9 @@ export interface DocumentHandle<T extends object> {
 }
 
 interface ConvexCollectionExtensions<T extends object> {
+	connect(): Promise<void>;
+	disconnect(): Promise<void>;
+	reset(): Promise<void>;
 	doc(id: string): DocumentHandle<T>;
 	readonly session: SessionAPI;
 }
@@ -289,13 +276,70 @@ export function convexCollectionOptions<T extends object = object>(
 		validator,
 		getKey,
 		material,
-		convexClient,
+		convexClient: rawClient,
 		api,
 		persistence,
 		user: userGetter,
 		anonymousPresence,
 	} = config;
 
+	const connection = createConnection(rawClient, config);
+	const convexClient = connection.client;
+	const ensureGeneration = (token: number) => {
+		if (stopped || token !== connection.generation)
+			throw new Error('Operation belongs to a disconnected generation');
+	};
+	const bindings = new Set<{ destroy(): void }>();
+	const trackBinding = <T extends { destroy(): void }>(binding: T): T => {
+		const token = connection.generation;
+		let destroyed = false;
+		const wrapped = new Proxy(binding, {
+			get(target, property) {
+				if (property === 'destroy')
+					return () => {
+						if (destroyed) return;
+						destroyed = true;
+						target.destroy();
+						bindings.delete(wrapped);
+					};
+				const value = Reflect.get(target, property);
+				if (typeof value !== 'function') return value;
+				return (...args: unknown[]) => {
+					ensureGeneration(token);
+					if (destroyed) throw new Error('Binding has been destroyed');
+					return value.apply(target, args);
+				};
+			},
+		});
+		bindings.add(wrapped);
+		return wrapped;
+	};
+	const assertWritable = () => {
+		if (config.readOnly) throw new Error('Collection is read-only');
+	};
+	let startNetwork: (() => Promise<void>) | undefined;
+	let work: Promise<void> = Promise.resolve();
+	let stopped = false;
+	let desiredConnection = config.networkMode !== 'manual';
+	let disconnecting: Promise<void> = Promise.resolve();
+	const revisions = new Map<string, number>();
+	const durableVectors = new Map<string, ArrayBuffer>();
+	const pendingCreates = new Set<string>();
+	const pendingCreateKey = (id: string) => `pending-create:${collection}:${id}`;
+	let retryTimer: ReturnType<typeof setTimeout> | undefined;
+	let localReady: Promise<void> = Promise.resolve();
+	const serialize = (operation: () => Promise<void>) => {
+		const next = work.then(operation);
+		work = next.catch(() => {});
+		return next;
+	};
+	const acknowledgeCreate = (id: string, token: number) =>
+		serialize(async () => {
+			ensureGeneration(token);
+			await persistence.kv.del(pendingCreateKey(id));
+			ensureGeneration(token);
+			pendingCreates.delete(id);
+		});
 	const functionPath = getFunctionName(api.delta);
 	const collection = functionPath.split(':')[0];
 	if (!collection) {
@@ -322,6 +366,7 @@ export function convexCollectionOptions<T extends object = object>(
 			field: ProseFields<DataType>,
 			options?: ProseOptions
 		): Promise<EditorBinding> {
+			assertWritable();
 			const fieldStr = field;
 
 			if (!proseFieldSet.has(fieldStr)) {
@@ -414,12 +459,18 @@ export function convexCollectionOptions<T extends object = object>(
 					client: storedClientId,
 					ydoc: subdoc,
 					syncReady: ctx.synced,
+					durableVector: () => durableVectors.get(document),
 					user: options?.user ?? ctx.userGetter,
 					throttleMs: options?.throttleMs,
 					anonymousPresence: ctx.anonymousPresence,
 				});
 			}
 
+			if (presenceProvider) {
+				const providers = editorPresenceProviders.get(document) ?? new Set<PresenceProvider>();
+				providers.add(presenceProvider);
+				editorPresenceProviders.set(document, providers);
+			}
 			const binding: EditorBinding = {
 				fragment,
 				provider: presenceProvider
@@ -436,10 +487,11 @@ export function convexCollectionOptions<T extends object = object>(
 
 				destroy() {
 					presenceProvider?.destroy();
+					if (presenceProvider) editorPresenceProviders.get(document)?.delete(presenceProvider);
 				},
 			};
 
-			return binding;
+			return trackBinding(binding);
 		},
 
 		/**
@@ -450,6 +502,7 @@ export function convexCollectionOptions<T extends object = object>(
 			field: string,
 			options?: { debounceMs?: number }
 		): Promise<CounterBinding> {
+			assertWritable();
 			const fieldStr = String(field);
 			const crdtInfo = crdtFields.get(fieldStr);
 
@@ -490,18 +543,20 @@ export function convexCollectionOptions<T extends object = object>(
 				throw new Error(`Client ID not available`);
 			}
 
-			return createCounterBinding({
-				collection,
-				document,
-				field: fieldStr,
-				array,
-				ydoc: subdoc,
-				ymap: fieldsMap,
-				collectionRef,
-				clientId: ctx.clientId,
-				debounceMs: options?.debounceMs,
-				getMaterial: () => serializeDocument(ctx.docManager, document),
-			});
+			return trackBinding(
+				createCounterBinding({
+					collection,
+					document,
+					field: fieldStr,
+					array,
+					ydoc: subdoc,
+					ymap: fieldsMap,
+					collectionRef,
+					clientId: ctx.clientId,
+					debounceMs: options?.debounceMs,
+					getMaterial: () => serializeDocument(ctx.docManager, document),
+				})
+			);
 		},
 
 		/**
@@ -512,6 +567,7 @@ export function convexCollectionOptions<T extends object = object>(
 			field: string,
 			options?: { resolve?: (conflict: unknown) => T }
 		): Promise<RegisterBinding<T>> {
+			assertWritable();
 			const fieldStr = String(field);
 			const crdtInfo = crdtFields.get(fieldStr);
 
@@ -549,11 +605,13 @@ export function convexCollectionOptions<T extends object = object>(
 				(ctx.crdtResolvers?.get(fieldStr) as ((conflict: unknown) => T) | undefined) ??
 				((c: { latest: () => T }) => c.latest());
 
-			return createRegisterBinding({
-				ymap: map,
-				clientId: ctx.clientId,
-				resolve,
-			});
+			return trackBinding(
+				createRegisterBinding({
+					ymap: map,
+					clientId: ctx.clientId,
+					resolve,
+				})
+			);
 		},
 
 		/**
@@ -568,6 +626,7 @@ export function convexCollectionOptions<T extends object = object>(
 				debounceMs?: number;
 			}
 		): Promise<SetBinding<T>> {
+			assertWritable();
 			const fieldStr = String(field);
 			const crdtInfo = crdtFields.get(fieldStr);
 
@@ -604,25 +663,37 @@ export function convexCollectionOptions<T extends object = object>(
 				throw new Error(`Client ID not available`);
 			}
 
-			return createSetBinding({
-				collection,
-				document,
-				field: fieldStr,
-				ymap: map,
-				ydoc: subdoc,
-				fieldsMap,
-				collectionRef,
-				clientId: ctx.clientId,
-				serialize: options.serialize,
-				deserialize: options.deserialize,
-				debounceMs: options.debounceMs,
-				getMaterial: () => serializeDocument(ctx.docManager, document),
-			});
+			return trackBinding(
+				createSetBinding({
+					collection,
+					document,
+					field: fieldStr,
+					ymap: map,
+					ydoc: subdoc,
+					fieldsMap,
+					collectionRef,
+					clientId: ctx.clientId,
+					serialize: options.serialize,
+					deserialize: options.deserialize,
+					debounceMs: options.debounceMs,
+					getMaterial: () => serializeDocument(ctx.docManager, document),
+				})
+			);
 		},
 	};
 
 	const documentHandles = new Map<string, DocumentHandle<DataType>>();
 	const presenceProviders = new Map<string, PresenceProvider>();
+	const editorPresenceProviders = new Map<string, Set<PresenceProvider>>();
+	const removeDocument = async (id: string) => {
+		await docManager.remove(id);
+		presenceProviders.get(id)?.destroy();
+		presenceProviders.delete(id);
+		for (const provider of editorPresenceProviders.get(id) ?? []) provider.destroy();
+		editorPresenceProviders.delete(id);
+		documentHandles.delete(id);
+		durableVectors.delete(id);
+	};
 
 	const getOrCreateDocumentHandle = (documentId: string): DocumentHandle<DataType> => {
 		let handle = documentHandles.get(documentId);
@@ -649,6 +720,7 @@ export function convexCollectionOptions<T extends object = object>(
 					client: ctx.clientId,
 					ydoc: subdoc,
 					syncReady: ctx.synced,
+					durableVector: () => durableVectors.get(documentId),
 					user: ctx.userGetter,
 					anonymousPresence: ctx.anonymousPresence,
 				});
@@ -683,7 +755,7 @@ export function convexCollectionOptions<T extends object = object>(
 	let sessionUnsubscribe: (() => void) | null = null;
 
 	const initSessionSubscription = (): void => {
-		if (sessionUnsubscribe) return;
+		if (sessionUnsubscribe || !connection.active) return;
 
 		const ctx = hasContext(collection) ? getContext(collection) : null;
 		if (!ctx?.client || !ctx?.api?.session) return;
@@ -721,6 +793,58 @@ export function convexCollectionOptions<T extends object = object>(
 	};
 
 	const extensions: ConvexCollectionExtensions<DataType> = {
+		async connect() {
+			const requestedGeneration = connection.generation;
+			desiredConnection = true;
+			await disconnecting;
+			await localReady;
+			if (stopped) throw new Error('Collection has been cleaned up');
+			if (!desiredConnection || requestedGeneration !== connection.generation) return;
+			if (connection.active) return;
+			connection.connect();
+			await startNetwork?.();
+		},
+		async disconnect() {
+			desiredConnection = false;
+			for (const binding of bindings) binding.destroy();
+			prose.cleanup(collection);
+			cleanupSyncManager(collection);
+			clearTimeout(retryTimer);
+			connection.disconnect();
+			sessionUnsubscribe?.();
+			sessionUnsubscribe = null;
+			sessionCache = [];
+			for (const provider of presenceProviders.values()) provider.destroy();
+			presenceProviders.clear();
+			for (const providers of editorPresenceProviders.values())
+				for (const provider of providers) provider.destroy();
+			editorPresenceProviders.clear();
+			documentHandles.clear();
+			disconnecting = (async () => {
+				await localReady;
+				await work;
+				await docManager.flush();
+			})();
+			await disconnecting;
+		},
+		async reset() {
+			const drained = extensions.disconnect();
+			disconnecting = drained.then(() =>
+				serialize(async () => {
+					for (const id of await persistence.listDocuments(collection)) docManager.getOrCreate(id);
+					for (const id of docManager.documents()) {
+						await removeDocument(id);
+						await persistence.kv.del(pendingCreateKey(id));
+					}
+					for (const id of pendingCreates) await persistence.kv.del(pendingCreateKey(id));
+					pendingCreates.clear();
+					revisions.clear();
+					await seqService.clear(collection);
+					ops.replace([]);
+				})
+			);
+			await disconnecting;
+		},
 		doc(id: string): DocumentHandle<DataType> {
 			return getOrCreateDocumentHandle(id);
 		},
@@ -745,6 +869,19 @@ export function convexCollectionOptions<T extends object = object>(
 	// Bound replicate operations - set during sync initialization
 	// Used by onDelete and other handlers that need to sync with TanStack DB
 	let ops: BoundReplicateOps<DataType> = null as any;
+	const publishDocuments = (ids: Iterable<string>) => {
+		const upserts: DataType[] = [];
+		const removals: DataType[] = [];
+		for (const id of ids) {
+			const item = isDocumentDeleted(docManager, id)
+				? null
+				: serializeDocument(docManager, id, crdtFields);
+			if (item) upserts.push(item as DataType);
+			else removals.push({ id } as DataType);
+		}
+		if (removals.length) ops.delete(removals);
+		if (upserts.length) ops.upsert(upserts);
+	};
 
 	// Transaction coordinator for atomic client-side mutations with rollback
 	// Ensures delete operations are atomic: if server call fails, local state is rolled back
@@ -771,55 +908,61 @@ export function convexCollectionOptions<T extends object = object>(
 	});
 
 	const recover = async (pushLocal = false): Promise<void> => {
+		const token = connection.generation;
 		const docIds = docManager.documents();
-		if (docIds.length === 0) return;
-
-		logger.debug('Starting recovery for documents', { collection, count: docIds.length });
-
-		const recoveryPromises = docIds.map(async (docId) => {
-			try {
-				const vector = docManager.encodeStateVector(docId);
-				const result = await convexClient.query(api.delta, {
-					document: docId,
-					vector: vector.buffer as ArrayBuffer,
-				});
-
-				if (result.mode === 'recovery' && result.diff) {
-					const update = new Uint8Array(result.diff);
-					docManager.applyUpdate(docId, update, YjsOrigin.Server);
-					logger.debug('Applied server diff during recovery', { document: docId, collection });
-				}
-
-				// Only push local state when explicitly requested (reconnection scenario)
-				// On init, we only pull server diff - pushing would flood the mutation queue
-				if (pushLocal) {
-					const ydoc = docManager.get(docId);
-					if (ydoc) {
-						const localState = Y.encodeStateAsUpdateV2(ydoc);
+		await Promise.all(
+			docIds.map(async (docId) => {
+				try {
+					const original = docManager.get(docId);
+					const revision = revisions.get(docId);
+					const vector = docManager.encodeStateVector(docId);
+					const result = await convexClient.query(api.delta, {
+						document: docId,
+						vector: vector.buffer as ArrayBuffer,
+					});
+					let validRecovery = false;
+					await serialize(async () => {
+						if (
+							!connection.active ||
+							token !== connection.generation ||
+							docManager.get(docId) !== original ||
+							revisions.get(docId) !== revision
+						)
+							return;
+						if (result.mode !== 'recovery') return;
+						validRecovery = true;
+						if (result.exists === false) {
+							if (!config.readOnly && (pendingCreates.has(docId) || result.known === false)) return;
+							await removeDocument(docId);
+						} else if (result.diff) {
+							await docManager.applyRemote(docId, new Uint8Array(result.diff));
+						} else return;
+						publishDocuments([docId]);
+					});
+					if (
+						validRecovery &&
+						revisions.get(docId) === revision &&
+						(pushLocal || pendingCreates.has(docId)) &&
+						!config.readOnly &&
+						connection.active &&
+						token === connection.generation
+					) {
+						const ydoc = docManager.get(docId);
 						const material = serializeDocument(docManager, docId);
-
-						if (material && localState.length > 0) {
+						if (ydoc && material)
 							await convexClient.mutation(api.replicate, {
 								document: docId,
-								bytes: localState.buffer as ArrayBuffer,
+								bytes: Y.encodeStateAsUpdateV2(ydoc).buffer as ArrayBuffer,
 								material,
-								type: 'update',
+								type: result.exists === false ? 'insert' : 'update',
 							});
-							logger.debug('Pushed local changes during recovery', { document: docId, collection });
-						}
+						await acknowledgeCreate(docId, token);
 					}
+				} catch (error) {
+					logger.warn('Recovery failed', { collection, document: docId, error });
 				}
-			} catch (error) {
-				logger.warn('Recovery failed for document', {
-					document: docId,
-					collection,
-					error: error instanceof Error ? error.message : String(error),
-				});
-			}
-		});
-
-		await Promise.all(recoveryPromises);
-		logger.debug('Recovery completed', { collection, count: docIds.length });
+			})
+		);
 	};
 
 	const applyYjsInsert = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
@@ -827,6 +970,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 		for (const mut of mutations) {
 			const document = String(mut.key);
+			revisions.set(document, (revisions.get(document) ?? 0) + 1);
 			const delta = docManager.transactWithDelta(
 				document,
 				(fieldsMap) => {
@@ -868,6 +1012,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 		for (const mut of mutations) {
 			const document = String(mut.key);
+			revisions.set(document, (revisions.get(document) ?? 0) + 1);
 			const fieldsMap = docManager.getFields(document);
 
 			if (!fieldsMap) {
@@ -929,6 +1074,7 @@ export function convexCollectionOptions<T extends object = object>(
 
 		for (const mut of mutations) {
 			const document = String(mut.key);
+			revisions.set(document, (revisions.get(document) ?? 0) + 1);
 			const ydoc = docManager.get(document);
 
 			if (ydoc) {
@@ -950,10 +1096,24 @@ export function convexCollectionOptions<T extends object = object>(
 		extensions,
 
 		onInsert: async ({ transaction }: CollectionTransaction<DataType>) => {
+			assertWritable();
+			const mutationGeneration = connection.generation;
+			await persistenceReadyPromise;
+			ensureGeneration(mutationGeneration);
+			await serialize(async () => {
+				ensureGeneration(mutationGeneration);
+				for (const mutation of transaction.mutations) {
+					const id = String(mutation.key);
+					pendingCreates.add(id);
+					await persistence.kv.set(pendingCreateKey(id), true);
+				}
+			});
+			ensureGeneration(mutationGeneration);
 			const deltas = applyYjsInsert(transaction.mutations);
 
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
+				ensureGeneration(mutationGeneration);
 
 				// Process mutations in parallel for better performance
 				await Promise.all(
@@ -962,17 +1122,20 @@ export function convexCollectionOptions<T extends object = object>(
 						if (!delta || delta.length === 0) return;
 
 						const document = String(mut.key);
+						revisions.set(document, (revisions.get(document) ?? 0) + 1);
 						const materializedDoc = serializeDocument(docManager, document);
 						if (!materializedDoc) {
 							throw new Error(`Cannot serialize document ${document} for insert`);
 						}
 
+						ensureGeneration(mutationGeneration);
 						await convexClient.mutation(api.replicate, {
 							document: document,
 							bytes: delta.buffer,
 							material: materializedDoc,
 							type: 'insert',
 						});
+						await acknowledgeCreate(document, mutationGeneration);
 					})
 				);
 			} catch (error) {
@@ -981,6 +1144,8 @@ export function convexCollectionOptions<T extends object = object>(
 		},
 
 		onUpdate: async ({ transaction }: CollectionTransaction<DataType>) => {
+			assertWritable();
+			const mutationGeneration = connection.generation;
 			const mutation = transaction.mutations[0];
 			const documentKey = String(mutation.key);
 
@@ -991,9 +1156,11 @@ export function convexCollectionOptions<T extends object = object>(
 
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
+				ensureGeneration(mutationGeneration);
 
 				if (isContentSync && metadata?.contentSync) {
 					const { bytes, material } = metadata.contentSync;
+					ensureGeneration(mutationGeneration);
 					await convexClient.mutation(api.replicate, {
 						document: documentKey,
 						bytes,
@@ -1016,6 +1183,7 @@ export function convexCollectionOptions<T extends object = object>(
 								throw new Error(`Cannot serialize document ${docId} for update`);
 							}
 
+							ensureGeneration(mutationGeneration);
 							await convexClient.mutation(api.replicate, {
 								document: docId,
 								bytes: delta.buffer,
@@ -1031,8 +1199,11 @@ export function convexCollectionOptions<T extends object = object>(
 		},
 
 		onDelete: async ({ transaction }: CollectionTransaction<DataType>) => {
+			assertWritable();
+			const mutationGeneration = connection.generation;
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
+				ensureGeneration(mutationGeneration);
 
 				if (!txCoordinator) {
 					// Fallback to non-transactional delete if coordinator not ready
@@ -1048,6 +1219,7 @@ export function convexCollectionOptions<T extends object = object>(
 							const delta = deltas[i];
 							if (!delta || delta.length === 0) return;
 
+							ensureGeneration(mutationGeneration);
 							await convexClient.mutation(api.replicate, {
 								document: String(mut.key),
 								bytes: delta.buffer,
@@ -1095,6 +1267,7 @@ export function convexCollectionOptions<T extends object = object>(
 						}
 
 						// Call server mutation - if this fails, transaction will rollback
+						ensureGeneration(mutationGeneration);
 						await convexClient.mutation(api.replicate, {
 							document: documentId,
 							bytes: delta.buffer,
@@ -1109,7 +1282,7 @@ export function convexCollectionOptions<T extends object = object>(
 		},
 
 		sync: {
-			rowUpdateMode: 'partial',
+			rowUpdateMode: 'full',
 			sync: (params: any) => {
 				const { markReady, collection: collectionInstance } = params;
 
@@ -1125,13 +1298,15 @@ export function convexCollectionOptions<T extends object = object>(
 				const ssrDocuments = material?.documents;
 				type CrdtRecord = Record<string, { bytes: ArrayBuffer; seq: number }>;
 				const ssrCrdt = material?.crdt as CrdtRecord | undefined;
-				const ssrCursor = material?.cursor;
 				const docs: DataType[] = ssrDocuments ? [...ssrDocuments] : [];
 
-				(async () => {
+				localReady = (async () => {
 					try {
 						const existingDocIds = await persistence.listDocuments(collection);
+						if (stopped) return;
 						for (const docId of existingDocIds) {
+							if (await persistence.kv.get(pendingCreateKey(docId))) pendingCreates.add(docId);
+							if (stopped) return;
 							docManager.getOrCreate(docId);
 						}
 
@@ -1139,10 +1314,12 @@ export function convexCollectionOptions<T extends object = object>(
 							return persistence.createDocPersistence(`${collection}:${document}`, ydoc);
 						});
 						await Promise.all(docPromises);
+						if (stopped) return;
 
 						resolvePersistenceReady?.();
 
 						const clientId = await getClientId(persistence.kv);
+						if (stopped) return;
 						updateContext(collection, { clientId });
 
 						ops = createReplicateOps<DataType>(params);
@@ -1196,11 +1373,9 @@ export function convexCollectionOptions<T extends object = object>(
 						if (ssrCrdt) {
 							for (const [docId, state] of Object.entries(ssrCrdt)) {
 								const update = new Uint8Array(state.bytes);
-								docManager.applyUpdate(docId, update, YjsOrigin.Server);
+								await docManager.applyRemote(docId, update);
 							}
 						}
-
-						await recover();
 
 						const docIds = docManager.documents();
 						if (docIds.length > 0) {
@@ -1213,215 +1388,87 @@ export function convexCollectionOptions<T extends object = object>(
 						markReady();
 						getContext(collection).resolve?.();
 
-						const persistedCursor = await seqService.load(collection);
-						let cursor = ssrCursor ?? persistedCursor;
-
-						if (cursor > 0 && docManager.documents().length === 0) {
-							cursor = 0;
-							persistence.kv.set(`cursor:${collection}`, 0);
-						}
-
-						// Signal that sync is ready (no actor system needed - sync manager is self-contained)
 						getContext(collection).resolveActorReady?.();
-
-						// Returns { item, isNew, isDelete } for batching, null if no action needed
-						type ChangeResult = {
-							item: DataType;
-							isNew: boolean;
-							isDelete: boolean;
-						} | null;
-
-						// Clean up presence provider when a document is deleted
-						const cleanupDocumentPresence = (documentId: string) => {
-							const provider = presenceProviders.get(documentId);
-							if (provider) {
-								provider.destroy();
-								presenceProviders.delete(documentId);
-							}
-							documentHandles.delete(documentId);
-						};
-
-						const handleSnapshotChange = withErrorIsolation(
-							(bytes: ArrayBuffer, document: string, exists: boolean): ChangeResult => {
-								const hadLocally = docManager.has(document);
-
-								if (!exists && hadLocally) {
-									const itemBefore = serializeDocument(docManager, document, crdtFields);
-									docManager.delete(document);
-									cleanupDocumentPresence(document);
-									if (itemBefore) {
-										return { item: itemBefore as DataType, isNew: false, isDelete: true };
-									}
-									return null;
-								}
-
-								if (!exists && !hadLocally) {
-									return null;
-								}
-
-								// Apply update - use hadLocally for existence check (avoid double serialization)
-								const update = new Uint8Array(bytes);
-								docManager.applyUpdate(document, update, YjsOrigin.Server);
-								const itemAfter = serializeDocument(docManager, document, crdtFields);
-
-								if (itemAfter) {
-									return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
-								} else if (hadLocally) {
-									// Serialization failed - log warning but don't return item
-									logger.warn('Document serialization returned null after snapshot update', {
-										document,
-										collection,
-										hadFieldsAfter: !!docManager.getFields(document),
-									});
-								}
-								return null;
-							},
-							(error, _bytes, document) => {
-								logger.error('Error processing snapshot change', { document, collection, error });
-								return null;
-							}
-						);
-
-						const handleDeltaChange = withErrorIsolation(
-							(bytes: ArrayBuffer, document: string | undefined, exists: boolean): ChangeResult => {
-								if (!document) {
-									return null;
-								}
-
-								const hadLocally = docManager.has(document);
-
-								if (!exists && hadLocally) {
-									const itemBefore = serializeDocument(docManager, document, crdtFields);
-									docManager.delete(document);
-									cleanupDocumentPresence(document);
-									if (itemBefore) {
-										return { item: itemBefore as DataType, isNew: false, isDelete: true };
-									}
-									return null;
-								}
-
-								if (!exists && !hadLocally) {
-									return null;
-								}
-
-								// Apply update - use hadLocally for existence check (avoid double serialization)
-								const update = new Uint8Array(bytes);
-								docManager.applyUpdate(document, update, YjsOrigin.Server);
-								const itemAfter = serializeDocument(docManager, document, crdtFields);
-
-								if (itemAfter) {
-									return { item: itemAfter as DataType, isNew: !hadLocally, isDelete: false };
-								} else if (hadLocally) {
-									// Serialization failed - log warning but don't return item
-									logger.warn('Document serialization returned null after delta update', {
-										document,
-										collection,
-										hadFieldsAfter: !!docManager.getFields(document),
-									});
-								}
-								return null;
-							},
-							(error, _bytes, document) => {
-								logger.error('Error processing delta change', { document, collection, error });
-								return null;
-							}
-						);
-
-						let lastProcessedSeq = cursor;
-
-						const handleSubscriptionUpdate = async (response: any) => {
-							if (!response || !Array.isArray(response.changes)) {
-								return;
-							}
-
-							const { changes, seq: newSeq } = response;
-
-							// Skip if we've already processed up to this seq — prevents
-							// re-enqueuing presence marks on subscription re-fires (e.g. reconnect)
-							if (newSeq !== undefined && newSeq <= lastProcessedSeq) {
-								return;
-							}
-
-							const syncedDocuments = new Set<string>();
-
-							// Process all changes and collect results for batching
-							const toInsert: DataType[] = [];
-							const toUpsert: DataType[] = [];
-							const toDelete: DataType[] = [];
-
-							for (const change of changes) {
-								const { type, bytes, document, exists } = change;
-								if (!bytes || !document) {
-									continue;
-								}
-
-								syncedDocuments.add(document);
-
-								const result =
-									type === 'snapshot'
-										? handleSnapshotChange(bytes, document, exists ?? true)
-										: handleDeltaChange(bytes, document, exists ?? true);
-
-								if (result) {
-									if (result.isDelete) {
-										toDelete.push(result.item);
-									} else if (result.isNew) {
-										toInsert.push(result.item);
-									} else {
-										toUpsert.push(result.item);
-									}
-								}
-							}
-
-							// Batch ops calls - single transaction instead of N separate calls
-							if (toDelete.length > 0) ops.delete(toDelete);
-							if (toInsert.length > 0) ops.insert(toInsert);
-							if (toUpsert.length > 0) ops.upsert(toUpsert);
-
-							if (newSeq !== undefined) {
-								lastProcessedSeq = newSeq;
-								persistence.kv.set(`cursor:${collection}`, newSeq);
-
-								// Mark presence for synced documents using background sync queue
-								// The queue provides retry with exponential backoff on transient failures
-								for (const document of syncedDocuments) {
-									syncQueue.enqueue(`presence:${document}`, async () => {
-										const vector = docManager.encodeStateVector(document);
-										await convexClient.mutation(api.presence, {
-											document,
-											client: clientId,
-											action: 'mark',
-											seq: newSeq,
-											vector: vector.buffer as ArrayBuffer,
-										});
-									});
-								}
-
-								// Resubscribe with the advanced cursor so the reactive query
-								// only returns genuinely new deltas, not ones we've already processed.
-								// Without this, reconnection or any table change causes the query
-								// to re-fire with ALL deltas since the original cursor.
+						startNetwork = async () => {
+							const token = connection.generation;
+							let cursor = await seqService.load(collection);
+							if (stopped || !connection.active || token !== connection.generation) return;
+							// Recovery never delays publishing persisted local rows or starting discovery.
+							void recover();
+							const subscribe = () => {
+								if (!connection.active || token !== connection.generation) return;
 								subscription?.();
 								subscription = convexClient.onUpdate(
 									api.delta,
-									{ seq: newSeq, limit: 1000 },
+									{ seq: cursor, limit: 1000 },
 									(response: any) => {
-										handleSubscriptionUpdate(response);
+										void serialize(async () => {
+											if (!connection.active || token !== connection.generation) return;
+											if (!response || !Array.isArray(response.changes) || response.seq <= cursor)
+												return;
+											const documents = new Set<string>();
+											for (const change of response.changes) {
+												if (change.seq <= cursor) continue;
+												if (!change.document)
+													throw new Error('Stream change is missing its document');
+												documents.add(change.document);
+												revisions.set(change.document, (revisions.get(change.document) ?? 0) + 1);
+												if (change.exists === false) {
+													await removeDocument(change.document);
+												} else {
+													if (!change.bytes) throw new Error('Stream change is missing its update');
+													await docManager.applyRemote(
+														change.document,
+														new Uint8Array(change.bytes)
+													);
+												}
+											}
+											const acknowledgements = [...documents].map((document) => ({
+												document,
+												vector: docManager.encodeStateVector(document),
+											}));
+											await docManager.flush(documents);
+											// Disconnect drains this accepted local work. Publish its durable
+											// rows even if it cancels the subsequent checkpoint/acknowledgement.
+											publishDocuments(documents);
+											if (!connection.active || token !== connection.generation) return;
+											await seqService.save(collection, response.seq);
+											if (!connection.active || token !== connection.generation) return;
+											cursor = response.seq;
+											for (const { document, vector } of acknowledgements) {
+												durableVectors.set(document, vector.buffer as ArrayBuffer);
+												syncQueue.enqueue(`presence:${document}`, async () => {
+													if (!connection.active || token !== connection.generation) return;
+													await convexClient.mutation(api.presence, {
+														document,
+														client: clientId,
+														action: 'mark',
+														seq: response.seq,
+														vector: vector.buffer as ArrayBuffer,
+													});
+												});
+											}
+											subscribe();
+										}).catch((error) => {
+											logger.error('Stream persistence failed; retrying from durable cursor', {
+												collection,
+												error,
+											});
+											if (connection.active && token === connection.generation) {
+												clearTimeout(retryTimer);
+												retryTimer = setTimeout(subscribe, 1000);
+											}
+										});
 									}
 								);
-							}
+							};
+							subscribe();
+							if (sessionSubscribers.size) initSessionSubscription();
 						};
-
-						// Subscribe to the delta stream. Convex handles reactivity —
-						// when new deltas are written to the server, the query re-evaluates
-						// and the callback fires with the updated result automatically.
-						subscription = convexClient.onUpdate(
-							api.delta,
-							{ seq: cursor, limit: 1000 },
-							(response: any) => {
-								handleSubscriptionUpdate(response);
-							}
-						);
+						if (desiredConnection && !stopped) {
+							connection.connect();
+							void startNetwork();
+						}
 
 						// Reconnection handling: when browser comes back online, resync local state
 						if (typeof globalThis.window !== 'undefined') {
@@ -1431,7 +1478,7 @@ export function convexCollectionOptions<T extends object = object>(
 								logger.debug('Network offline detected', { collection });
 							};
 							const handleOnline = () => {
-								if (wasOffline) {
+								if (wasOffline && connection.active) {
 									logger.info('Network online restored, running recovery sync', { collection });
 									wasOffline = false;
 									recover(true).catch((error: Error) => {
@@ -1470,6 +1517,9 @@ export function convexCollectionOptions<T extends object = object>(
 				return {
 					material: docs,
 					cleanup: () => {
+						stopped = true;
+						clearTimeout(retryTimer);
+						connection.disconnect();
 						// Clean up reconnection listeners if stored in context
 						if (hasContext(collection)) {
 							const ctx = getContext(collection);
@@ -1483,6 +1533,9 @@ export function convexCollectionOptions<T extends object = object>(
 							provider.destroy();
 						}
 						presenceProviders.clear();
+						for (const providers of editorPresenceProviders.values())
+							for (const provider of providers) provider.destroy();
+						editorPresenceProviders.clear();
 						documentHandles.clear();
 						deleteContext(collection);
 						docPersistence?.destroy();
@@ -1525,7 +1578,7 @@ export type ConvexCollection<T extends object> = Collection<
 	ConvexCollectionExtensions<T>;
 
 /** Options for collection.create() */
-export interface CreateCollectionOptions<T extends object> {
+export interface CreateCollectionOptions<T extends object> extends ConnectionOptions {
 	schema: VersionedSchema<GenericValidator>;
 	persistence: () => Promise<Persistence>;
 	config: () => {
@@ -1592,6 +1645,9 @@ function createVersionedCollection<T extends object>(
 					api: userConfig.api,
 					getKey: userConfig.getKey,
 					user: userConfig.user,
+					networkMode: options.networkMode,
+					readOnly: options.readOnly,
+					requestArgs: options.requestArgs,
 				} as LazyCollectionConfig<T>;
 
 				if (isPaginatedMaterial(mat)) {

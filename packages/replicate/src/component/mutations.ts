@@ -39,26 +39,21 @@ async function getNextSeq(ctx: MutationCtx, collection: string): Promise<number>
 		.withIndex('by_collection', (q) => q.eq('collection', collection))
 		.unique();
 
-	if (existing) {
-		const nextSeq = existing.seq + 1;
-		await ctx.db.patch(existing._id, { seq: nextSeq });
-		return nextSeq;
-	}
-
-	// Seed from existing deltas to handle migration from old getNextSeq.
-	// The previous implementation queried the deltas table directly for max seq.
-	// Without this seed, the counter would start at 1, creating duplicate seq
-	// numbers and breaking streaming (clients with cursor > 1 would never
-	// receive new changes because the stream query uses gt('seq', cursor)).
-	const latest = await ctx.db
+	// Include snapshots even when a legacy counter exists below their boundary.
+	const latestDelta = await ctx.db
 		.query('deltas')
 		.withIndex('by_seq', (q) => q.eq('collection', collection))
 		.order('desc')
 		.first();
-	const startSeq = (latest?.seq ?? 0) + 1;
-
-	await ctx.db.insert('sequences', { collection, seq: startSeq });
-	return startSeq;
+	const latestSnapshot = await ctx.db
+		.query('snapshots')
+		.withIndex('by_seq', (q) => q.eq('collection', collection))
+		.order('desc')
+		.first();
+	const seq = Math.max(existing?.seq ?? 0, latestDelta?.seq ?? 0, latestSnapshot?.seq ?? 0) + 1;
+	if (existing) await ctx.db.patch(existing._id, { seq });
+	else await ctx.db.insert('sequences', { collection, seq });
+	return seq;
 }
 
 // O(1) delta count increment - called when inserting a delta
@@ -241,15 +236,6 @@ export const compact = mutation({
 		const logger = getLogger(['compaction']);
 		const now = Date.now();
 
-		// Get the current max seq at the START of compaction.
-		// This establishes our snapshot boundary - prevents TOCTOU race conditions
-		// where new deltas arrive during compaction and get incorrectly included.
-		const sequenceRecord = await ctx.db
-			.query('sequences')
-			.withIndex('by_collection', (q) => q.eq('collection', args.collection))
-			.unique();
-		const snapshotBoundarySeq = sequenceRecord?.seq ?? 0;
-
 		// Query all deltas for this document
 		const allDeltas = await ctx.db
 			.query('deltas')
@@ -258,8 +244,8 @@ export const compact = mutation({
 			)
 			.collect();
 
-		// Filter to only include deltas within our boundary
-		const deltas = allDeltas.filter((d) => d.seq <= snapshotBoundarySeq);
+		// Convex mutations read a consistent transactional snapshot.
+		const deltas = allDeltas;
 
 		if (deltas.length === 0) {
 			return { success: true, removed: 0, retained: 0, size: 0 };
@@ -312,15 +298,15 @@ export const compact = mutation({
 			}
 		}
 
-		// Use the boundary seq for the snapshot - this ensures consistency
-		// with the deltas we included (all have seq <= snapshotBoundarySeq)
-		const seq = snapshotBoundarySeq;
+		// Publish a fresh position atomically with replacement and delta removal.
+		const seq = await getNextSeq(ctx, args.collection);
 
 		if (existing) {
 			await ctx.db.patch(existing._id, {
 				bytes: merged.buffer as ArrayBuffer,
 				vector: vector.buffer as ArrayBuffer,
 				seq,
+				publication: 1,
 				created: now,
 			});
 		} else {
@@ -330,6 +316,7 @@ export const compact = mutation({
 				bytes: merged.buffer as ArrayBuffer,
 				vector: vector.buffer as ArrayBuffer,
 				seq,
+				publication: 1,
 				created: now,
 			});
 		}
@@ -478,14 +465,6 @@ export const runCompaction = mutation({
 		const retain = args.retain ?? 0;
 
 		try {
-			// Get the current max seq at the START of compaction.
-			// This establishes our snapshot boundary - prevents TOCTOU race conditions.
-			const sequenceRecord = await ctx.db
-				.query('sequences')
-				.withIndex('by_collection', (q) => q.eq('collection', job.collection))
-				.unique();
-			const snapshotBoundarySeq = sequenceRecord?.seq ?? 0;
-
 			const allDeltas = await ctx.db
 				.query('deltas')
 				.withIndex('by_document', (q) =>
@@ -493,8 +472,8 @@ export const runCompaction = mutation({
 				)
 				.collect();
 
-			// Filter to only include deltas within our boundary
-			const deltas = allDeltas.filter((d) => d.seq <= snapshotBoundarySeq);
+			// Convex mutations read a consistent transactional snapshot.
+			const deltas = allDeltas;
 
 			if (deltas.length === 0) {
 				await ctx.db.patch(args.id, { status: 'done', completed: now });
@@ -550,14 +529,15 @@ export const runCompaction = mutation({
 				}
 			}
 
-			// Use the boundary seq for the snapshot
-			const seq = snapshotBoundarySeq;
+			// Publish a fresh position atomically with replacement and delta removal.
+			const seq = await getNextSeq(ctx, job.collection);
 
 			if (snapshot) {
 				await ctx.db.patch(snapshot._id, {
 					bytes: merged.buffer as ArrayBuffer,
 					vector: vector.buffer as ArrayBuffer,
 					seq,
+					publication: 1,
 					created: now,
 				});
 			} else {
@@ -567,6 +547,7 @@ export const runCompaction = mutation({
 					bytes: merged.buffer as ArrayBuffer,
 					vector: vector.buffer as ArrayBuffer,
 					seq,
+					publication: 1,
 					created: now,
 				});
 			}
@@ -646,6 +627,31 @@ export const runCompaction = mutation({
 	},
 });
 
+/** Republish legacy snapshots in bounded, atomic, restartable batches.
+ * Call from an application internal mutation until done before enabling streaming.
+ */
+export const migrateSnapshots = mutation({
+	args: { collection: v.string(), limit: v.optional(v.number()) },
+	returns: v.object({ migrated: v.number(), done: v.boolean() }),
+	handler: async (ctx, args) => {
+		const limit = args.limit ?? 50;
+		if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+			throw new ConvexError('Migration limit must be an integer between 1 and 100');
+		}
+		const legacy = await ctx.db
+			.query('snapshots')
+			.withIndex('by_publication', (q) =>
+				q.eq('collection', args.collection).eq('publication', undefined)
+			)
+			.take(limit + 1);
+		for (const snapshot of legacy.slice(0, limit)) {
+			const seq = await getNextSeq(ctx, args.collection);
+			await ctx.db.patch(snapshot._id, { seq, publication: 1 });
+		}
+		return { migrated: Math.min(limit, legacy.length), done: legacy.length <= limit };
+	},
+});
+
 export const stream = query({
 	args: {
 		collection: v.string(),
@@ -656,77 +662,46 @@ export const stream = query({
 	returns: streamResultValidator,
 	handler: async (ctx, args) => {
 		const limit = args.limit ?? 100;
-		// threshold arg kept for API compatibility but no longer used
-		// (compaction check moved to write mutations for O(1) performance)
-
-		const documents = await ctx.db
+		if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+			throw new ConvexError('Stream limit must be an integer between 1 and 1000');
+		}
+		const legacy = await ctx.db
+			.query('snapshots')
+			.withIndex('by_publication', (q) =>
+				q.eq('collection', args.collection).eq('publication', undefined)
+			)
+			.first();
+		if (legacy)
+			throw new ConvexError('Snapshot migration required: run migrateSnapshots until done');
+		const deltas = await ctx.db
 			.query('deltas')
 			.withIndex('by_seq', (q) => q.eq('collection', args.collection).gt('seq', args.seq))
 			.order('asc')
-			.take(limit);
-
-		if (documents.length > 0) {
-			const changes = documents.map((doc) => ({
-				document: doc.document,
-				bytes: doc.bytes,
-				seq: doc.seq,
-				type: OperationType.Delta,
-			}));
-
-			const newSeq = documents[documents.length - 1]?.seq ?? args.seq;
-
-			// Compaction eligibility is now checked only during write mutations
-			// (insertDocument, updateDocument, deleteDocument) via scheduleCompactionIfNeeded.
-			// This removes the O(n) full collection scan that was running on every subscription update.
-
-			return {
-				changes,
-				seq: newSeq,
-				more: documents.length === limit,
-				compact: undefined,
-			};
-		}
-
-		const oldest = await ctx.db
-			.query('deltas')
-			.withIndex('by_seq', (q) => q.eq('collection', args.collection))
+			.take(limit + 1);
+		const snapshots = await ctx.db
+			.query('snapshots')
+			.withIndex('by_seq', (q) => q.eq('collection', args.collection).gt('seq', args.seq))
 			.order('asc')
-			.first();
-
-		if (oldest && args.seq < oldest.seq) {
-			const snapshots = await ctx.db
-				.query('snapshots')
-				.withIndex('by_document', (q) => q.eq('collection', args.collection))
-				.collect();
-
-			if (snapshots.length === 0) {
-				throw new ConvexError(
-					`Disparity detected but no snapshots available for collection: ${args.collection}. ` +
-						`Client seq: ${args.seq}, Oldest delta seq: ${oldest.seq}`
-				);
-			}
-
-			const changes = snapshots.map((s) => ({
-				document: s.document,
-				bytes: s.bytes,
-				seq: s.seq,
+			.take(limit + 1);
+		const candidates = [
+			...deltas.map((d) => ({
+				document: d.document,
+				bytes: d.bytes,
+				seq: d.seq,
+				type: OperationType.Delta,
+			})),
+			...snapshots.map((d) => ({
+				document: d.document,
+				bytes: d.bytes,
+				seq: d.seq,
 				type: OperationType.Snapshot,
-			}));
-
-			const latestSeq = Math.max(...snapshots.map((s) => s.seq));
-
-			return {
-				changes,
-				seq: latestSeq,
-				more: false,
-				compact: undefined,
-			};
-		}
-
+			})),
+		].sort((a, b) => a.seq - b.seq);
+		const changes = candidates.slice(0, limit);
 		return {
-			changes: [],
-			seq: args.seq,
-			more: false,
+			changes,
+			seq: changes.at(-1)?.seq ?? args.seq,
+			more: candidates.length > limit,
 			compact: undefined,
 		};
 	},
@@ -760,6 +735,7 @@ export const recovery = query({
 			emptyDoc.destroy();
 			return {
 				vector: emptyVector.buffer as ArrayBuffer,
+				known: false,
 			};
 		}
 
@@ -781,6 +757,7 @@ export const recovery = query({
 		return {
 			diff: diff.byteLength > 0 ? (diff.buffer as ArrayBuffer) : undefined,
 			vector: serverVector.buffer as ArrayBuffer,
+			known: true,
 		};
 	},
 });

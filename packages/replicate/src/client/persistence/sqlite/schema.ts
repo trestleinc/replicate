@@ -1,3 +1,4 @@
+import { PersistenceWrites } from '../writes.js';
 import * as Y from 'yjs';
 import type {
 	Persistence,
@@ -8,7 +9,7 @@ import type {
 
 export interface Executor {
 	execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
-	close(): void;
+	close(): void | Promise<void>;
 }
 
 export async function initSchema(executor: Executor): Promise<void> {
@@ -90,40 +91,46 @@ class SqliteMigrationDatabase implements MigrationDatabase {
 
 class SqlitePersistenceProvider implements PersistenceProvider {
 	private updateHandler: (update: Uint8Array, origin: unknown) => void;
-	private pendingWrites: Promise<void>[] = [];
-	private lastError: Error | null = null;
+	private writes = new PersistenceWrites();
 	readonly whenSynced: Promise<void>;
 
 	constructor(
 		private executor: Executor,
 		private collection: string,
-		private ydoc: Y.Doc,
-		private onError?: (error: Error) => void
+		private ydoc: Y.Doc
 	) {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== 'sqlite') {
-				const writePromise = this.saveUpdate(update).catch((error: Error) => {
-					this.lastError = error;
-					this.onError?.(error);
-				});
-				this.pendingWrites.push(writePromise);
-				writePromise.finally(() => {
-					this.pendingWrites = this.pendingWrites.filter((p) => p !== writePromise);
+			if (origin !== 'sqlite' && origin !== 'replicate-persisted') {
+				this.writes.add(async () => {
+					await this.whenSynced;
+					await this.saveUpdate(update);
 				});
 			}
 		};
 		this.ydoc.on('update', this.updateHandler);
 	}
 
+	async storeUpdate(update: Uint8Array): Promise<void> {
+		const bytes = Y.convertUpdateFormatV2ToV1(update);
+		this.writes.add(async () => {
+			await this.whenSynced;
+			await this.saveUpdate(bytes);
+		});
+		await this.flush();
+	}
+
 	async flush(): Promise<void> {
-		await Promise.all(this.pendingWrites);
-		if (this.lastError) {
-			const error = this.lastError;
-			this.lastError = null;
-			throw error;
-		}
+		await this.whenSynced;
+		await this.writes.flush();
+	}
+
+	async clear(): Promise<void> {
+		this.destroy();
+		await this.flush();
+		await this.executor.execute('DELETE FROM snapshots WHERE collection = ?', [this.collection]);
+		await this.executor.execute('DELETE FROM deltas WHERE collection = ?', [this.collection]);
 	}
 
 	private async loadState(): Promise<void> {
@@ -163,9 +170,27 @@ class SqlitePersistenceProvider implements PersistenceProvider {
 }
 
 export function createPersistenceFromExecutor(executor: Executor): Persistence {
+	const providers = new Set<PersistenceProvider>();
 	return {
-		createDocPersistence: (collection: string, ydoc: Y.Doc) =>
-			new SqlitePersistenceProvider(executor, collection, ydoc),
+		async close() {
+			for (const provider of providers) provider.destroy();
+			for (const provider of providers) await provider.flush?.();
+			await executor.close();
+			providers.clear();
+		},
+		createDocPersistence: (collection: string, ydoc: Y.Doc) => {
+			const provider = new SqlitePersistenceProvider(executor, collection, ydoc);
+			providers.add(provider);
+			const detach = provider.destroy.bind(provider);
+			provider.destroy = () => {
+				detach();
+				void provider.flush().then(
+					() => providers.delete(provider),
+					() => {}
+				);
+			};
+			return provider;
+		},
 		async listDocuments(prefix: string): Promise<string[]> {
 			const result = await executor.execute(
 				`SELECT DISTINCT collection FROM (

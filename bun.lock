@@ -213,6 +213,9 @@
     "packages/replicate": {
       "name": "@trestleinc/replicate",
       "version": "2.0.0-preview.0",
+      "bin": {
+        "replicate-sqlite-assets": "./scripts/copy-sqlite-assets.mjs",
+      },
       "dependencies": {
         "@logtape/logtape": "catalog:",
         "@logtape/pretty": "catalog:",
@@ -243,6 +246,7 @@
         "tsdown": "0.20.0-beta.3",
         "typescript": "catalog:",
         "typescript-eslint": "catalog:",
+        "vite": "catalog:",
         "vitest": "catalog:",
       },
       "peerDependencies": {
