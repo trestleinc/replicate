@@ -108,32 +108,59 @@ warm module in an open tab does not prove that the JavaScript/WASM graph is avai
 
 ## Cloudflare R2 example
 
-Create a versioned prefix such as `replicate-sqlite/2.0.0-preview.0/`, then upload the **entire**
-copied directory, including the manifest and notice files. An R2-backed Worker can serve objects
-with the content types and immutable headers above:
+Create a dedicated R2 bucket that contains only public runtime distributions; do not share this
+binding with application or private objects. Upload the **entire** copied directory, including the
+manifest and notice files, under the immutable prefix `replicate-sqlite/2.0.0-preview.0/`. This
+Worker serves only that declared prefix and rejects other paths before reading the bucket:
 
 ```typescript
+interface Env {
+	RUNTIME_BUCKET: R2Bucket;
+}
+
+const PUBLIC_RUNTIME_PREFIX = '/replicate-sqlite/2.0.0-preview.0/';
+const PUBLIC_RUNTIME_KEY_PREFIX = PUBLIC_RUNTIME_PREFIX.slice(1);
+
+const notFound = () => new Response('Not Found', { status: 404 });
+
+function contentTypeFor(key: string): string {
+	if (key.endsWith('.wasm')) return 'application/wasm';
+	if (key.endsWith('.json')) return 'application/json';
+	if (key.endsWith('.md') || key.endsWith('/LICENSE')) return 'text/plain; charset=utf-8';
+	if (key.endsWith('.js') || key.endsWith('.mjs')) return 'application/javascript';
+	return 'application/octet-stream';
+}
+
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
+		if (request.method !== 'GET' && request.method !== 'HEAD') {
+			return new Response('Method Not Allowed', {
+				status: 405,
+				headers: { Allow: 'GET, HEAD' },
+			});
+		}
+
 		const url = new URL(request.url);
-		const key = url.pathname.slice(1);
+		if (!url.pathname.startsWith(PUBLIC_RUNTIME_PREFIX)) return notFound();
+
+		const relativePath = url.pathname.slice(PUBLIC_RUNTIME_PREFIX.length);
+		if (!relativePath) return notFound();
+
+		const key = PUBLIC_RUNTIME_KEY_PREFIX + relativePath;
+		const contentType = contentTypeFor(key);
+
 		const object = await env.RUNTIME_BUCKET.get(key);
-		if (!object) return new Response('Not Found', { status: 404 });
+		if (!object) return notFound();
 
 		const headers = new Headers();
-		const contentType = key.endsWith('.wasm')
-			? 'application/wasm'
-			: key.endsWith('.json')
-				? 'application/json'
-				: key.endsWith('.md') || key.endsWith('/LICENSE')
-					? 'text/plain; charset=utf-8'
-					: 'application/javascript';
 		headers.set('Content-Type', contentType);
 		headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 		headers.set('Access-Control-Allow-Origin', 'https://app.example.com');
-		return new Response(object.body, { headers });
+		return new Response(request.method === 'HEAD' ? null : object.body, { headers });
 	},
 };
 ```
 
-Do not mutate objects under an existing versioned prefix.
+Bind `RUNTIME_BUCKET` to the dedicated public-assets bucket. Do not mutate objects under the
+published prefix; upload an upgrade to a new versioned prefix and update `PUBLIC_RUNTIME_PREFIX`.
+The object-key prefix is derived from it.

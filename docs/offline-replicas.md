@@ -90,7 +90,7 @@ The methods are optional in the TypeScript interface for source compatibility, b
 The browser worker uses **IDBBatchAtomicVFS (IndexedDB)**, not OPFS. Copy the versioned runtime included with the package into your application's public assets during its build:
 
 ```sh
-replicate-sqlite-assets public/replicate-sqlite
+npm exec -- replicate-sqlite-assets public/replicate-sqlite
 ```
 
 Repeated builds refresh the runtime files in that directory and preserve unrelated files.
