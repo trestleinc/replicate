@@ -1608,8 +1608,6 @@ test('repair content sync pairs current full bytes with current material after a
 	);
 
 	binding.destroy();
-	await rows.disconnect();
-	await rows.cleanup();
 	disposals.pop();
 	disposals.pop();
 	db.database.close();
@@ -1637,8 +1635,6 @@ test('restart leaves a repair marker idle until an explicit update sends full st
 	await expect(deletion.isPersisted.promise).rejects.toThrow('server rejected delete');
 	const marker = await first.persistence.kv.get('full-sync-required:offline:a');
 	expect(marker).toBeTypeOf('number');
-	await initial.rows.disconnect();
-	await initial.rows.cleanup();
 	disposals.pop();
 	disposals.pop();
 	first.database.close();
@@ -1647,7 +1643,15 @@ test('restart leaves a repair marker idle until an explicit update sends full st
 	disposals.push(() => reopened.persistence.close!());
 	const server = new Y.Doc();
 	Y.applyUpdateV2(server, base);
+	const recoveryVector = Y.encodeStateVector(server);
+	server.getMap('fields').set('title', 'recovered');
+	const recoveryDiff = Y.encodeStateAsUpdateV2(server, recoveryVector);
 	const accepting = transport();
+	accepting.client.query.mockResolvedValue({
+		mode: 'recovery',
+		exists: true,
+		diff: recoveryDiff.buffer,
+	});
 	const accepted: any[] = [];
 	accepting.client.mutation.mockImplementation(async (ref: any, args: any) => {
 		if (getFunctionName(ref) === 'offline:replicate') accepted.push(args);
@@ -1656,7 +1660,7 @@ test('restart leaves a repair marker idle until an explicit update sends full st
 	const next = await openProse(reopened.persistence, accepting);
 	await next.rows.connect();
 	await vi.waitFor(() => expect(accepting.subscriptions.length).toBeGreaterThan(0));
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	await vi.waitFor(() => expect(next.rows.get('a')?.title).toBe('recovered'));
 	expect(accepted).toHaveLength(0);
 	expect(await reopened.persistence.kv.get('full-sync-required:offline:a')).toBe(marker);
 
