@@ -19,7 +19,7 @@ Single package with exports:
 
 - `@trestleinc/replicate/client` - Client utilities (browser/React/Svelte)
 - `@trestleinc/replicate/server` - Server helpers (Convex functions)
-- `@trestleinc/replicate/shared` - Shared types (ProseFields, XmlFragmentJSON, OperationType)
+- `@trestleinc/replicate` - Shared types (ProseFields, XmlFragmentJSON, OperationType)
 - `@trestleinc/replicate/convex.config` - Component configuration
 
 ## Development Commands
@@ -53,8 +53,8 @@ src/
 │   ├── persistence/         # Swappable storage backends
 │   │   ├── types.ts         # Persistence, KeyValueStore interfaces
 │   │   ├── sqlite/          # SQLite backends
-│   │   │   ├── web.ts       # wa-sqlite Web Worker + OPFSCoopSyncVFS
-│   │   │   ├── worker.ts    # Web Worker with wa-sqlite (CDN loaded)
+│   │   │   ├── web.ts       # wa-sqlite Web Worker + IDBBatchAtomicVFS (IndexedDB)
+│   │   │   ├── worker.ts    # Web Worker with configurable wa-sqlite assets
 │   │   │   ├── schema.ts    # SQLite schema + persistence providers
 │   │   │   └── native.ts    # op-sqlite (React Native)
 │   │   ├── memory.ts        # Testing: in-memory
@@ -163,16 +163,16 @@ Server update (via stream subscription)
 collection.create(); // Create lazy-initialized collection (SSR-safe)
 
 // Persistence providers (namespaced by platform)
-persistence.web.sqlite(); // Browser: wa-sqlite Web Worker + OPFSCoopSyncVFS
+persistence.web.sqlite.create(); // Browser: wa-sqlite Web Worker + IDBBatchAtomicVFS (IndexedDB)
 persistence.web.sqlite.once(); // SQLite singleton (shared across collections)
-persistence.web.encrypted(); // Browser: encrypted storage with WebAuthn PRF
-persistence.native.sqlite(); // React Native: op-sqlite
-persistence.native.encrypted(); // React Native: encrypted storage (not yet implemented)
-persistence.memory(); // Testing: in-memory (cross-platform)
-persistence.custom(); // Custom storage adapter (cross-platform)
+persistence.web.encryption.create(); // Browser: encrypted storage with WebAuthn PRF
+persistence.web.encryption.manager(); // Optional encryption lifecycle manager
+persistence.native.sqlite.create(); // React Native: op-sqlite
+persistence.native.encryption.create(); // React Native: encrypted storage (not yet implemented)
+persistence.memory.create(); // Testing: in-memory (cross-platform)
+persistence.custom.create(); // Custom storage adapter (cross-platform)
 
 // Schema helpers (matches server API)
-schema.prose(); // Zod schema for prose fields
 schema.prose.extract(); // Extract plain text from ProseMirror JSON
 schema.prose.empty(); // Create empty prose value
 ```
@@ -187,7 +187,7 @@ schema.table(); // Define replicated table schema
 schema.prose(); // Validator for ProseMirror JSON
 ```
 
-### Shared (`@trestleinc/replicate/shared`)
+### Shared (`@trestleinc/replicate`)
 
 ```typescript
 ProseFields<T>; // Extract prose field names from document type
@@ -216,15 +216,19 @@ export const { stream, material, insert, update, remove, versions } = r<Task>({
 
 ```typescript
 import { collection, persistence } from '@trestleinc/replicate/client';
+import SqliteWorker from '@trestleinc/replicate/worker?worker';
 import { ConvexClient } from 'convex/browser';
 
+const sqlite = persistence.web.sqlite.once({
+	name: 'tasks',
+	assetBase: '/replicate-sqlite',
+	worker: () => new SqliteWorker(),
+});
+
 export const tasks = collection.create({
-	persistence: async () => {
-		const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-		return persistence.sqlite.browser(SQL, 'tasks');
-	},
+	schema: taskSchema,
+	persistence: sqlite,
 	config: () => ({
-		schema: taskSchema,
 		convexClient: new ConvexClient(import.meta.env.VITE_CONVEX_URL),
 		api: api.tasks,
 		getKey: (task) => task.id,
@@ -233,10 +237,10 @@ export const tasks = collection.create({
 
 // Initialize once during app startup (browser only)
 await tasks.init();
-const collection = tasks.get();
+const rows = tasks.get();
 
 // Prose binding for rich text
-const binding = await collection.utils.prose(id, 'content');
+const binding = await rows.doc(id).prose('content');
 ```
 
 ### Sync Registration (Internal)

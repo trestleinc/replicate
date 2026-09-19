@@ -1,19 +1,20 @@
-import { initSchema, type Executor } from './schema.js';
-
-const CDN_BASE = 'https://wa-sqlite.trestle.inc/v1.0.0';
+import { initSchema, type Executor, type SqliteStatement } from './schema.js';
 
 const INIT = 0;
 const EXECUTE = 1;
 const CLOSE = 2;
 const FLUSH = 3;
+const TRANSACTION = 4;
 
 interface Request {
 	id: number;
-	type: typeof INIT | typeof EXECUTE | typeof CLOSE | typeof FLUSH;
+	type: typeof INIT | typeof EXECUTE | typeof CLOSE | typeof FLUSH | typeof TRANSACTION;
 	name?: string;
 	wasmModule?: WebAssembly.Module;
+	assetBase?: string;
 	sql?: string;
 	params?: unknown[];
+	statements?: readonly SqliteStatement[];
 }
 
 interface Response {
@@ -27,12 +28,18 @@ let sqlite3: any;
 let db: number;
 let vfs: any;
 let mutex: Promise<unknown> = Promise.resolve();
+let closing = false;
+let closePromise: Promise<void> | null = null;
 
-async function init(name: string, wasmModule: WebAssembly.Module): Promise<void> {
+async function init(
+	name: string,
+	wasmModule: WebAssembly.Module,
+	assetBase: string
+): Promise<void> {
 	const [{ default: SQLiteESMFactory }, { IDBBatchAtomicVFS }, SQLite] = await Promise.all([
-		import(/* @vite-ignore */ `${CDN_BASE}/dist/wa-sqlite-async.mjs`),
-		import(/* @vite-ignore */ `${CDN_BASE}/src/examples/IDBBatchAtomicVFS.js`),
-		import(/* @vite-ignore */ `${CDN_BASE}/src/sqlite-api.js`),
+		import(/* @vite-ignore */ `${assetBase}/dist/wa-sqlite-async.mjs`),
+		import(/* @vite-ignore */ `${assetBase}/src/examples/IDBBatchAtomicVFS.js`),
+		import(/* @vite-ignore */ `${assetBase}/src/sqlite-api.js`),
 	]);
 
 	const module = await SQLiteESMFactory({
@@ -52,7 +59,7 @@ async function init(name: string, wasmModule: WebAssembly.Module): Promise<void>
 	db = await sqlite3.open_v2(name);
 
 	await sqlite3.exec(db, 'PRAGMA cache_size = -8000;');
-	await sqlite3.exec(db, 'PRAGMA synchronous = NORMAL;');
+	await sqlite3.exec(db, 'PRAGMA synchronous = FULL;');
 	await sqlite3.exec(db, 'PRAGMA temp_store = MEMORY;');
 
 	const executor: Executor = {
@@ -63,38 +70,62 @@ async function init(name: string, wasmModule: WebAssembly.Module): Promise<void>
 			sqlite3.close(db);
 			vfs.close();
 		},
+		transaction,
 	};
 
 	await initSchema(executor);
 }
 
+async function executeNow(
+	sql: string,
+	params?: unknown[]
+): Promise<{ rows: Record<string, unknown>[] }> {
+	const rows: Record<string, unknown>[] = [];
+
+	for await (const stmt of sqlite3.statements(db, sql)) {
+		if (params && params.length > 0) {
+			sqlite3.bind_collection(stmt, params);
+		}
+
+		const columns: string[] = sqlite3.column_names(stmt);
+		while ((await sqlite3.step(stmt)) === 100) {
+			const row = sqlite3.row(stmt);
+			const obj: Record<string, unknown> = {};
+			columns.forEach((col: string, i: number) => {
+				obj[col] = row[i];
+			});
+			rows.push(obj);
+		}
+	}
+
+	return { rows };
+}
+
+function serialize<T>(operation: () => Promise<T>): Promise<T> {
+	const result = mutex.catch(() => {}).then(operation);
+	mutex = result;
+	return result;
+}
+
 function execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> {
-	const operation = mutex
-		.catch(() => {})
-		.then(async () => {
-			const rows: Record<string, unknown>[] = [];
+	return serialize(() => executeNow(sql, params));
+}
 
-			for await (const stmt of sqlite3.statements(db, sql)) {
-				if (params && params.length > 0) {
-					sqlite3.bind_collection(stmt, params);
-				}
-
-				const columns: string[] = sqlite3.column_names(stmt);
-				while ((await sqlite3.step(stmt)) === 100) {
-					const row = sqlite3.row(stmt);
-					const obj: Record<string, unknown> = {};
-					columns.forEach((col: string, i: number) => {
-						obj[col] = row[i];
-					});
-					rows.push(obj);
-				}
+function transaction(statements: readonly SqliteStatement[]): Promise<void> {
+	return serialize(async () => {
+		await executeNow('BEGIN IMMEDIATE');
+		try {
+			for (const statement of statements) await executeNow(statement.sql, statement.params);
+			await executeNow('COMMIT');
+		} catch (error) {
+			try {
+				await executeNow('ROLLBACK');
+			} catch {
+				// Preserve the statement failure that caused the rollback.
 			}
-
-			return { rows };
-		});
-
-	mutex = operation;
-	return operation;
+			throw error;
+		}
+	});
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
@@ -103,20 +134,34 @@ self.onmessage = async (e: MessageEvent<Request>) => {
 	try {
 		switch (type) {
 			case INIT:
-				await init(name!, e.data.wasmModule!);
+				await init(name!, e.data.wasmModule!, e.data.assetBase!);
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 			case EXECUTE: {
+				if (closing) throw new Error('SQLite worker is closing');
 				const result = await execute(sql!, params);
 				self.postMessage({ id, ok: true, rows: result.rows } satisfies Response);
 				break;
 			}
 			case FLUSH:
+				if (closing) throw new Error('SQLite worker is closing');
+				await mutex;
+				self.postMessage({ id, ok: true } satisfies Response);
+				break;
+			case TRANSACTION:
+				if (closing) throw new Error('SQLite worker is closing');
+				await transaction(e.data.statements!);
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 			case CLOSE:
-				sqlite3.close(db);
-				vfs.close();
+				closing = true;
+				closePromise ??= mutex
+					.catch(() => {})
+					.then(async () => {
+						await sqlite3.close(db);
+						await vfs.close();
+					});
+				await closePromise;
 				self.postMessage({ id, ok: true } satisfies Response);
 				break;
 		}

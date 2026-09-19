@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Manual connection gating, read-only collections, captured application request arguments, and awaitable connect/disconnect/reset lifecycle.
+- Versioned, checksummed self-hostable SQLite runtime assets and offline browser process-restart tests.
+- Bounded, resumable `migrateSnapshots` component migration for legacy shared snapshot sequence positions.
+
+### Fixed
+
+- Persisted rows become ready without waiting for network recovery.
+- Deletion and recovery absence drain/delete durable document state; failed writes cannot advance cursors or acknowledge undurable vectors.
+- Raw updates with missing Yjs dependencies survive restart; stale network generations cannot repopulate reset replicas.
+- Disconnect/reset followed by collection cleanup stops each Convex subscription once and ignores queued callbacks after unsubscribe.
+- Full-row updates remove omitted optional fields, SQLite document clearing is atomic, and browser worker shutdown drains accepted work while rejecting new work after closing starts.
+- Snapshot/delta discovery works after compaction, including scheduled compaction and writes between small pages.
+- Rejected deletes persist a marker-removal rollback before republishing and retain private full-state repair metadata across restart until the next explicit update or delete succeeds.
+
+### Upgrade notes
+
+Existing v2 component collections must complete snapshot migration before streaming. See [Durable offline replicas](docs/offline-replicas.md) for mixed-client support, pending writable creations, third-party persistence capabilities, runtime provenance, and native verification limits.
+
 ## [1.2.0-preview.0] - 2025-12-31
 
 ### Added

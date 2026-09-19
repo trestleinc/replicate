@@ -14,12 +14,12 @@ Replicate requires testing across multiple layers:
 
 ## Test Categories & Environments
 
-| Category         | Environment  | Purpose                           | Tools                   |
-| ---------------- | ------------ | --------------------------------- | ----------------------- |
-| **Unit**         | jsdom        | Actor logic, validators, Yjs ops  | Vitest + @effect/vitest |
-| **Integration**  | jsdom        | Collection sync, offline→online   | fake-indexeddb + Yjs    |
-| **E2E (Convex)** | edge-runtime | Component mutations, compaction   | convex-test             |
-| **Browser**      | Playwright   | SQLite persistence, OPFS, Workers | @vitest/browser         |
+| Category         | Environment  | Purpose                                | Tools                   |
+| ---------------- | ------------ | -------------------------------------- | ----------------------- |
+| **Unit**         | jsdom        | Actor logic, validators, Yjs ops       | Vitest + @effect/vitest |
+| **Integration**  | jsdom        | Collection sync, offline→online        | fake-indexeddb + Yjs    |
+| **E2E (Convex)** | edge-runtime | Component mutations, compaction        | convex-test             |
+| **Browser**      | Playwright   | SQLite persistence, IndexedDB, Workers | @vitest/browser         |
 
 ## Dependencies
 
@@ -50,7 +50,7 @@ src/test/
 │   ├── compaction.test.ts     # scheduleCompaction + runCompaction
 │   └── presence.test.ts       # Sessions, mark, presence
 └── browser/                    # @vitest/browser (Playwright)
-    ├── sqlite.test.ts         # wa-sqlite + OPFS
+    ├── sqlite.test.ts         # wa-sqlite + IDBBatchAtomicVFS
     └── worker.test.ts         # Web Worker communication
 ```
 
@@ -277,32 +277,42 @@ test('extracts prose text', () => {
 ```typescript
 // @vitest-environment browser
 
-import { persistence } from '$/client/persistence';
+import { persistence } from '@trestleinc/replicate/client';
+import SqliteWorker from '@trestleinc/replicate/worker?worker';
 
 describe('SQLite Persistence', () => {
-	let db: Awaited<ReturnType<typeof persistence.web.sqlite>>;
+	let db: Awaited<ReturnType<typeof persistence.web.sqlite.create>>;
+	let name: string;
 
 	beforeEach(async () => {
-		db = await persistence.web.sqlite({
-			name: `test-${crypto.randomUUID()}`,
+		name = `test-${crypto.randomUUID()}`;
+		db = await persistence.web.sqlite.create({
+			name,
+			assetBase: '/replicate-sqlite',
+			worker: () => new SqliteWorker(),
 		});
 	});
 
 	afterEach(async () => {
-		await db.close();
+		await db.close!();
 	});
 
 	test('persists and retrieves data', async () => {
-		await db.kv.set('key', new Uint8Array([1, 2, 3]));
+		await db.kv.set('key', 'value');
 		const result = await db.kv.get('key');
 
-		expect(result).toEqual(new Uint8Array([1, 2, 3]));
+		expect(result).toBe('value');
 	});
 
-	test('uses OPFS via wa-sqlite', async () => {
-		// OPFS is automatically used when available
-		const estimate = await navigator.storage.estimate();
-		expect(estimate.quota).toBeGreaterThan(0);
+	test('reopens IDBBatchAtomicVFS data from IndexedDB', async () => {
+		await db.kv.set('key', 'durable');
+		await db.close!();
+		db = await persistence.web.sqlite.create({
+			name,
+			assetBase: '/replicate-sqlite',
+			worker: () => new SqliteWorker(),
+		});
+		expect(await db.kv.get('key')).toBe('durable');
 	});
 });
 ```
@@ -408,7 +418,7 @@ export const createDocWithFields = (fields: Record<string, unknown>): Y.Doc => {
    - Client → server → other clients
    - Offline accumulation → online sync
 5. **Browser persistence** - Real browser APIs
-   - wa-sqlite + OPFS
+   - wa-sqlite + IDBBatchAtomicVFS (IndexedDB)
    - Web Worker communication
 
 ## Running Tests
@@ -636,7 +646,7 @@ Rather than writing 100+ trivial tests, aim for:
 | **Compaction flow**     | 3-5 tests    | Scheduling, retry, peer safety, retain logic    |
 | **Effect actors**       | 4-6 tests    | Batching, debounce, retry, shutdown cleanup     |
 | **Integration sync**    | 3-5 tests    | Full client→server→client cycle, offline→online |
-| **Browser persistence** | 2-4 tests    | SQLite write/read, OPFS access                  |
+| **Browser persistence** | 2-4 tests    | SQLite write/read, IndexedDB reopen             |
 
 **Total: ~17-28 deep tests** (not 50+ shallow ones)
 

@@ -6,6 +6,9 @@
 # Dist
 node_modules
 dist/
+# Versioned upstream runtime distribution (not this repository's build output).
+!packages/replicate/assets/wa-sqlite/dist/
+!packages/replicate/assets/wa-sqlite/dist/*
 packages/*/dist
 apps/*/dist
 apps/*/.env

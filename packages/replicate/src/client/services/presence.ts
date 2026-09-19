@@ -73,6 +73,8 @@ export interface PresenceConfig {
 	heartbeatMs?: number;
 	throttleMs?: number;
 	syncReady?: Promise<void>;
+	/** Collection integrations supply only vectors covered by durable checkpoints. */
+	durableVector?: () => ArrayBuffer | undefined;
 	user?: () => UserIdentity | undefined;
 	anonymousPresence?: AnonymousPresenceConfig;
 }
@@ -161,6 +163,7 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 	const subscribers = new Set<(state: PresenceState) => void>();
 
 	const getVector = (): ArrayBuffer | undefined => {
+		if (config.durableVector) return config.durableVector();
 		return Y.encodeStateVector(ydoc).buffer as ArrayBuffer;
 	};
 
@@ -329,11 +332,13 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 		}
 
 		const payload = buildJoinPayload(cursorOverride);
-		sendWithSingleFlight(payload).then(() => {
-			if (state === 'joining') {
-				transitionTo('active');
-			}
-		});
+		sendWithSingleFlight(payload)
+			.then(() => {
+				if (state === 'joining') {
+					transitionTo('active');
+				}
+			})
+			.catch(() => {});
 	};
 
 	const leavePresence = (): void => {
@@ -342,11 +347,13 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 
 		transitionTo('leaving');
 
-		sendWithSingleFlight({ action: 'leave' }).then(() => {
-			if (state === 'leaving') {
-				transitionTo('idle');
-			}
-		});
+		sendWithSingleFlight({ action: 'leave' })
+			.then(() => {
+				if (state === 'leaving') {
+					transitionTo('idle');
+				}
+			})
+			.catch(() => {});
 	};
 
 	const throttledJoin = (): void => {
@@ -472,11 +479,13 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 			if (e.persisted) return;
 			if (state === 'destroyed') return;
 
-			convexClient.mutation(api.presence, {
-				document,
-				client,
-				action: 'leave' as const,
-			});
+			convexClient
+				.mutation(api.presence, {
+					document,
+					client,
+					action: 'leave' as const,
+				})
+				.catch(() => {});
 		};
 
 		globalThis.window.addEventListener('pagehide', handler);
@@ -574,11 +583,13 @@ export function createPresence(config: PresenceConfig): PresenceProvider {
 			remoteClientIds.clear();
 			awareness.emit('update', [{ added: [], updated: [], removed: [] }, 'remote']);
 
-			convexClient.mutation(api.presence, {
-				document,
-				client,
-				action: 'leave' as const,
-			});
+			convexClient
+				.mutation(api.presence, {
+					document,
+					client,
+					action: 'leave' as const,
+				})
+				.catch(() => {});
 
 			awareness.destroy();
 		},

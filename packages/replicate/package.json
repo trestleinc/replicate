@@ -21,7 +21,9 @@
 		"dist",
 		"LICENSE",
 		"README.md",
-		"src"
+		"src",
+		"assets",
+		"scripts/copy-sqlite-assets.mjs"
 	],
 	"type": "module",
 	"main": "./dist/shared/index.js",
@@ -72,11 +74,15 @@
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"test:browser": "node scripts/test-offline-browser.mjs",
+		"test:assets": "node scripts/copy-sqlite-assets.mjs --verify",
+		"test:packed-consumer": "node scripts/test-packed-consumer.mjs"
 	},
 	"dependencies": {
 		"@logtape/logtape": "catalog:",
-		"@logtape/pretty": "catalog:"
+		"@logtape/pretty": "catalog:",
+		"wa-sqlite": "https://codeload.github.com/rhashimoto/wa-sqlite/tar.gz/07ad48cf2f682d279f9cd69818cc1d39b2ccda86"
 	},
 	"devDependencies": {
 		"@convex-dev/eslint-plugin": "catalog:",
@@ -104,23 +110,23 @@
 		"tsdown": "0.20.0-beta.3",
 		"typescript": "catalog:",
 		"typescript-eslint": "catalog:",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"vite": "catalog:"
 	},
 	"peerDependencies": {
 		"@op-engineering/op-sqlite": "15.1.14",
 		"@tanstack/db": "^0.5.20",
 		"convex": "^1.31.4",
 		"lib0": "^0.2.0",
-		"wa-sqlite": "1.0.0",
 		"y-protocols": "1.0.7",
 		"yjs": "13.6.29"
 	},
 	"peerDependenciesMeta": {
-		"wa-sqlite": {
-			"optional": true
-		},
 		"@op-engineering/op-sqlite": {
 			"optional": true
 		}
+	},
+	"bin": {
+		"replicate-sqlite-assets": "./scripts/copy-sqlite-assets.mjs"
 	}
 }

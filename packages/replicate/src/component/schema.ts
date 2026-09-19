@@ -67,8 +67,12 @@ export default defineSchema({
 		bytes: v.bytes(),
 		vector: v.bytes(),
 		seq: v.number(),
+		publication: v.optional(v.literal(1)),
 		created: v.number(),
-	}).index('by_document', ['collection', 'document']),
+	})
+		.index('by_document', ['collection', 'document'])
+		.index('by_seq', ['collection', 'seq'])
+		.index('by_publication', ['collection', 'publication']),
 
 	sessions: defineTable({
 		collection: v.string(),

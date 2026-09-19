@@ -245,6 +245,7 @@ export const compactResultValidator = v.object({
  * Recovery query result with optional diff and state vector.
  */
 export const recoveryResultValidator = v.object({
+	known: v.optional(v.boolean()),
 	diff: v.optional(v.bytes()),
 	vector: v.bytes(),
 });

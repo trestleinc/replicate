@@ -8,6 +8,7 @@ export default [
 	{
 		ignores: [
 			'**/node_modules/**',
+			'packages/replicate/assets/**',
 			'**/.svelte-kit/**',
 			'**/dist/**',
 			'**/build/**',
@@ -42,7 +43,7 @@ export default [
 	},
 	{
 		// Allow CommonJS require() in config files
-		files: ['**/*.config.js', '**/*.config.cjs'],
+		files: ['**/*.config.js', '**/*.config.cjs', '**/scripts/*.cjs'],
 		rules: {
 			'@typescript-eslint/no-require-imports': 'off',
 		},

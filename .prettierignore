@@ -5,3 +5,5 @@ bun.lock
 **/dist/
 **/build/
 **/_generated/
+
+packages/replicate/assets/

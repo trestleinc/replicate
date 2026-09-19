@@ -30,8 +30,8 @@ export const WASM_URL = `${CDN_BASE}/dist/wa-sqlite-async.wasm`;
  * <head dangerouslySetInnerHTML={{ __html: preloadLinks() }} />
  * ```
  */
-export function preloadLinks(): string {
-	return `<link rel="preload" href="${WASM_URL}" as="fetch" type="application/wasm" crossorigin>`;
+export function preloadLinks(assetBase = CDN_BASE): string {
+	return `<link rel="preload" href="${assetBase.replace(/\/$/, '')}/dist/wa-sqlite-async.wasm" as="fetch" type="application/wasm" crossorigin>`;
 }
 
 /**
@@ -49,16 +49,20 @@ export function preloadLinks(): string {
  *
  * @returns A promise resolving to the compiled WebAssembly.Module
  */
-let _compiled: Promise<WebAssembly.Module> | null = null;
+const compiled = new Map<string, Promise<WebAssembly.Module>>();
 
-export function compileWasmModule(): Promise<WebAssembly.Module> {
+export function compileWasmModule(assetBase = CDN_BASE): Promise<WebAssembly.Module> {
 	if (typeof window === 'undefined') {
 		return Promise.reject(new Error('compileWasmModule is browser-only'));
 	}
-	if (!_compiled) {
-		_compiled = WebAssembly.compileStreaming(fetch(WASM_URL));
+	const url = `${assetBase.replace(/\/$/, '')}/dist/wa-sqlite-async.wasm`;
+	let result = compiled.get(url);
+	if (!result) {
+		result = WebAssembly.compileStreaming(fetch(url));
+		compiled.set(url, result);
+		void result.catch(() => compiled.delete(url));
 	}
-	return _compiled;
+	return result;
 }
 
 /**
@@ -73,7 +77,7 @@ export function compileWasmModule(): Promise<WebAssembly.Module> {
  * injectPreloadLinks();
  * ```
  */
-export function injectPreloadLinks(): void {
+export function injectPreloadLinks(assetBase = CDN_BASE): void {
 	if (typeof document === 'undefined') return;
 
 	const link = document.createElement('link');
@@ -81,6 +85,6 @@ export function injectPreloadLinks(): void {
 	link.as = 'fetch';
 	link.type = 'application/wasm';
 	link.crossOrigin = 'anonymous';
-	link.href = WASM_URL;
+	link.href = `${assetBase.replace(/\/$/, '')}/dist/wa-sqlite-async.wasm`;
 	document.head.appendChild(link);
 }

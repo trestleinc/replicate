@@ -42,7 +42,6 @@
 			"@tiptap/extension-placeholder": "^3.15.3",
 			"lucide-react": "^0.562.0",
 			"@lucide/svelte": "^0.562.0",
-			"wa-sqlite": "^1.0.0",
 			"@electric-sql/pglite": "^0.3.14",
 			"eslint": "^9.39.2",
 			"@eslint/js": "^9.39.2",

@@ -1,0 +1,5 @@
+{
+	"name": "replicate-native-graph",
+	"private": true,
+	"main": "index.js"
+}

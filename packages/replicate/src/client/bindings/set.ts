@@ -64,7 +64,6 @@ export interface SetBindingConfig<T> {
 	getMaterial: () => Record<string, unknown> | null;
 }
 
-
 /**
  * Create sync function for set.
  */
@@ -168,7 +167,7 @@ export function createSetBinding<T>(config: SetBindingConfig<T>): SetBinding<T> 
 		transaction: Y.Transaction
 	) => {
 		notifySubscribers();
-		if (transaction.origin !== SERVER_ORIGIN) {
+		if (transaction.origin !== SERVER_ORIGIN && transaction.origin !== 'replicate-persisted') {
 			sync.onLocalChange();
 		}
 	};

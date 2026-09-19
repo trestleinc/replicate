@@ -289,23 +289,34 @@ export class Replicate<T extends object> {
 
 				// Insert operation
 				if (type === 'insert') {
-					await ctx.db.insert(collection, {
-						id: document,
-						...(doc as object),
-						timestamp: Date.now(),
-					});
+					// A disconnected client may retry after the original insert committed.
+					// The index read and insert share this transaction, so concurrent retries
+					// cannot create duplicate logical IDs or repeat onInsert side effects.
+					const existing = await ctx.db
+						.query(collection)
+						.withIndex('by_doc_id', (q) => q.eq('id', document))
+						.first();
+					// Retry payloads can contain newer offline edits. Existing records use
+					// the normal update path below, including its hook and CRDT merge.
+					if (!existing) {
+						await ctx.db.insert(collection, {
+							id: document,
+							...(doc as object),
+							timestamp: Date.now(),
+						});
 
-					const result = await ctx.runMutation(component.mutations.insertDocument, {
-						collection,
-						document,
-						bytes,
-						threshold,
-						timeout,
-						retain,
-					});
+						const result = await ctx.runMutation(component.mutations.insertDocument, {
+							collection,
+							document,
+							bytes,
+							threshold,
+							timeout,
+							retain,
+						});
 
-					await safeHook('onInsert', opts?.onInsert, ctx, doc);
-					return { success: true, seq: result.seq };
+						await safeHook('onInsert', opts?.onInsert, ctx, doc);
+						return { success: true, seq: result.seq };
+					}
 				}
 
 				// Update operation (fallthrough)
@@ -456,12 +467,31 @@ export class Replicate<T extends object> {
 				}
 
 				if (args.vector !== undefined && args.document !== undefined) {
+					const [state] = await enrichChangesWithExistence(
+						ctx,
+						collection,
+						[
+							{
+								document: args.document,
+								bytes: new ArrayBuffer(0),
+								seq: 0,
+								type: 'snapshot',
+							},
+						],
+						opts?.view
+					);
+
 					const recoveryResult = await ctx.runQuery(component.mutations.recovery, {
 						collection,
 						document: args.document,
 						vector: args.vector,
 					});
-					return { mode: 'recovery' as const, ...recoveryResult };
+					return {
+						mode: 'recovery' as const,
+						...recoveryResult,
+						exists: state.exists,
+						diff: state.exists ? recoveryResult.diff : undefined,
+					};
 				}
 
 				const result = await ctx.runQuery(component.mutations.stream, {

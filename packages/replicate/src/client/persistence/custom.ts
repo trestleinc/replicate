@@ -1,3 +1,4 @@
+import { PersistenceWrites } from './writes.js';
 import * as Y from 'yjs';
 import type { StorageAdapter, Persistence, PersistenceProvider, KeyValueStore } from './types.js';
 
@@ -26,6 +27,8 @@ class AdapterKeyValueStore implements KeyValueStore {
 class AdapterPersistenceProvider implements PersistenceProvider {
 	private updateHandler: (update: Uint8Array, origin: unknown) => void;
 	private updateCounter = 0;
+	private writes = new PersistenceWrites();
+	private acceptingWrites = true;
 	readonly whenSynced: Promise<void>;
 
 	constructor(
@@ -36,8 +39,11 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 		this.whenSynced = this.loadState();
 
 		this.updateHandler = (update: Uint8Array, origin: unknown) => {
-			if (origin !== 'custom') {
-				void this.saveUpdate(update);
+			if (this.acceptingWrites && origin !== 'custom' && origin !== 'replicate-persisted') {
+				this.writes.add(async () => {
+					await this.whenSynced;
+					await this.saveUpdate(update);
+				});
 			}
 		};
 		this.ydoc.on('update', this.updateHandler);
@@ -70,7 +76,32 @@ class AdapterPersistenceProvider implements PersistenceProvider {
 		await this.adapter.set(`${UPDATE_PREFIX}${this.collection}:${paddedCounter}`, update);
 	}
 
+	async storeUpdate(update: Uint8Array): Promise<void> {
+		if (!this.acceptingWrites) throw new Error('Persistence provider is closed');
+		const bytes = Y.convertUpdateFormatV2ToV1(update);
+		this.writes.add(async () => {
+			await this.whenSynced;
+			await this.saveUpdate(bytes);
+		});
+		await this.flush();
+	}
+
+	async flush(): Promise<void> {
+		await this.whenSynced;
+		await this.writes.flush();
+	}
+
+	async clear(): Promise<void> {
+		this.destroy();
+		await this.flush();
+		await this.adapter.delete(`${SNAPSHOT_PREFIX}${this.collection}`);
+		for (const key of await this.adapter.keys(`${UPDATE_PREFIX}${this.collection}:`)) {
+			await this.adapter.delete(key);
+		}
+	}
+
 	destroy(): void {
+		this.acceptingWrites = false;
 		this.ydoc.off('update', this.updateHandler);
 	}
 }

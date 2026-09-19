@@ -1,18 +1,21 @@
-import { createPersistenceFromExecutor, type Executor } from './schema.js';
+import { createPersistenceFromExecutor, type Executor, type SqliteStatement } from './schema.js';
 import type { Persistence } from '../types.js';
-import { compileWasmModule } from './preload.js';
+import { compileWasmModule, CDN_BASE } from './preload.js';
 
 const INIT = 0;
 const EXECUTE = 1;
 const CLOSE = 2;
+const TRANSACTION = 4;
 
 interface Request {
 	id: number;
 	type: number;
 	name?: string;
 	wasmModule?: WebAssembly.Module;
+	assetBase?: string;
 	sql?: string;
 	params?: unknown[];
+	statements?: readonly SqliteStatement[];
 }
 
 interface Response {
@@ -32,6 +35,7 @@ class WorkerExecutor implements Executor {
 	private nextId = 0;
 	private pending = new Map<number, PendingRequest>();
 	private terminated = false;
+	private closePromise: Promise<void> | null = null;
 
 	constructor(worker: Worker) {
 		this.worker = worker;
@@ -63,6 +67,7 @@ class WorkerExecutor implements Executor {
 
 	private rejectAllPending(error: Error): void {
 		this.terminated = true;
+		this.worker.terminate();
 		for (const [, handler] of this.pending) {
 			handler.reject(error);
 		}
@@ -71,18 +76,23 @@ class WorkerExecutor implements Executor {
 
 	private send(type: number, payload: Partial<Request> = {}): Promise<Record<string, unknown>[]> {
 		return new Promise((resolve, reject) => {
-			if (this.terminated) {
-				reject(new Error('Worker has been terminated'));
+			if (this.terminated || (this.closePromise && type !== CLOSE)) {
+				reject(new Error(this.terminated ? 'Worker has been terminated' : 'Worker is closing'));
 				return;
 			}
 			const id = this.nextId++;
 			this.pending.set(id, { resolve, reject });
-			this.worker.postMessage({ id, type, ...payload } satisfies Request);
+			try {
+				this.worker.postMessage({ id, type, ...payload } satisfies Request);
+			} catch (error) {
+				this.pending.delete(id);
+				reject(error);
+			}
 		});
 	}
 
-	async init(name: string, wasmModule: WebAssembly.Module): Promise<void> {
-		await this.send(INIT, { name, wasmModule });
+	async init(name: string, wasmModule: WebAssembly.Module, assetBase: string): Promise<void> {
+		await this.send(INIT, { name, wasmModule, assetBase });
 	}
 
 	async execute(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> {
@@ -90,36 +100,55 @@ class WorkerExecutor implements Executor {
 		return { rows };
 	}
 
-	close(): void {
-		for (const [, handler] of this.pending) {
-			handler.reject(new Error('Worker terminated'));
+	async transaction(statements: readonly SqliteStatement[]): Promise<void> {
+		await this.send(TRANSACTION, { statements });
+	}
+
+	async close(): Promise<void> {
+		if (this.terminated) return;
+		if (!this.closePromise) {
+			this.closePromise = this.send(CLOSE).then(
+				() => {
+					this.terminated = true;
+					this.worker.terminate();
+				},
+				(error) => {
+					this.terminated = true;
+					this.worker.terminate();
+					throw error;
+				}
+			);
 		}
-		this.pending.clear();
-		this.send(CLOSE).catch(() => {});
-		this.worker.terminate();
+		await this.closePromise;
 	}
 }
 
 export interface WebSqliteOptions {
 	name: string;
+	/** Base URL of a compatible wa-sqlite runtime graph, including dist/ and src/. */
+	assetBase?: string;
 	worker: Worker | (() => Worker | Promise<Worker>);
 }
 
 export async function createWebSqlitePersistence(options: WebSqliteOptions): Promise<Persistence> {
 	const { name, worker } = options;
+	const assetBase = new URL(options.assetBase ?? CDN_BASE, document.baseURI).href.replace(
+		/\/$/,
+		''
+	);
 
 	// Compile WASM in parallel with worker creation for maximum performance.
 	// compileWasmModule() consumes the <link rel="preload"> cache entry and
 	// uses WebAssembly.compileStreaming for streaming compilation.
 	const [resolvedWorker, wasmModule] = await Promise.all([
 		typeof worker === 'function' ? worker() : worker,
-		compileWasmModule(),
+		compileWasmModule(assetBase),
 	]);
 
 	const executor = new WorkerExecutor(resolvedWorker);
 
 	try {
-		await executor.init(name, wasmModule);
+		await executor.init(name, wasmModule, assetBase);
 	} catch (error) {
 		resolvedWorker.terminate();
 		throw new Error(`Failed to initialize: ${error}`);

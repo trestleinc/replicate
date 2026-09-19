@@ -32,9 +32,18 @@ class MemoryKeyValueStore implements KeyValueStore {
  */
 class MemoryPersistenceProvider implements PersistenceProvider {
 	readonly whenSynced = Promise.resolve();
+	private acceptingWrites = true;
+
+	async storeUpdate(_update: Uint8Array): Promise<void> {
+		if (!this.acceptingWrites) throw new Error('Persistence provider is closed');
+	}
+	async flush(): Promise<void> {}
+	async clear(): Promise<void> {
+		this.destroy();
+	}
 
 	destroy(): void {
-		// No resources to clean up
+		this.acceptingWrites = false;
 	}
 }
 

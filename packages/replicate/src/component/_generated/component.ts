@@ -191,11 +191,16 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         null,
         Name
       >;
+      migrateSnapshots: FunctionReference<
+        "mutation", "internal",
+        { collection: string; limit?: number },
+        { migrated: number; done: boolean }, Name
+      >;
       recovery: FunctionReference<
         "query",
         "internal",
         { collection: string; document: string; vector: ArrayBuffer },
-        { diff?: ArrayBuffer; vector: ArrayBuffer },
+        { diff?: ArrayBuffer; vector: ArrayBuffer; known?: boolean },
         Name
       >;
       runCompaction: FunctionReference<

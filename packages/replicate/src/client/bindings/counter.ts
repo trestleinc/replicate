@@ -66,7 +66,6 @@ export interface CounterBindingConfig {
 	getMaterial: () => Record<string, unknown> | null;
 }
 
-
 /**
  * Compute counter value by summing all deltas.
  */
@@ -101,7 +100,17 @@ function createSyncFn(
  * Create a counter binding.
  */
 export function createCounterBinding(config: CounterBindingConfig): CounterBinding {
-	const { collection, document, field, array, ydoc, collectionRef, clientId, debounceMs, getMaterial } = config;
+	const {
+		collection,
+		document,
+		field,
+		array,
+		ydoc,
+		collectionRef,
+		clientId,
+		debounceMs,
+		getMaterial,
+	} = config;
 
 	if (!hasContext(collection)) {
 		logger.warn('Cannot create counter binding - collection not initialized', {
@@ -138,7 +147,7 @@ export function createCounterBinding(config: CounterBindingConfig): CounterBindi
 	 * Observer handler for Y.Array changes.
 	 */
 	const observerHandler = (_event: Y.YArrayEvent<CounterDelta>, transaction: Y.Transaction) => {
-		if (transaction.origin === SERVER_ORIGIN) {
+		if (transaction.origin === SERVER_ORIGIN || transaction.origin === 'replicate-persisted') {
 			notifySubscribers();
 			return;
 		}
