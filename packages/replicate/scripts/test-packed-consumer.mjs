@@ -90,10 +90,13 @@ process.stdout.write(JSON.stringify(resolved));
 
 	await writeFile(
 		join(consumer, 'consumer-exports.ts'),
-		`import '@trestleinc/replicate';
-import '@trestleinc/replicate/client';
-import '@trestleinc/replicate/server';
-import '@trestleinc/replicate/convex.config';
+		`import type * as shared from '@trestleinc/replicate';
+import type * as client from '@trestleinc/replicate/client';
+import type * as server from '@trestleinc/replicate/server';
+import type * as config from '@trestleinc/replicate/convex.config';
+type ResolvedExports = [typeof shared, typeof client, typeof server, typeof config];
+declare const resolvedExports: ResolvedExports;
+void resolvedExports;
 `
 	);
 	await writeFile(
@@ -103,6 +106,7 @@ import '@trestleinc/replicate/convex.config';
 				compilerOptions: {
 					module: 'NodeNext',
 					moduleResolution: 'NodeNext',
+					noUncheckedSideEffectImports: true,
 					noEmit: true,
 					skipLibCheck: false,
 					strict: true,
