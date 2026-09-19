@@ -1126,6 +1126,8 @@ export function convexCollectionOptions<T extends object = object>(
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 				ensureGeneration(mutationGeneration);
+				await docManager.flush(transaction.mutations.map((mutation) => String(mutation.key)));
+				ensureGeneration(mutationGeneration);
 
 				// Process mutations in parallel for better performance
 				await Promise.all(
@@ -1147,6 +1149,7 @@ export function convexCollectionOptions<T extends object = object>(
 							material: materializedDoc,
 							type: 'insert',
 						});
+						ensureGeneration(mutationGeneration);
 						await acknowledgeCreate(document, mutationGeneration);
 					})
 				);
@@ -1169,6 +1172,8 @@ export function convexCollectionOptions<T extends object = object>(
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 				ensureGeneration(mutationGeneration);
+				await docManager.flush(transaction.mutations.map((mutation) => String(mutation.key)));
+				ensureGeneration(mutationGeneration);
 
 				if (isContentSync && metadata?.contentSync) {
 					const { bytes, material } = metadata.contentSync;
@@ -1179,6 +1184,7 @@ export function convexCollectionOptions<T extends object = object>(
 						material,
 						type: 'update',
 					});
+					ensureGeneration(mutationGeneration);
 					return;
 				}
 
@@ -1202,6 +1208,7 @@ export function convexCollectionOptions<T extends object = object>(
 								material: fullDoc,
 								type: 'update',
 							});
+							ensureGeneration(mutationGeneration);
 						})
 					);
 				}
@@ -1225,6 +1232,10 @@ export function convexCollectionOptions<T extends object = object>(
 						.map((mut) => mut.original)
 						.filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
 					ops.delete(itemsToDelete);
+					await docManager.flush(
+						transaction.mutations.map((mutation) => String(mutation.key))
+					);
+					ensureGeneration(mutationGeneration);
 
 					await Promise.all(
 						transaction.mutations.map(async (mut, i) => {
@@ -1237,6 +1248,7 @@ export function convexCollectionOptions<T extends object = object>(
 								bytes: delta.buffer,
 								type: 'delete',
 							});
+							ensureGeneration(mutationGeneration);
 						})
 					);
 					return;
@@ -1271,6 +1283,8 @@ export function convexCollectionOptions<T extends object = object>(
 							// StagedChange interface allows previousState, safe to assign via mutable reference
 							(lastChange as StagedChange).previousState = rollbackStates.get(documentId);
 						}
+						await docManager.flush([documentId]);
+						ensureGeneration(mutationGeneration);
 
 						// Optimistically remove from TanStack DB
 						const original = mut.original;
@@ -1285,6 +1299,7 @@ export function convexCollectionOptions<T extends object = object>(
 							bytes: delta.buffer,
 							type: 'delete',
 						});
+						ensureGeneration(mutationGeneration);
 					}
 				});
 			} catch (error) {

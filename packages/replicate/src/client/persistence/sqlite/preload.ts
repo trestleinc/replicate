@@ -52,6 +52,9 @@ export function preloadLinks(assetBase = CDN_BASE): string {
 const compiled = new Map<string, Promise<WebAssembly.Module>>();
 
 export function compileWasmModule(assetBase = CDN_BASE): Promise<WebAssembly.Module> {
+	if (typeof window === 'undefined') {
+		return Promise.reject(new Error('compileWasmModule is browser-only'));
+	}
 	const url = `${assetBase.replace(/\/$/, '')}/dist/wa-sqlite-async.wasm`;
 	let result = compiled.get(url);
 	if (!result) {

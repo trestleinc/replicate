@@ -450,6 +450,139 @@ test('writable default still inserts and sends document updates', async () => {
 	await vi.waitFor(() => expect(rows.get('new')?.title).toBe('edited'));
 });
 
+test.each(['insert', 'update', 'delete'] as const)(
+	'local %s waits for durable persistence before remote acknowledgement',
+	async (action) => {
+		const entered = deferred();
+		const release = deferred();
+		const document = action === 'insert' ? 'new' : 'a';
+		let block = false;
+		const db = await disk(undefined, async (sql, params) => {
+			if (
+				block &&
+				sql.startsWith('INSERT INTO deltas') &&
+				params?.[0] === `offline:${document}`
+			) {
+				entered.resolve();
+				await release.promise;
+			}
+		});
+		disposals.push(() => db.persistence.close!());
+		if (action !== 'insert') await seed(db.persistence);
+		const { rows, network } = await open(db.persistence, transport(), {
+			networkMode: 'manual',
+		});
+		await rows.connect();
+		await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+		block = true;
+		const transaction =
+			action === 'insert'
+				? rows.insert({ id: document, title: 'local' })
+				: action === 'update'
+					? rows.update(document, (row) => {
+							row.title = 'local';
+						})
+					: rows.delete(document);
+		let outcome = 'pending';
+		const persisted = transaction.isPersisted.promise.then(
+			() => {
+				outcome = 'resolved';
+			},
+			(error) => {
+				outcome = 'rejected';
+				throw error;
+			}
+		);
+		await entered.promise;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(outcome).toBe('pending');
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref]: any) => getFunctionName(ref) === 'offline:replicate'
+			)
+		).toBe(false);
+		if (action === 'insert') {
+			expect(
+				db.database
+					.prepare("SELECT value FROM kv WHERE key = 'pending-create:offline:new'")
+					.get()
+			).toBeDefined();
+		}
+		release.resolve();
+		await persisted;
+		expect(outcome).toBe('resolved');
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref, args]: any) =>
+					getFunctionName(ref) === 'offline:replicate' && args.type === action
+			)
+		).toBe(true);
+		if (action === 'insert') {
+			expect(
+				db.database
+					.prepare("SELECT value FROM kv WHERE key = 'pending-create:offline:new'")
+					.get()
+			).toBeUndefined();
+		}
+		disposals.pop();
+		disposals.pop();
+		db.database.close();
+		const reopened = await disk(db.path);
+		disposals.push(() => reopened.persistence.close!());
+		const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+		if (action === 'delete') expect(next.rows.get(document)).toBeUndefined();
+		else expect(next.rows.get(document)?.title).toBe('local');
+	}
+);
+
+test.each(['insert', 'update', 'delete'] as const)(
+	'failed local %s persistence rejects before remote acknowledgement',
+	async (action) => {
+		const document = action === 'insert' ? 'new' : 'a';
+		let fail = false;
+		const db = await disk(undefined, async (sql, params) => {
+			if (
+				fail &&
+				sql.startsWith('INSERT INTO deltas') &&
+				params?.[0] === `offline:${document}`
+			) {
+				throw new Error('disk unavailable');
+			}
+		});
+		disposals.push(() => db.persistence.close!());
+		if (action !== 'insert') await seed(db.persistence);
+		const { rows, network } = await open(db.persistence, transport(), {
+			networkMode: 'manual',
+		});
+		await rows.connect();
+		await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+		fail = true;
+		const transaction =
+			action === 'insert'
+				? rows.insert({ id: document, title: 'local' })
+				: action === 'update'
+					? rows.update(document, (row) => {
+							row.title = 'local';
+						})
+					: rows.delete(document);
+		await expect(transaction.isPersisted.promise).rejects.toThrow('disk unavailable');
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref]: any) => getFunctionName(ref) === 'offline:replicate'
+			)
+		).toBe(false);
+		if (action === 'insert') {
+			expect(
+				db.database
+					.prepare("SELECT value FROM kv WHERE key = 'pending-create:offline:new'")
+					.get()
+			).toBeDefined();
+		}
+		fail = false;
+		await rows.disconnect();
+	}
+);
+
 test('full-row updates remove omitted optional fields from outbound and reopened data', async () => {
 	const first = await disk();
 	disposals.push(() => first.persistence.close!());

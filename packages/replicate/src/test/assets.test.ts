@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { test, expect } from 'vitest';
+import { test, expect, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
@@ -7,6 +7,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { compileWasmModule } from '../client/persistence/sqlite/preload';
+
+test('compileWasmModule rejects in Node without fetching browser assets', async () => {
+	const fetch = vi.fn(() => Promise.reject(new Error('fetch should not run')));
+	vi.stubGlobal('fetch', fetch);
+	try {
+		await expect(compileWasmModule('/local-runtime')).rejects.toThrow(
+			'compileWasmModule is browser-only'
+		);
+		expect(fetch).not.toHaveBeenCalled();
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
 
 test('asset CLI installs into a new directory and refreshes assets on repeated builds', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'replicate-assets-'));

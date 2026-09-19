@@ -3,9 +3,17 @@
 Initialize persistence and await `collection.preload()` to read local records. Local readiness does not wait for recovery, subscriptions, or credentials. Synchronization errors do not prevent offline reads.
 
 ```ts
+const sqlite = await persistence.web.sqlite.create({
+	name: 'records',
+	assetBase: '/replicate-sqlite',
+	worker: async () => {
+		const { default: Worker } = await import('@trestleinc/replicate/worker?worker');
+		return new Worker();
+	},
+});
 const records = collection.create({
 	schema: recordSchema,
-	persistence: sqlite,
+	persistence: async () => sqlite,
 	networkMode: 'manual',
 	readOnly: true,
 	requestArgs: () => ({ guestToken: currentGuestToken }),
@@ -34,7 +42,7 @@ await local.connect();
 // Final shutdown; a shared SQLite instance closes after all its collections:
 await local.disconnect();
 await local.cleanup();
-await database.close();
+await sqlite.close?.();
 ```
 
 Disconnect does not await unresolved backend requests. Their eventual results cannot affect a later connection. It retains documents; account switching should reset or use a separate database. Reset waits for earlier local persistence work, remains disconnected, and a concurrent connect waits for reset. Recreate document handles and editing bindings after reconnect. Do not retain/mutate raw Yjs fragments across reset. The database must have a single collection owner for each collection name; concurrent independent instances sharing the same persisted collection are not supported.
