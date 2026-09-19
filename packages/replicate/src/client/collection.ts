@@ -34,11 +34,6 @@ import { createDeleteDelta, applyDeleteMarkerToDoc } from '$/client/deltas';
 import * as prose from '$/client/prose';
 import { detectYjsType, isYjsAbstractType } from '$/client/merge';
 import { getLogger } from '$/shared/logger';
-import {
-	createTransactionCoordinator,
-	type TransactionCoordinator,
-	type StagedChange,
-} from '$/client/services/transaction';
 import { createSyncQueue, type SyncQueue } from '$/client/services/sync-queue';
 import {
 	initContext,
@@ -325,7 +320,10 @@ export function convexCollectionOptions<T extends object = object>(
 	const revisions = new Map<string, number>();
 	const durableVectors = new Map<string, ArrayBuffer>();
 	const pendingCreates = new Set<string>();
+	const fullSyncRequired = new Map<string, number>();
+	let fullSyncEpoch = 0;
 	const pendingCreateKey = (id: string) => `pending-create:${collection}:${id}`;
+	const fullSyncKey = (id: string) => `full-sync-required:${collection}:${id}`;
 	let retryTimer: ReturnType<typeof setTimeout> | undefined;
 	let localReady: Promise<void> = Promise.resolve();
 	const serialize = (operation: () => Promise<void>) => {
@@ -339,6 +337,15 @@ export function convexCollectionOptions<T extends object = object>(
 			await persistence.kv.del(pendingCreateKey(id));
 			ensureGeneration(token);
 			pendingCreates.delete(id);
+		});
+	const acknowledgeFullSync = (id: string, epoch: number, token: number, revision: number) =>
+		serialize(async () => {
+			ensureGeneration(token);
+			if (fullSyncRequired.get(id) !== epoch || revisions.get(id) !== revision) return;
+			await persistence.kv.del(fullSyncKey(id));
+			ensureGeneration(token);
+			if (fullSyncRequired.get(id) === epoch && revisions.get(id) === revision)
+				fullSyncRequired.delete(id);
 		});
 	const functionPath = getFunctionName(api.delta);
 	const collection = functionPath.split(':')[0];
@@ -687,6 +694,8 @@ export function convexCollectionOptions<T extends object = object>(
 	const editorPresenceProviders = new Map<string, Set<PresenceProvider>>();
 	const removeDocument = async (id: string) => {
 		await docManager.remove(id);
+		await persistence.kv.del(fullSyncKey(id));
+		fullSyncRequired.delete(id);
 		presenceProviders.get(id)?.destroy();
 		presenceProviders.delete(id);
 		for (const provider of editorPresenceProviders.get(id) ?? []) provider.destroy();
@@ -838,6 +847,7 @@ export function convexCollectionOptions<T extends object = object>(
 					}
 					for (const id of pendingCreates) await persistence.kv.del(pendingCreateKey(id));
 					pendingCreates.clear();
+					fullSyncRequired.clear();
 					revisions.clear();
 					await seqService.clear(collection);
 					ops.replace([]);
@@ -882,10 +892,6 @@ export function convexCollectionOptions<T extends object = object>(
 		if (removals.length) ops.delete(removals);
 		if (upserts.length) ops.upsert(upserts);
 	};
-
-	// Transaction coordinator for atomic client-side mutations with rollback
-	// Ensures delete operations are atomic: if server call fails, local state is rolled back
-	let txCoordinator: TransactionCoordinator | null = null;
 
 	// Background sync queue for non-blocking server mutations
 	const syncQueue: SyncQueue = createSyncQueue({
@@ -1081,24 +1087,59 @@ export function convexCollectionOptions<T extends object = object>(
 		return deltas;
 	};
 
-	const applyYjsDelete = (mutations: CollectionMutation<DataType>[]): Uint8Array[] => {
-		const deltas: Uint8Array[] = [];
+	interface DeleteRollbackAttempt {
+		documentId: string;
+		document: Y.Doc;
+		generation: number;
+		deletedAt: unknown;
+		accepted: boolean;
+	}
 
-		for (const mut of mutations) {
-			const document = String(mut.key);
-			revisions.set(document, (revisions.get(document) ?? 0) + 1);
-			const ydoc = docManager.get(document);
-
-			if (ydoc) {
-				const delta = applyDeleteMarkerToDoc(ydoc);
-				deltas.push(delta);
-			} else {
-				const delta = createDeleteDelta();
-				deltas.push(delta);
+	const rollbackDeleteAttempt = async (attempt: DeleteRollbackAttempt): Promise<void> => {
+		if (stopped || attempt.generation !== connection.generation) return;
+		if (docManager.get(attempt.documentId) !== attempt.document) return;
+		const meta = attempt.document.getMap('_meta');
+		const previousRepairEpoch = fullSyncRequired.get(attempt.documentId);
+		const repairEpoch = ++fullSyncEpoch;
+		fullSyncRequired.set(attempt.documentId, repairEpoch);
+		try {
+			await persistence.kv.set(fullSyncKey(attempt.documentId), repairEpoch);
+		} catch (error) {
+			if (fullSyncRequired.get(attempt.documentId) === repairEpoch) {
+				if (previousRepairEpoch === undefined) fullSyncRequired.delete(attempt.documentId);
+				else fullSyncRequired.set(attempt.documentId, previousRepairEpoch);
 			}
+			throw error;
 		}
-
-		return deltas;
+		ensureGeneration(attempt.generation);
+		if (
+			docManager.get(attempt.documentId) !== attempt.document ||
+			meta.get('_deleted') !== true ||
+			meta.get('_deletedAt') !== attempt.deletedAt
+		)
+			return;
+		let restored = false;
+		attempt.document.transact(() => {
+			if (meta.get('_deleted') !== true || meta.get('_deletedAt') !== attempt.deletedAt) return;
+			meta.delete('_deleted');
+			meta.delete('_deletedAt');
+			restored = true;
+		}, YjsOrigin.Local);
+		if (!restored) return;
+		revisions.set(attempt.documentId, (revisions.get(attempt.documentId) ?? 0) + 1);
+		await docManager.flush([attempt.documentId]);
+		ensureGeneration(attempt.generation);
+		if (
+			docManager.get(attempt.documentId) !== attempt.document ||
+			isDocumentDeleted(docManager, attempt.documentId)
+		)
+			return;
+		const restoredItem = serializeDocument(docManager, attempt.documentId, crdtFields);
+		if (!restoredItem) {
+			throw new Error(`Cannot serialize document ${attempt.documentId} for rollback`);
+		}
+		ops.upsert([restoredItem as DataType]);
+		logger.debug('Rolled back delete', { documentId: attempt.documentId });
 	};
 
 	return {
@@ -1168,6 +1209,8 @@ export function convexCollectionOptions<T extends object = object>(
 			const isContentSync = !!metadata?.contentSync;
 
 			const deltas = isContentSync ? null : applyYjsUpdate(transaction.mutations);
+			if (isContentSync)
+				revisions.set(documentKey, (revisions.get(documentKey) ?? 0) + 1);
 
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
@@ -1177,14 +1220,27 @@ export function convexCollectionOptions<T extends object = object>(
 
 				if (isContentSync && metadata?.contentSync) {
 					const { bytes, material } = metadata.contentSync;
+					const repairEpoch = fullSyncRequired.get(documentKey);
+					const revision = revisions.get(documentKey) ?? 0;
+					const document = docManager.get(documentKey);
 					ensureGeneration(mutationGeneration);
 					await convexClient.mutation(api.replicate, {
 						document: documentKey,
-						bytes,
+						bytes:
+							repairEpoch !== undefined && document
+								? (Y.encodeStateAsUpdateV2(document).buffer as ArrayBuffer)
+								: bytes,
 						material,
 						type: 'update',
 					});
 					ensureGeneration(mutationGeneration);
+					if (repairEpoch !== undefined)
+						await acknowledgeFullSync(
+							documentKey,
+							repairEpoch,
+							mutationGeneration,
+							revision
+						);
 					return;
 				}
 
@@ -1196,6 +1252,9 @@ export function convexCollectionOptions<T extends object = object>(
 							if (!delta || delta.length === 0) return;
 
 							const docId = String(mut.key);
+							const repairEpoch = fullSyncRequired.get(docId);
+							const revision = revisions.get(docId) ?? 0;
+							const document = docManager.get(docId);
 							const fullDoc = serializeDocument(docManager, docId);
 							if (!fullDoc) {
 								throw new Error(`Cannot serialize document ${docId} for update`);
@@ -1204,11 +1263,21 @@ export function convexCollectionOptions<T extends object = object>(
 							ensureGeneration(mutationGeneration);
 							await convexClient.mutation(api.replicate, {
 								document: docId,
-								bytes: delta.buffer,
+								bytes:
+									repairEpoch !== undefined && document
+										? (Y.encodeStateAsUpdateV2(document).buffer as ArrayBuffer)
+										: delta.buffer,
 								material: fullDoc,
 								type: 'update',
 							});
 							ensureGeneration(mutationGeneration);
+							if (repairEpoch !== undefined)
+								await acknowledgeFullSync(
+									docId,
+									repairEpoch,
+									mutationGeneration,
+									revision
+								);
 						})
 					);
 				}
@@ -1220,90 +1289,72 @@ export function convexCollectionOptions<T extends object = object>(
 		onDelete: async ({ transaction }: CollectionTransaction<DataType>) => {
 			assertWritable();
 			const mutationGeneration = connection.generation;
+			const rollbackAttempts: DeleteRollbackAttempt[] = [];
 			try {
 				await Promise.all([persistenceReadyPromise, optimisticReadyPromise]);
 				ensureGeneration(mutationGeneration);
 
-				if (!txCoordinator) {
-					// Fallback to non-transactional delete if coordinator not ready
-					logger.warn('Transaction coordinator not initialized, using fallback delete');
-					const deltas = applyYjsDelete(transaction.mutations);
-					const itemsToDelete = transaction.mutations
-						.map((mut) => mut.original)
-						.filter((item): item is DataType => item !== undefined && Object.keys(item).length > 0);
-					ops.delete(itemsToDelete);
-					await docManager.flush(
-						transaction.mutations.map((mutation) => String(mutation.key))
-					);
+				for (const mut of transaction.mutations) {
+					const documentId = String(mut.key);
+					const ydoc = docManager.get(documentId);
+					const repairEpoch = fullSyncRequired.get(documentId);
+					const delta = ydoc ? applyDeleteMarkerToDoc(ydoc) : createDeleteDelta();
+					const rollbackAttempt = ydoc
+						? {
+								documentId,
+								document: ydoc,
+								generation: mutationGeneration,
+								deletedAt: ydoc.getMap('_meta').get('_deletedAt'),
+								accepted: false,
+							}
+						: undefined;
+					if (rollbackAttempt) rollbackAttempts.push(rollbackAttempt);
+					revisions.set(documentId, (revisions.get(documentId) ?? 0) + 1);
+					const revision = revisions.get(documentId) ?? 0;
+					await docManager.flush([documentId]);
 					ensureGeneration(mutationGeneration);
 
-					await Promise.all(
-						transaction.mutations.map(async (mut, i) => {
-							const delta = deltas[i];
-							if (!delta || delta.length === 0) return;
-
-							ensureGeneration(mutationGeneration);
-							await convexClient.mutation(api.replicate, {
-								document: String(mut.key),
-								bytes: delta.buffer,
-								type: 'delete',
-							});
-							ensureGeneration(mutationGeneration);
-						})
-					);
-					return;
-				}
-
-				// Use transaction coordinator for atomic delete with rollback support
-				// Map to store previousState for rollback (keyed by documentId)
-				const rollbackStates = new Map<string, Uint8Array>();
-
-				await txCoordinator.transaction(async (tx) => {
-					// Process each deletion in the transaction
-					for (const mut of transaction.mutations) {
-						const documentId = String(mut.key);
-						const ydoc = docManager.get(documentId);
-
-						// Capture state for potential rollback
-						if (ydoc) {
-							const previousState = Y.encodeStateAsUpdateV2(ydoc);
-							rollbackStates.set(documentId, previousState);
-						}
-
-						// Stage the delete in the transaction
-						tx.stageDelete(documentId);
-
-						// Create delete delta
-						const delta = ydoc ? applyDeleteMarkerToDoc(ydoc) : createDeleteDelta();
-
-						// Attach previousState to the staged change for rollback
-						const changes = tx.getStagedChanges();
-						const lastChange = changes[changes.length - 1];
-						if (lastChange && rollbackStates.has(documentId)) {
-							// StagedChange interface allows previousState, safe to assign via mutable reference
-							(lastChange as StagedChange).previousState = rollbackStates.get(documentId);
-						}
-						await docManager.flush([documentId]);
-						ensureGeneration(mutationGeneration);
-
-						// Optimistically remove from TanStack DB
-						const original = mut.original;
-						if (original && Object.keys(original).length > 0) {
-							ops.delete([original as DataType]);
-						}
-
-						// Call server mutation - if this fails, transaction will rollback
-						ensureGeneration(mutationGeneration);
-						await convexClient.mutation(api.replicate, {
-							document: documentId,
-							bytes: delta.buffer,
-							type: 'delete',
-						});
-						ensureGeneration(mutationGeneration);
+					const original = mut.original;
+					if (original && Object.keys(original).length > 0) {
+						ops.delete([original as DataType]);
 					}
-				});
+
+					ensureGeneration(mutationGeneration);
+					await convexClient.mutation(api.replicate, {
+						document: documentId,
+						bytes:
+							repairEpoch !== undefined && ydoc
+								? (Y.encodeStateAsUpdateV2(ydoc).buffer as ArrayBuffer)
+								: delta.buffer,
+						type: 'delete',
+					});
+					if (rollbackAttempt) rollbackAttempt.accepted = true;
+					ensureGeneration(mutationGeneration);
+					if (repairEpoch !== undefined)
+						await acknowledgeFullSync(
+							documentId,
+							repairEpoch,
+							mutationGeneration,
+							revision
+						);
+				}
 			} catch (error) {
-				// Transaction already rolled back if error occurred
+				const rollbackErrors: unknown[] = [];
+				for (const attempt of [...rollbackAttempts].reverse()) {
+					if (attempt.accepted) continue;
+					try {
+						await serialize(() => rollbackDeleteAttempt(attempt));
+					} catch (rollbackError) {
+						rollbackErrors.push(rollbackError);
+					}
+				}
+				if (rollbackErrors.length > 0) {
+					const cause = error instanceof Error ? error.message : String(error);
+					throw new AggregateError(
+						[error, ...rollbackErrors],
+						`Delete failed and local rollback could not be persisted: ${cause}`
+					);
+				}
 				handleMutationError(error);
 			}
 		},
@@ -1333,6 +1384,11 @@ export function convexCollectionOptions<T extends object = object>(
 						if (stopped) return;
 						for (const docId of existingDocIds) {
 							if (await persistence.kv.get(pendingCreateKey(docId))) pendingCreates.add(docId);
+							const repairEpoch = await persistence.kv.get(fullSyncKey(docId));
+							if (typeof repairEpoch === 'number' && Number.isFinite(repairEpoch)) {
+								fullSyncRequired.set(docId, repairEpoch);
+								fullSyncEpoch = Math.max(fullSyncEpoch, repairEpoch);
+							}
 							if (stopped) return;
 							docManager.getOrCreate(docId);
 						}
@@ -1350,50 +1406,6 @@ export function convexCollectionOptions<T extends object = object>(
 						updateContext(collection, { clientId });
 
 						ops = createReplicateOps<DataType>(params);
-
-						// Initialize transaction coordinator with document-level apply/revert callbacks
-						txCoordinator = createTransactionCoordinator({
-							async onApply(change: StagedChange) {
-								// Changes are already applied optimistically before server call
-								// This callback is for any post-commit bookkeeping
-								logger.debug('Transaction change applied', {
-									type: change.type,
-									documentId: change.documentId,
-								});
-							},
-							async onRevert(change: StagedChange) {
-								// Delete rollback - restore document
-								if (change.type === 'delete' && change.previousState) {
-									const update = new Uint8Array(change.previousState);
-									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
-									const restoredItem = serializeDocument(docManager, change.documentId, crdtFields);
-									if (!restoredItem) {
-										throw new Error(`Cannot serialize document ${change.documentId} for rollback`);
-									}
-									ops.insert([restoredItem as DataType]);
-									logger.debug('Rolled back delete', { documentId: change.documentId });
-									return;
-								}
-
-								// Update rollback - restore previous state
-								if (change.type === 'update' && change.previousState) {
-									const update = new Uint8Array(change.previousState);
-									docManager.applyUpdate(change.documentId, update, YjsOrigin.Local);
-									const restoredItem = serializeDocument(docManager, change.documentId, crdtFields);
-									if (!restoredItem) {
-										throw new Error(`Cannot serialize document ${change.documentId} for rollback`);
-									}
-									ops.upsert([restoredItem as DataType]);
-									logger.debug('Rolled back update', { documentId: change.documentId });
-									return;
-								}
-
-								// Insert rollback - delete (no-op, document wasn't persisted)
-								if (change.type === 'insert') {
-									ops.delete([{ id: change.documentId } as DataType]);
-								}
-							},
-						});
 
 						resolveOptimisticReady?.();
 

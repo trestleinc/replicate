@@ -95,8 +95,10 @@ async function seed(p: Persistence, id = 'a') {
 	await provider.whenSynced;
 	doc.getMap('fields').set('title', 'persisted');
 	await provider.flush!();
+	const state = Y.encodeStateAsUpdateV2(doc);
 	provider.destroy();
 	doc.destroy();
+	return state;
 }
 async function open(p: Persistence, network = transport(), options: ConnectionOptions = {}) {
 	const lazy = collection.create<{ id: string; title: string }>({
@@ -582,6 +584,404 @@ test.each(['insert', 'update', 'delete'] as const)(
 		await rows.disconnect();
 	}
 );
+
+test('rejected delete restores the durable document', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete') {
+			throw new Error('server rejected delete');
+		}
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete('a');
+	await expect(transaction.isPersisted.promise).rejects.toThrow('server rejected delete');
+	const visible = rows.get('a')?.title;
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect({ visible, reopened: next.rows.get('a')?.title }).toEqual({
+		visible: 'persisted',
+		reopened: 'persisted',
+	});
+});
+
+test('an update after a rejected delete converges with a server that rejected the delete delta', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	const base = await seed(db.persistence);
+	const server = new Y.Doc();
+	Y.applyUpdateV2(server, base);
+	expect(server.getMap('fields').get('title')).toBe('persisted');
+	const rejecting = transport();
+	rejecting.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete')
+			throw new Error('server rejected delete');
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, rejecting, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(rejecting.subscriptions.length).toBeGreaterThan(0));
+	const deletion = rows.delete('a');
+	await expect(deletion.isPersisted.promise).rejects.toThrow('server rejected delete');
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const accepting = transport();
+	accepting.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate')
+			Y.applyUpdateV2(server, new Uint8Array(args.bytes));
+		return { success: true, seq: 2 };
+	});
+	const next = await open(reopened.persistence, accepting, { networkMode: 'manual' });
+	await next.rows.connect();
+	const update = next.rows.update('a', (row) => {
+		row.title = 'after rollback';
+	});
+	await update.isPersisted.promise;
+	expect(server.getMap('fields').get('title')).toBe('after rollback');
+	expect(server.getMap('_meta').get('_deleted')).not.toBe(true);
+	server.destroy();
+});
+
+test('an older repair completion cannot clear a newer full-state repair', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	const base = await seed(db.persistence);
+	const server = new Y.Doc();
+	Y.applyUpdateV2(server, base);
+	const first = deferred<any>();
+	const second = deferred<any>();
+	const updateCalls: any[] = [];
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) !== 'offline:replicate') return { success: true, seq: 1 };
+		if (args.type === 'delete') throw new Error('server rejected delete');
+		updateCalls.push(args);
+		return updateCalls.length === 1 ? first.promise : second.promise;
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	const deletion = rows.delete('a');
+	await expect(deletion.isPersisted.promise).rejects.toThrow('server rejected delete');
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeTypeOf('number');
+	const older = rows.update('a', (row) => {
+		row.title = 'older';
+	});
+	await vi.waitFor(() => expect(updateCalls).toHaveLength(1));
+	const newer = rows.update('a', (row) => {
+		row.title = 'newer';
+	});
+	await vi.waitFor(() => expect(updateCalls).toHaveLength(2));
+	first.resolve({ success: true, seq: 2 });
+	await older.isPersisted.promise;
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeTypeOf('number');
+	Y.applyUpdateV2(server, new Uint8Array(updateCalls[1].bytes));
+	second.resolve({ success: true, seq: 3 });
+	await newer.isPersisted.promise;
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeUndefined();
+	expect(server.getMap('fields').get('title')).toBe('newer');
+	server.destroy();
+});
+
+test('a newer rejected delete restores its durable repair marker after an older acknowledgement', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	const base = await seed(db.persistence);
+	const server = new Y.Doc();
+	Y.applyUpdateV2(server, base);
+	let deletes = 0;
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) !== 'offline:replicate') return { success: true, seq: 1 };
+		if (args.type === 'delete') {
+			deletes += 1;
+			throw new Error(`server rejected delete ${deletes}`);
+		}
+		Y.applyUpdateV2(server, new Uint8Array(args.bytes));
+		return { success: true, seq: 2 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	const initialDelete = rows.delete('a');
+	await expect(initialDelete.isPersisted.promise).rejects.toThrow('server rejected delete 1');
+
+	const entered = deferred();
+	const release = deferred();
+	const del = db.persistence.kv.del.bind(db.persistence.kv);
+	db.persistence.kv.del = async (key) => {
+		if (key === 'full-sync-required:offline:a') {
+			entered.resolve();
+			await release.promise;
+		}
+		await del(key);
+	};
+	const acceptedRepair = rows.update('a', (row) => {
+		row.title = 'accepted repair';
+	});
+	await entered.promise;
+	const newerDelete = rows.delete('a');
+	const newerRejected = expect(newerDelete.isPersisted.promise).rejects.toThrow(
+		'server rejected delete 2'
+	);
+	await vi.waitFor(() => expect(deletes).toBe(2));
+	release.resolve();
+	await acceptedRepair.isPersisted.promise;
+	await newerRejected;
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeTypeOf('number');
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const accepting = transport();
+	accepting.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate')
+			Y.applyUpdateV2(server, new Uint8Array(args.bytes));
+		return { success: true, seq: 3 };
+	});
+	const next = await open(reopened.persistence, accepting, { networkMode: 'manual' });
+	await next.rows.connect();
+	const finalUpdate = next.rows.update('a', (row) => {
+		row.title = 'after second rollback';
+	});
+	await finalUpdate.isPersisted.promise;
+	expect(server.getMap('fields').get('title')).toBe('after second rollback');
+	server.destroy();
+});
+
+test('rejected delete rollback preserves a newer streamed field value', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const remote = deferred<any>();
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete') {
+			return remote.promise;
+		}
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete('a');
+	const rejected = expect(transaction.isPersisted.promise).rejects.toThrow('server rejected delete');
+	await vi.waitFor(() =>
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref, args]: any) =>
+					getFunctionName(ref) === 'offline:replicate' && args.type === 'delete'
+			)
+		).toBe(true)
+	);
+	network.emit(page(change('a', 2, 'concurrent')));
+	await vi.waitFor(async () => expect(await db.persistence.kv.get('cursor:offline')).toBe(2));
+	remote.reject(new Error('server rejected delete'));
+	await rejected;
+	expect(rows.get('a')?.title).toBe('concurrent');
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('a')?.title).toBe('concurrent');
+});
+
+test('reset while delete rejection is pending does not resurrect the document', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const remote = deferred<any>();
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete') {
+			return remote.promise;
+		}
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete('a');
+	const rejected = expect(transaction.isPersisted.promise).rejects.toThrow('server rejected delete');
+	await vi.waitFor(() =>
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref, args]: any) =>
+					getFunctionName(ref) === 'offline:replicate' && args.type === 'delete'
+			)
+		).toBe(true)
+	);
+	await rows.reset();
+	remote.reject(new Error('server rejected delete'));
+	await rejected;
+	expect(rows.get('a')).toBeUndefined();
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('a')).toBeUndefined();
+});
+
+test('an authoritative streamed deletion wins over a pending rejected delete', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const remote = deferred<any>();
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete')
+			return remote.promise;
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete('a');
+	const rejected = expect(transaction.isPersisted.promise).rejects.toThrow('server rejected delete');
+	await vi.waitFor(() =>
+		expect(
+			network.client.mutation.mock.calls.some(
+				([ref, args]: any) =>
+					getFunctionName(ref) === 'offline:replicate' && args.type === 'delete'
+			)
+		).toBe(true)
+	);
+	network.emit(page({ document: 'a', seq: 2, type: 'delta', exists: false }));
+	await vi.waitFor(async () => expect(await db.persistence.kv.get('cursor:offline')).toBe(2));
+	remote.reject(new Error('server rejected delete'));
+	await rejected;
+	expect(rows.get('a')).toBeUndefined();
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeUndefined();
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('a')).toBeUndefined();
+});
+
+test('partial batch delete keeps the accepted item deleted and restores only the rejected item', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence, 'a');
+	await seed(db.persistence, 'b');
+	let deletes = 0;
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete') {
+			deletes += 1;
+			if (deletes === 2) throw new Error('server rejected second delete');
+		}
+		return { success: true, seq: deletes };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete(['a', 'b']);
+	await expect(transaction.isPersisted.promise).rejects.toThrow('server rejected second delete');
+	expect(rows.get('a')).toBeUndefined();
+	expect(rows.get('b')?.title).toBe('persisted');
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('a')).toBeUndefined();
+	expect(next.rows.get('b')?.title).toBe('persisted');
+});
+
+test('failed delete rollback persistence rejects explicitly and drains after the failure clears', async () => {
+	let failRollback = false;
+	const db = await disk(undefined, async (sql, params) => {
+		if (
+			failRollback &&
+			sql.startsWith('INSERT INTO deltas') &&
+			params?.[0] === 'offline:a'
+		) {
+			throw new Error('rollback disk unavailable');
+		}
+	});
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete') {
+			failRollback = true;
+			throw new Error('server rejected delete');
+		}
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	await vi.waitFor(() => expect(network.subscriptions.length).toBeGreaterThan(0));
+	const transaction = rows.delete('a');
+	await expect(transaction.isPersisted.promise).rejects.toThrow(
+		'Delete failed and local rollback could not be persisted'
+	);
+	expect(
+		db.database
+			.prepare("SELECT count(*) AS count FROM deltas WHERE collection = 'offline:a'")
+			.get()
+	).toHaveProperty('count', 2);
+	failRollback = false;
+	await rows.disconnect();
+	expect(
+		db.database
+			.prepare("SELECT count(*) AS count FROM deltas WHERE collection = 'offline:a'")
+			.get()
+	).toHaveProperty('count', 3);
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await open(reopened.persistence, transport(), { networkMode: 'manual' });
+	expect(next.rows.get('a')?.title).toBe('persisted');
+});
+
+test('failed delete rollback marker persistence rejects without publishing a restored row', async () => {
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	await seed(db.persistence);
+	const set = db.persistence.kv.set.bind(db.persistence.kv);
+	db.persistence.kv.set = async (key, value) => {
+		if (key === 'full-sync-required:offline:a') throw new Error('repair marker unavailable');
+		await set(key, value);
+	};
+	const network = transport();
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete')
+			throw new Error('server rejected delete');
+		return { success: true, seq: 1 };
+	});
+	const { rows } = await open(db.persistence, network, { networkMode: 'manual' });
+	await rows.connect();
+	const deletion = rows.delete('a');
+	await expect(deletion.isPersisted.promise).rejects.toThrow(
+		'Delete failed and local rollback could not be persisted'
+	);
+	expect(rows.get('a')).toBeUndefined();
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeUndefined();
+});
 
 test('full-row updates remove omitted optional fields from outbound and reopened data', async () => {
 	const first = await disk();
