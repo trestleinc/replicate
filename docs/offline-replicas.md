@@ -53,6 +53,8 @@ Insert retries preserve a single logical document ID without repeating `onInsert
 
 Writable pending creations are marked durably before local insertion, retained across restart, and retried after connection. Legacy writable documents without a pending marker are preserved when the server has no history of that ID (`known: false`); this avoids discarding unsent pre-upgrade creations. Read-only replicas treat that absence as authoritative. A server tombstone/history with absent material remains authoritative for writable clients too. This is not a general persistent transaction outbox or a change to the existing writable retry/conflict model.
 
+When the server rejects a delete, Replicate restores the row with a newer Yjs transaction that removes the deletion markers, persists the rollback before republishing the row, and records private per-document repair metadata. That metadata survives restart; the next explicit successful update or delete sends full Yjs state, then clears it. It is not an automatic retry or outbox. An awaited disconnect or reset for an account switch fences stale rollback work. A crash before the failure and rollback complete retains the existing ambiguous in-flight-write limits.
+
 ## Existing component upgrade
 
 This change targets the current v2 preview component schema (`deltas`, `snapshots`, `sequences`). Migration from the different npm 1.1.2 component is outside this patch; the archived migration documents describe earlier schemas and are not a verified stable-to-preview upgrade procedure.

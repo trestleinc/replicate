@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disconnect/reset followed by collection cleanup stops each Convex subscription once and ignores queued callbacks after unsubscribe.
 - Full-row updates remove omitted optional fields, SQLite document clearing is atomic, and browser worker shutdown drains accepted work while rejecting new work after closing starts.
 - Snapshot/delta discovery works after compaction, including scheduled compaction and writes between small pages.
+- Rejected deletes persist a marker-removal rollback before republishing and retain private full-state repair metadata across restart until the next explicit update or delete succeeds.
 
 ### Upgrade notes
 
