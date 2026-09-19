@@ -13,6 +13,7 @@ import { createNativeSqlitePersistence } from '../client/persistence/sqlite/nati
 import { createCustomPersistence } from '../client/persistence/custom';
 import { createWebEncryptionPersistence } from '../client/persistence/encrypted/web';
 import { createConnection } from '../client/services/connection';
+import { fragmentToJSON } from '../client/merge';
 import type { ConnectionOptions } from '../client/services/connection';
 import type { Persistence } from '../client/persistence/types';
 
@@ -24,6 +25,11 @@ const api = Object.fromEntries(
 ) as any;
 const definition = schema.define({
 	shape: v.object({ id: v.string(), title: v.string(), note: v.optional(v.string()) }),
+	defaults: {},
+	history: {},
+});
+const proseDefinition = schema.define({
+	shape: v.object({ id: v.string(), title: v.string(), content: schema.prose() }),
 	defaults: {},
 	history: {},
 });
@@ -116,6 +122,44 @@ async function open(p: Persistence, network = transport(), options: ConnectionOp
 	});
 	return { rows, network };
 }
+async function seedProse(p: Persistence) {
+	const doc = new Y.Doc();
+	doc.clientID = 1;
+	const provider = p.createDocPersistence('offline:a', doc);
+	await provider.whenSynced;
+	const fields = doc.getMap('fields');
+	fields.set('title', 'base');
+	fields.set('content', new Y.XmlFragment());
+	await provider.flush!();
+	const state = Y.encodeStateAsUpdateV2(doc);
+	provider.destroy();
+	doc.destroy();
+	return state;
+}
+async function openProse(p: Persistence, network = transport()) {
+	const lazy = collection.create<{ id: string; title: string; content: any }>({
+		schema: proseDefinition,
+		persistence: async () => p,
+		config: () => ({ convexClient: network.client as any, api, getKey: (row) => row.id }),
+		networkMode: 'manual',
+	});
+	await lazy.init();
+	const rows = lazy.get();
+	await rows.preload();
+	disposals.push(async () => {
+		await rows.disconnect();
+		await rows.cleanup();
+	});
+	return { rows, network };
+}
+function proseMaterial(doc: Y.Doc) {
+	const fields = doc.getMap('fields');
+	return {
+		title: fields.get('title'),
+		content: fragmentToJSON(fields.get('content') as Y.XmlFragment),
+		id: 'a',
+	};
+}
 function change(id: string, seq: number, title = 'remote') {
 	const doc = new Y.Doc();
 	doc.clientID = 2;
@@ -130,6 +174,16 @@ const page = (...changes: any[]) => ({
 	seq: changes.at(-1).seq,
 	more: false,
 });
+function proseTitleChange(base: Uint8Array, title: string, seq: number) {
+	const doc = new Y.Doc();
+	doc.clientID = 2;
+	Y.applyUpdateV2(doc, base);
+	const vector = Y.encodeStateVector(doc);
+	doc.getMap('fields').set('title', title);
+	const bytes = Y.encodeStateAsUpdateV2(doc, vector).buffer;
+	doc.destroy();
+	return page({ document: 'a', seq, bytes, type: 'delta', exists: true });
+}
 
 test.each(['disconnect', 'reset'] as const)(
 	'%s followed by reconnect and cleanup stops each transport subscription once',
@@ -1479,4 +1533,142 @@ test('an insert before preload is not invalidated by initial automatic activatio
 	expect(net.client.mutation.mock.calls.some((call: any) => call[1].type === 'insert')).toBe(true);
 	await rows.disconnect();
 	await rows.cleanup();
+});
+
+test('repair content sync pairs current full bytes with current material after a stream update', async () => {
+	const gateEntered = deferred();
+	const releaseGate = deferred();
+	let gateWrites = false;
+	let gateConsumed = false;
+	const db = await disk();
+	disposals.push(() => db.persistence.close!());
+	const base = await seedProse(db.persistence);
+	const server = new Y.Doc();
+	Y.applyUpdateV2(server, base);
+	const network = transport();
+	const accepted: any[] = [];
+	network.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) !== 'offline:replicate') return { success: true, seq: 1 };
+		if (args.type === 'delete') throw new Error('server rejected delete');
+		accepted.push(args);
+		return { success: true, seq: 3 };
+	});
+	const gatedPersistence: Persistence = {
+		...db.persistence,
+		createDocPersistence(name, doc) {
+			const provider = db.persistence.createDocPersistence(name, doc);
+			const flush = provider.flush!.bind(provider);
+			provider.flush = async () => {
+				if (gateWrites && !gateConsumed && name === 'offline:a') {
+					gateConsumed = true;
+					await flush();
+					gateEntered.resolve();
+					await releaseGate.promise;
+					return;
+				}
+				await flush();
+			};
+			return provider;
+		},
+	};
+	const { rows } = await openProse(gatedPersistence, network);
+	await rows.connect();
+	const deletion = rows.delete('a');
+	await expect(deletion.isPersisted.promise).rejects.toThrow('server rejected delete');
+	expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeTypeOf('number');
+
+	const contentCaptured = deferred();
+	const update = rows.update.bind(rows);
+	(rows as any).update = (...args: any[]) => {
+		if (args[1]?.metadata?.contentSync) contentCaptured.resolve();
+		return update(...args);
+	};
+	const binding = await rows.doc('a').prose('content', { debounceMs: 0 });
+	gateWrites = true;
+	const text = new Y.XmlText();
+	text.insert(0, 'local prose');
+	binding.fragment.insert(0, [text]);
+	await gateEntered.promise;
+	await contentCaptured.promise;
+	network.emit(proseTitleChange(base, 'remote', 2));
+	await vi.waitFor(() =>
+		expect(binding.provider.document.getMap('fields').get('title')).toBe('remote')
+	);
+	releaseGate.resolve();
+	await vi.waitFor(() => expect(accepted).toHaveLength(1));
+
+	const sent = accepted[0];
+	Y.applyUpdateV2(server, new Uint8Array(sent.bytes));
+	expect(server.getMap('_meta').get('_deleted')).not.toBe(true);
+	expect(server.getMap('fields').get('title')).toBe('remote');
+	expect((server.getMap('fields').get('content') as Y.XmlFragment).toString()).toBe('local prose');
+	expect(sent.material).toEqual(proseMaterial(server));
+	await vi.waitFor(async () =>
+		expect(await db.persistence.kv.get('full-sync-required:offline:a')).toBeUndefined()
+	);
+
+	binding.destroy();
+	await rows.disconnect();
+	await rows.cleanup();
+	disposals.pop();
+	disposals.pop();
+	db.database.close();
+	const reopened = await disk(db.path);
+	disposals.push(() => reopened.persistence.close!());
+	const next = await openProse(reopened.persistence);
+	expect(next.rows.get('a')).toMatchObject({ title: 'remote', content: sent.material.content });
+	expect(proseMaterial(server)).toEqual(sent.material);
+	server.destroy();
+}, 20_000);
+
+test('restart leaves a repair marker idle until an explicit update sends full state', async () => {
+	const first = await disk();
+	disposals.push(() => first.persistence.close!());
+	const base = await seedProse(first.persistence);
+	const rejecting = transport();
+	rejecting.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate' && args.type === 'delete')
+			throw new Error('server rejected delete');
+		return { success: true, seq: 1 };
+	});
+	const initial = await openProse(first.persistence, rejecting);
+	await initial.rows.connect();
+	const deletion = initial.rows.delete('a');
+	await expect(deletion.isPersisted.promise).rejects.toThrow('server rejected delete');
+	const marker = await first.persistence.kv.get('full-sync-required:offline:a');
+	expect(marker).toBeTypeOf('number');
+	await initial.rows.disconnect();
+	await initial.rows.cleanup();
+	disposals.pop();
+	disposals.pop();
+	first.database.close();
+
+	const reopened = await disk(first.path);
+	disposals.push(() => reopened.persistence.close!());
+	const server = new Y.Doc();
+	Y.applyUpdateV2(server, base);
+	const accepting = transport();
+	const accepted: any[] = [];
+	accepting.client.mutation.mockImplementation(async (ref: any, args: any) => {
+		if (getFunctionName(ref) === 'offline:replicate') accepted.push(args);
+		return { success: true, seq: 2 };
+	});
+	const next = await openProse(reopened.persistence, accepting);
+	await next.rows.connect();
+	await vi.waitFor(() => expect(accepting.subscriptions.length).toBeGreaterThan(0));
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	expect(accepted).toHaveLength(0);
+	expect(await reopened.persistence.kv.get('full-sync-required:offline:a')).toBe(marker);
+
+	const update = next.rows.update('a', (row) => {
+		row.title = 'explicit';
+	});
+	await update.isPersisted.promise;
+	expect(accepted).toHaveLength(1);
+	expect(accepted[0].type).toBe('update');
+	Y.applyUpdateV2(server, new Uint8Array(accepted[0].bytes));
+	expect(proseMaterial(server)).toEqual(accepted[0].material);
+	expect(server.getMap('fields').get('title')).toBe('explicit');
+	expect(await reopened.persistence.kv.get('full-sync-required:offline:a')).toBeUndefined();
+	server.destroy();
 });

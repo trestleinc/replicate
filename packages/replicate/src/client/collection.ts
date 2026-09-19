@@ -1223,14 +1223,21 @@ export function convexCollectionOptions<T extends object = object>(
 					const repairEpoch = fullSyncRequired.get(documentKey);
 					const revision = revisions.get(documentKey) ?? 0;
 					const document = docManager.get(documentKey);
+					let repairBytes = bytes;
+					let repairMaterial = material;
+					if (repairEpoch !== undefined && document) {
+						const fullDoc = serializeDocument(docManager, documentKey);
+						if (!fullDoc) {
+							throw new Error(`Cannot serialize document ${documentKey} for update`);
+						}
+						repairBytes = Y.encodeStateAsUpdateV2(document).buffer as ArrayBuffer;
+						repairMaterial = fullDoc;
+					}
 					ensureGeneration(mutationGeneration);
 					await convexClient.mutation(api.replicate, {
 						document: documentKey,
-						bytes:
-							repairEpoch !== undefined && document
-								? (Y.encodeStateAsUpdateV2(document).buffer as ArrayBuffer)
-								: bytes,
-						material,
+						bytes: repairBytes,
+						material: repairMaterial,
 						type: 'update',
 					});
 					ensureGeneration(mutationGeneration);
