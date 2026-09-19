@@ -108,7 +108,7 @@ The copied graph comes from an immutable archive of the original wa-sqlite repos
 
 The codeload URL contains the full commit hash, and `manifest.json` retains the archive's SHA-512 and SHA-256 digests. npm downstream locks record the archive integrity; Bun 1.3.6 retains the exact URL without a digest. The asset CLI therefore checks fixed per-file hashes before every copy. This identifies the installed source and prebuilt artifacts; it is not an independent reproduction of the compiler environment or WebAssembly build. `node scripts/verify-sqlite-provenance.mjs` checks the archive integrity and compares every upstream file with the immutable source revision; `node scripts/copy-sqlite-assets.mjs --verify` verifies the installed dependency without network access.
 
-Keep `LICENSE`, the full source `ACKNOWLEDGMENTS.md`, and `PROVENANCE.md`. Do not substitute npm `wa-sqlite@1.0.0`: it is an unrelated unofficial publication with different contents and VFS API.
+Keep `LICENSE`, the full source `ACKNOWLEDGMENTS.md`, and `PROVENANCE.md`. Do not substitute npm `wa-sqlite@1.0.0`: it is an unofficial publication with different contents and VFS API.
 
 ## Verification
 
@@ -124,6 +124,31 @@ bunx playwright install chromium
 bun run test:browser
 node scripts/test-native-bundle.cjs
 ```
+
+The normal browser command checks candidate restart and offline behavior. To also run the
+old-runtime write -> candidate reopen/write -> old-runtime reopen compatibility phases, provide
+the original pinned source tree. The harness verifies every required legacy file against the
+committed hash manifest before it builds the offline cache. For example, in PowerShell:
+
+```powershell
+$compatRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replicate-sqlite-' + [guid]::NewGuid())
+$archive = Join-Path $compatRoot 'wa-sqlite.tar.gz'
+New-Item -ItemType Directory -Path $compatRoot | Out-Null
+Invoke-WebRequest `
+  -Uri 'https://codeload.github.com/rhashimoto/wa-sqlite/tar.gz/55bf0b6646ac1bb81b00b9c25636b59a87e4a918' `
+  -OutFile $archive
+tar -xf $archive -C $compatRoot
+$legacySource = Get-ChildItem -LiteralPath $compatRoot -Directory |
+  Where-Object Name -Like 'wa-sqlite-*' |
+  Select-Object -First 1 -ExpandProperty FullName
+$env:REPLICATE_BASELINE_SQLITE_ASSETS = $legacySource
+bun run --cwd packages/replicate test:browser
+```
+
+The compatibility run must report 12 check groups. It creates the database with the legacy
+runtime, reopens and writes with the candidate, then reopens with the legacy runtime and verifies
+both rows, cursor 2, no network requests, and no page errors. Remove the temporary directory and
+environment variable after the run.
 
 Client tests use real SQLite files and actual collections/adapters with controlled transport. Component/server tests use convex-test, including seeded histories checked against independent source documents; they are not cloud deployment tests. The browser harness bundles package exports, precaches the actual SQLite/WASM graph, explicitly polls durable checkpoints, shuts down Chromium both with and without application cleanup, reopens the same profile offline, and verifies rows, removals, pending updates, and reset with no HTTP requests during offline phases.
 

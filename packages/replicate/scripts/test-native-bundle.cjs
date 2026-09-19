@@ -43,8 +43,10 @@ const assert = require('node:assert/strict');
 		const bundle = await readFile(output, 'utf8');
 		assert.ok(bundle.includes('replicateNativeGraph'));
 		assert.ok(bundle.includes('PersistenceProvider.storeUpdate'));
+		assert.ok(!bundle.includes('wa-sqlite-async.mjs'));
+		assert.ok(!bundle.includes('IDBBatchAtomicVFS.create'));
 		process.stdout.write(
-			'Full built client graph bundled for Android with Expo Metro (no device execution)\n'
+			'Full client graph bundled for Android without browser SQLite runtime (no device execution)\n'
 		);
 	} finally {
 		await rm(directory, { recursive: true, force: true });

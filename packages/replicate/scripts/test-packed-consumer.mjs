@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 const tarballArgument = process.env.REPLICATE_PACKAGE_TARBALL;
 if (!tarballArgument) {
@@ -14,14 +15,33 @@ if (!tarballArgument) {
 const tarball = isAbsolute(tarballArgument)
 	? tarballArgument
 	: resolve(process.cwd(), tarballArgument);
-const directory = await mkdtemp(join(tmpdir(), 'replicate packed consumer '));
-const consumer = join(directory, 'consumer with spaces');
-const destination = join(consumer, 'public assets', 'sqlite');
-const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-await access(npmCli);
+const npmCandidates = [
+	process.env.REPLICATE_NPM_CLI,
+	process.env.npm_execpath?.endsWith('npm-cli.js') ? process.env.npm_execpath : undefined,
+	join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+	join(dirname(dirname(process.execPath)), 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+	'/usr/local/lib/node_modules/npm/bin/npm-cli.js',
+	'/usr/lib/node_modules/npm/bin/npm-cli.js',
+	'/usr/share/nodejs/npm/bin/npm-cli.js',
+].filter(Boolean);
+let npmCli;
+for (const candidate of npmCandidates) {
+	try {
+		await access(candidate);
+		npmCli = candidate;
+		break;
+	} catch {
+		// Try the next known npm layout.
+	}
+}
+if (!npmCli) throw new Error('Could not locate npm-cli.js; set REPLICATE_NPM_CLI');
 const npm = (args, options) => promisify(execFile)(process.execPath, [npmCli, ...args], options);
 
+let directory;
 try {
+	directory = await mkdtemp(join(tmpdir(), 'replicate packed consumer '));
+	const consumer = join(directory, 'consumer with spaces');
+	const destination = join(consumer, 'public assets', 'sqlite');
 	await mkdir(consumer, { recursive: true });
 	await writeFile(
 		join(consumer, 'package.json'),
@@ -35,23 +55,69 @@ try {
 			'--no-audit',
 			'--no-fund',
 			tarball,
+			'typescript@5.9.3',
 		],
 		{ cwd: consumer }
 	);
 
 	const packageRoot = join(consumer, 'node_modules', '@trestleinc', 'replicate');
-	const installedManifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
 	const packageRequire = createRequire(join(packageRoot, 'package.json'));
 	const dependencyManifestPath = packageRequire.resolve('wa-sqlite/package.json');
 	assert.ok(dependencyManifestPath.startsWith(directory));
 	assert.equal(JSON.parse(await readFile(dependencyManifestPath, 'utf8')).version, '1.1.2');
-	for (const subpath of ['.', './client', './server', './convex.config', './worker']) {
-		const target = installedManifest.exports[subpath].import?.default ?? installedManifest.exports[subpath].import;
-		await access(join(packageRoot, target));
+	const specifiers = [
+		'@trestleinc/replicate',
+		'@trestleinc/replicate/client',
+		'@trestleinc/replicate/server',
+		'@trestleinc/replicate/convex.config',
+		'@trestleinc/replicate/worker',
+	];
+	const resolver = join(consumer, 'resolve-exports.mjs');
+	await writeFile(
+		resolver,
+		`const specifiers = ${JSON.stringify(specifiers)};
+const resolved = specifiers.map((specifier) => import.meta.resolve(specifier));
+for (const specifier of specifiers.slice(0, -1)) await import(specifier);
+process.stdout.write(JSON.stringify(resolved));
+`
+	);
+	const { stdout: resolvedOutput } = await promisify(execFile)(process.execPath, [resolver], {
+		cwd: consumer,
+	});
+	for (const url of JSON.parse(resolvedOutput)) {
+		assert.ok(fileURLToPath(url).startsWith(packageRoot), url);
 	}
-	for (const subpath of ['.', './client', './server', './convex.config']) {
-		await access(join(packageRoot, installedManifest.exports[subpath].types));
-	}
+
+	await writeFile(
+		join(consumer, 'consumer-exports.ts'),
+		`import '@trestleinc/replicate';
+import '@trestleinc/replicate/client';
+import '@trestleinc/replicate/server';
+import '@trestleinc/replicate/convex.config';
+`
+	);
+	await writeFile(
+		join(consumer, 'tsconfig.json'),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: 'NodeNext',
+					moduleResolution: 'NodeNext',
+					noEmit: true,
+					skipLibCheck: false,
+					strict: true,
+					target: 'ES2022',
+				},
+				files: ['consumer-exports.ts'],
+			},
+			null,
+			2
+		)
+	);
+	const consumerRequire = createRequire(join(consumer, 'package.json'));
+	await promisify(execFile)(process.execPath, [consumerRequire.resolve('typescript/bin/tsc')], {
+		cwd: consumer,
+	});
 
 	const run = () =>
 		npm(['exec', '--', 'replicate-sqlite-assets', destination], {
@@ -76,5 +142,5 @@ try {
 	);
 	process.stdout.write('Packed consumer installed dependency and copied verified SQLite assets\n');
 } finally {
-	await rm(directory, { recursive: true, force: true });
+	if (directory) await rm(directory, { recursive: true, force: true });
 }

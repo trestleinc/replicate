@@ -1,10 +1,11 @@
 import { build } from 'vite';
 import { chromium } from 'playwright';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdtemp, cp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, extname } from 'node:path';
+import { dirname, join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
@@ -35,7 +36,21 @@ try {
 	await promisify(execFile)(process.execPath, [copyAssets, join(site, 'sqlite')]);
 	const baselineAssets = process.env.REPLICATE_BASELINE_SQLITE_ASSETS;
 	if (baselineAssets) {
-		await cp(resolve(baselineAssets), join(site, 'sqlite-baseline'), { recursive: true });
+		const baselineManifest = JSON.parse(
+			await readFile(resolve(root, 'test/browser/baseline-wa-sqlite-manifest.json'), 'utf8')
+		);
+		for (const [file, expected] of Object.entries(baselineManifest.sha256)) {
+			const source = resolve(baselineAssets, file);
+			const bytes = await readFile(source);
+			assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, file);
+			const target = join(site, 'sqlite-baseline', file);
+			await mkdir(dirname(target), { recursive: true });
+			await copyFile(source, target);
+		}
+		await writeFile(
+			join(site, 'sqlite-baseline', 'manifest.json'),
+			JSON.stringify(baselineManifest, null, 2)
+		);
 		await promisify(execFile)(process.execPath, [copyAssets, join(site, 'sqlite-candidate')]);
 	}
 	const paths = (await readdir(site, { recursive: true, withFileTypes: true }))
@@ -205,7 +220,6 @@ try {
 	});
 	checks++;
 	assert.deepEqual(errors, []);
-	checks++;
 	process.stdout.write(`${checks} real Chromium offline/process-restart checks passed\n`);
 } finally {
 	await context?.close();

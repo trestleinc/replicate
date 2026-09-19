@@ -6,7 +6,7 @@ installs an immutable archive of the original repository at commit
 JavaScript/WASM graph, verifies fixed checksums, and retains the upstream license,
 acknowledgments, and provenance note. Serve that graph from your application or an immutable CDN
 path. Do not assemble files from a moving branch or substitute npm `wa-sqlite@1.0.0`, an
-unrelated unofficial publication.
+unofficial publication with a different VFS API.
 
 ## Copy and verify the packaged graph
 
