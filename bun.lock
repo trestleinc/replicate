@@ -108,7 +108,6 @@
         "convex-svelte": "catalog:",
         "lib0": "catalog:",
         "tailwind-merge": "catalog:",
-        "wa-sqlite": "catalog:",
         "y-protocols": "catalog:",
         "yjs": "catalog:",
         "zod": "catalog:",
@@ -219,6 +218,7 @@
       "dependencies": {
         "@logtape/logtape": "catalog:",
         "@logtape/pretty": "catalog:",
+        "wa-sqlite": "https://codeload.github.com/rhashimoto/wa-sqlite/tar.gz/07ad48cf2f682d279f9cd69818cc1d39b2ccda86",
       },
       "devDependencies": {
         "@convex-dev/eslint-plugin": "catalog:",
@@ -254,13 +254,11 @@
         "@tanstack/db": "^0.5.20",
         "convex": "^1.31.4",
         "lib0": "^0.2.0",
-        "wa-sqlite": "1.0.0",
         "y-protocols": "1.0.7",
         "yjs": "13.6.29",
       },
       "optionalPeers": [
         "@op-engineering/op-sqlite",
-        "wa-sqlite",
       ],
     },
     "workers/wa-sqlite-cdn": {
@@ -353,7 +351,6 @@
     "typescript-eslint": "^8.52.0",
     "vite": "^7.3.1",
     "vitest": "^4.0.17",
-    "wa-sqlite": "^1.0.0",
     "wrangler": "^4.56.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.29",
@@ -3482,7 +3479,7 @@
 
     "w3c-keyname": ["w3c-keyname@2.2.8", "", {}, "sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ=="],
 
-    "wa-sqlite": ["wa-sqlite@1.0.0", "", {}, "sha512-Kyybo5/BaJp76z7gDWGk2J6Hthl4NIPsE+swgraEjy3IY6r5zIR02wAs1OJH4XtJp1y3puj3Onp5eMGS0z7nUA=="],
+    "wa-sqlite": ["wa-sqlite@https://codeload.github.com/rhashimoto/wa-sqlite/tar.gz/07ad48cf2f682d279f9cd69818cc1d39b2ccda86", {}],
 
     "wa-sqlite-cdn": ["wa-sqlite-cdn@workspace:workers/wa-sqlite-cdn"],
 

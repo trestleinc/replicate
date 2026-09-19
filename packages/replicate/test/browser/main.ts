@@ -38,10 +38,11 @@ sqliteWorker.postMessage = ((message: { type?: number }, options?: StructuredSer
 	if (message.type === 2) closeMessages++;
 	postMessage(message, options);
 }) as typeof sqliteWorker.postMessage;
+const runtime = new URLSearchParams(location.hash.slice(1));
 const local = await persistence.web.sqlite.create({
-	name: 'offline-browser',
+	name: runtime.get('database') ?? 'offline-browser',
 	worker: sqliteWorker,
-	assetBase: '/sqlite',
+	assetBase: runtime.get('assetBase') ?? '/sqlite',
 });
 const lazy = collection.create<{ id: string; title: string }>({
 	schema: schema.define({

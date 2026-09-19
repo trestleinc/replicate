@@ -1,10 +1,12 @@
 # Hosting the browser SQLite runtime
 
-Replicate's browser persistence uses wa-sqlite with `IDBBatchAtomicVFS` (IndexedDB). The package
-includes the compatible JavaScript/WASM graph, its checksums, and the upstream license notices.
-Serve that packaged graph from your application or an immutable CDN path. Do not assemble files
-from a moving wa-sqlite branch: npm `wa-sqlite@1.0.0` and other distributions may expose a
-different VFS API.
+Replicate's browser persistence uses wa-sqlite with `IDBBatchAtomicVFS` (IndexedDB). Replicate
+installs an immutable archive of the original repository at commit
+`07ad48cf2f682d279f9cd69818cc1d39b2ccda86`. Its asset CLI copies the compatible
+JavaScript/WASM graph, verifies fixed checksums, and retains the upstream license,
+acknowledgments, and provenance note. Serve that graph from your application or an immutable CDN
+path. Do not assemble files from a moving branch or substitute npm `wa-sqlite@1.0.0`, an
+unrelated unofficial publication.
 
 ## Copy and verify the packaged graph
 
@@ -34,16 +36,19 @@ replicate-sqlite/
 └── ACKNOWLEDGMENTS.md
 ```
 
-Keep the relative `dist/` and `src/` paths intact. Retain `LICENSE` and `ACKNOWLEDGMENTS.md` in
-every hosted distribution. To verify the installed package without copying it, run:
+The copied directory also contains `PROVENANCE.md`. Keep the relative `dist/` and `src/` paths
+intact and retain all three notice files in every hosted distribution. To verify the installed
+package without copying it, run:
 
 ```bash
 npm exec -- replicate-sqlite-assets --verify
 ```
 
-`manifest.json` records the exact wa-sqlite source revision, build revision, and SHA-256 digest of
-each runtime and notice file. The provenance details and reproducibility boundary are documented in
-[`offline-replicas.md`](offline-replicas.md#browser-assets-and-offline-startup).
+`manifest.json` records the exact archive URL and integrity, source revision, and SHA-256 digest
+of each runtime and notice file. The copy command reads the installed dependency during the
+application build; browsers do not fetch GitHub or a third-party CDN at runtime when `assetBase`
+points to the copied directory. The provenance details and reproducibility boundary are documented
+in [`offline-replicas.md`](offline-replicas.md#browser-assets-and-offline-startup).
 
 ## Configure Replicate
 

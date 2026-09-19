@@ -36,8 +36,6 @@ export default defineConfig([
 			'@logtape/logtape',
 			'effect',
 			'@effect/platform',
-			'wa-sqlite',
-			/^wa-sqlite/,
 			'@op-engineering/op-sqlite',
 			'abstract-level',
 			'browser-level',
@@ -54,7 +52,7 @@ export default defineConfig([
 		clean: false,
 		platform: 'browser',
 		shims: true,
-		external: ['yjs', /^wa-sqlite/],
+		external: ['yjs'],
 		outExtensions: jsExtensions,
 	},
 	{

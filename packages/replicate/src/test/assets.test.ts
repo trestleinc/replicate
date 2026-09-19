@@ -16,6 +16,15 @@ test('asset CLI installs into a new directory and refreshes assets on repeated b
 	try {
 		await run();
 		const manifest = JSON.parse(await readFile(join(destination, 'manifest.json'), 'utf8'));
+		expect(manifest).toMatchObject({
+			package: 'wa-sqlite',
+			version: '1.1.2',
+			revision: '07ad48cf2f682d279f9cd69818cc1d39b2ccda86',
+		});
+		expect(Object.keys(manifest.sha256)).toEqual([
+			...manifest.dependencyFiles,
+			...manifest.packageFiles,
+		]);
 		const verify = async () => {
 			for (const [file, expected] of Object.entries(manifest.sha256)) {
 				const bytes = await readFile(join(destination, file));

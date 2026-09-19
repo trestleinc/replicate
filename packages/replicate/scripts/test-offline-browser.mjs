@@ -1,10 +1,12 @@
 import { build } from 'vite';
 import { chromium } from 'playwright';
+import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtemp, cp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 
@@ -29,7 +31,13 @@ try {
 		logLevel: 'warn',
 		build: { outDir: site, emptyOutDir: true },
 	});
-	await cp(resolve(root, 'assets/wa-sqlite'), join(site, 'sqlite'), { recursive: true });
+	const copyAssets = resolve(root, 'scripts/copy-sqlite-assets.mjs');
+	await promisify(execFile)(process.execPath, [copyAssets, join(site, 'sqlite')]);
+	const baselineAssets = process.env.REPLICATE_BASELINE_SQLITE_ASSETS;
+	if (baselineAssets) {
+		await cp(resolve(baselineAssets), join(site, 'sqlite-baseline'), { recursive: true });
+		await promisify(execFile)(process.execPath, [copyAssets, join(site, 'sqlite-candidate')]);
+	}
 	const paths = (await readdir(site, { recursive: true, withFileTypes: true }))
 		.filter((entry) => entry.isFile())
 		.map(
@@ -69,19 +77,19 @@ try {
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const url = `http://127.0.0.1:${server.address().port}/`;
 	const errors = [];
-	async function launch(offline = false) {
+	async function launch(offline = false, fragment = '') {
 		context = await chromium.launchPersistentContext(profile, { headless: true, offline });
 		const page = await context.newPage();
 		page.on('pageerror', (error) => errors.push(error.message));
-		await page.goto(url);
+		await page.goto(url + fragment);
 		await page.waitForFunction(() => !!window.replica);
 		await page.waitForFunction(() => !!navigator.serviceWorker.controller);
 		return page;
 	}
-	async function restart(page, { closeApplication = false } = {}) {
+	async function restart(page, { closeApplication = false, fragment = '' } = {}) {
 		if (closeApplication) await page.evaluate(() => window.replica.close());
 		await context.close();
-		return launch(true);
+		return launch(true, fragment);
 	}
 	let page = await launch();
 	assert.equal(await page.evaluate(() => window.replica.calls()), 0);
@@ -152,11 +160,51 @@ try {
 	assert.equal(requests, requestCount);
 	assert.deepEqual(errors, []);
 	checks++;
+	if (baselineAssets) {
+		await page.evaluate(() => window.replica.close());
+		await context.close();
+		const compatibilityRequests = requests;
+		const database = 'runtime-compatibility';
+		const oldFragment = `#assetBase=/sqlite-baseline&database=${database}`;
+		const candidateFragment = `#assetBase=/sqlite-candidate&database=${database}`;
+		page = await launch(true, oldFragment);
+		await page.evaluate(async () => {
+			await window.replica.connect();
+			window.replica.emit('old-write', 1);
+		});
+		await waitForCursor(page, 1);
+		page = await restart(page, { closeApplication: true, fragment: candidateFragment });
+		assert.equal(
+			await page.evaluate(() => window.replica.get('old-write')?.title),
+			'persisted in browser'
+		);
+		checks++;
+		await page.evaluate(async () => {
+			await window.replica.connect();
+			window.replica.emit('candidate-write', 2);
+		});
+		await waitForCursor(page, 2);
+		page = await restart(page, { closeApplication: true, fragment: oldFragment });
+		assert.equal(
+			await page.evaluate(() => window.replica.get('old-write')?.title),
+			'persisted in browser'
+		);
+		assert.equal(
+			await page.evaluate(() => window.replica.get('candidate-write')?.title),
+			'persisted in browser'
+		);
+		assert.equal(await page.evaluate(() => window.replica.cursor()), 2);
+		assert.equal(requests, compatibilityRequests);
+		assert.deepEqual(errors, []);
+		checks++;
+	}
 	assert.deepEqual(await page.evaluate(() => window.replica.closeRace()), {
 		acceptedCompleted: true,
 		closeMessages: 1,
 		lateRejected: true,
 	});
+	checks++;
+	assert.deepEqual(errors, []);
 	checks++;
 	process.stdout.write(`${checks} real Chromium offline/process-restart checks passed\n`);
 } finally {

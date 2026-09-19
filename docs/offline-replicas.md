@@ -98,17 +98,17 @@ const sqlite = persistence.web.sqlite.once({
 });
 ```
 
-Precache the app shell, bundled worker, and **all runtime files** listed by `assets/wa-sqlite/manifest.json` under that base. Preserve the relative `src/` and `dist/` paths and license/acknowledgment files. Serve `.wasm` as `application/wasm` and JS/MJS as JavaScript. Install/activate the service worker online before the first offline restart. `preloadLinks(assetBase)` and `injectPreloadLinks(assetBase)` accept the same base. Failed WASM compilation is evicted from the cache so retry can succeed. Without `assetBase`, the existing CDN remains the default.
+Precache the app shell, bundled worker, and **all files** listed by `assets/wa-sqlite/manifest.json` under that base. Preserve the relative `src/` and `dist/` paths and all notice files. Serve `.wasm` as `application/wasm` and JS/MJS as JavaScript. Install/activate the service worker online before the first offline restart. `preloadLinks(assetBase)` and `injectPreloadLinks(assetBase)` accept the same base. Failed WASM compilation is evicted from the cache so retry can succeed. Without `assetBase`, the existing historical CDN remains the default; copying and configuring `assetBase` is the offline self-hosted path.
 
 The worker uses `synchronous=FULL` and awaits SQLite/VFS close before terminating. Durability is subject to browser storage eviction, device/storage guarantees, and application cache lifecycle; offline assets are application-owned.
 
 ### Runtime provenance
 
-The vendored graph is byte-identical to official wa-sqlite GitHub commit `55bf0b6646ac1bb81b00b9c25636b59a87e4a918` (tag `v1.0.0`), including its prebuilt async JS/WASM. Those compiler artifacts originate at commit `44cc640c65f29de9bfbc2004974c9f6c2c690c2b`; its Makefile specifies SQLite 3.46.0. Per-file SHA-256 values are recorded in `manifest.json`.
+The copied graph comes from an immutable archive of the original wa-sqlite repository at commit `07ad48cf2f682d279f9cd69818cc1d39b2ccda86`. Its package metadata reports version 1.1.2, but the dependency is the exact commit archive rather than an npm release or a similarly named Git tag. The required files are byte-identical to that commit. The shipped module reports SQLite 3.53.0, matching its Makefile. Per-file SHA-256 values are recorded in `manifest.json`.
 
-This is reproducible distribution of pinned official artifacts, not a claim to reproduce the original compiler environment. `node scripts/verify-sqlite-provenance.mjs` compares every file with that immutable upstream revision; `node scripts/copy-sqlite-assets.mjs --verify` checks the installed copy without network access. Keep upstream `LICENSE` and `ACKNOWLEDGMENTS.md`, including the sqlite-wasm notice.
+The codeload URL contains the full commit hash, and `manifest.json` retains the archive's SHA-512 and SHA-256 digests. npm downstream locks record the archive integrity; Bun 1.3.6 retains the exact URL without a digest. The asset CLI therefore checks fixed per-file hashes before every copy. This identifies the installed source and prebuilt artifacts; it is not an independent reproduction of the compiler environment or WebAssembly build. `node scripts/verify-sqlite-provenance.mjs` checks the archive integrity and compares every upstream file with the immutable source revision; `node scripts/copy-sqlite-assets.mjs --verify` verifies the installed dependency without network access.
 
-**Do not substitute npm `wa-sqlite@1.0.0`.** It has different source/build contents and an incompatible VFS constructor API. The pinned GitHub graph and the historical CDN use `IDBBatchAtomicVFS.create(name, module)`.
+Keep `LICENSE`, the full source `ACKNOWLEDGMENTS.md`, and `PROVENANCE.md`. Do not substitute npm `wa-sqlite@1.0.0`: it is an unrelated unofficial publication with different contents and VFS API.
 
 ## Verification
 
