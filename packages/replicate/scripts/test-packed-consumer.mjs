@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -37,9 +37,10 @@ for (const candidate of npmCandidates) {
 if (!npmCli) throw new Error('Could not locate npm-cli.js; set REPLICATE_NPM_CLI');
 const npm = (args, options) => promisify(execFile)(process.execPath, [npmCli, ...args], options);
 
-let directory;
+let cleanupDirectory;
 try {
-	directory = await mkdtemp(join(tmpdir(), 'replicate packed consumer '));
+	cleanupDirectory = await mkdtemp(join(tmpdir(), 'replicate packed consumer '));
+	const directory = await realpath(cleanupDirectory);
 	const consumer = join(directory, 'consumer with spaces');
 	const destination = join(consumer, 'public assets', 'sqlite');
 	await mkdir(consumer, { recursive: true });
@@ -146,5 +147,5 @@ void resolvedExports;
 	);
 	process.stdout.write('Packed consumer installed dependency and copied verified SQLite assets\n');
 } finally {
-	if (directory) await rm(directory, { recursive: true, force: true });
+	if (cleanupDirectory) await rm(cleanupDirectory, { recursive: true, force: true });
 }

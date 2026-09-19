@@ -46,9 +46,10 @@ npm exec -- replicate-sqlite-assets --verify
 
 `manifest.json` records the exact archive URL and integrity, source revision, and SHA-256 digest
 of each runtime and notice file. The copy command reads the installed dependency during the
-application build; browsers do not fetch GitHub or a third-party CDN at runtime when `assetBase`
-points to the copied directory. The provenance details and reproducibility boundary are documented
-in [`offline-replicas.md`](offline-replicas.md#browser-assets-and-offline-startup).
+application build. When `assetBase` points to the copied directory, the SQLite worker loads that
+directory instead of GitHub or the default CDN. Service-worker and preload URLs are configured
+separately and must point to the same local graph. The provenance details and reproducibility
+boundary are documented in [`offline-replicas.md`](offline-replicas.md#browser-assets-and-offline-startup).
 
 ## Configure Replicate
 
@@ -89,7 +90,12 @@ runtime version they were built against.
 
 An offline restart needs the application shell, bundled worker, and every runtime file named in
 `manifest.json` to be available locally. Precache those URLs while online and activate the service
-worker before relying on offline startup. The preload helpers accept the same base:
+worker before relying on offline startup. Configuring `assetBase` controls the URLs loaded by the
+SQLite worker; it does not rewrite a service worker's precache URLs. Configure both `assetBase` and
+the service worker's runtime base and URL list to point at the copied graph. If an example service
+worker has a hardcoded `CDN_BASE` and four-file URL list, replace both with the local base and the
+complete runtime graph from `/replicate-sqlite/manifest.json`; changing `CDN_BASE` alone does not add
+the remaining transitive runtime files to that list. The preload helpers accept the same base:
 
 ```typescript
 import { injectPreloadLinks } from '@trestleinc/replicate/client';
